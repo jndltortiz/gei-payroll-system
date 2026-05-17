@@ -1,0 +1,161 @@
+/* ============================================================
+   dashboard.css – GEI HR System  |  Dashboard page only
+   Requires: global.css loaded first
+   ============================================================ */
+
+/* ── Content area (dashboard uses .content not .main-content) ── */
+.content {
+    flex: 1; overflow-y: auto;
+    padding: 28px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+.page-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 24px;
+}
+.page-title { font-size: 22px; font-weight: 700; color: var(--text-primary); }
+.page-date  { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+
+/* ── Stat Cards (dashboard 4-col) ── */
+.stat-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 16px; margin-bottom: 24px;
+}
+.stat-card {
+    background: var(--bg-card); border-radius: var(--radius);
+    padding: 20px; box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 8px;
+    transition: transform 0.15s, box-shadow 0.15s;
+    animation: fadeUp 0.4s ease both;
+}
+.stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+.stat-card:nth-child(1) { animation-delay: 0.05s; }
+.stat-card:nth-child(2) { animation-delay: 0.1s; }
+.stat-card:nth-child(3) { animation-delay: 0.15s; }
+.stat-card:nth-child(4) { animation-delay: 0.2s; }
+
+.stat-header { display: flex; align-items: flex-start; justify-content: space-between; }
+.stat-label  { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+.stat-icon   { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.stat-icon svg { width: 18px; height: 18px; }
+.stat-icon.teal   { background: var(--accent-light); color: var(--accent); }
+.stat-icon.blue   { background: var(--blue-light);   color: var(--blue);   }
+.stat-icon.yellow { background: var(--yellow-light); color: var(--yellow); }
+.stat-icon.green  { background: var(--green-light);  color: var(--green);  }
+
+.stat-value { font-size: 26px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.5px; }
+.stat-sub   { font-size: 12px; display: flex; align-items: center; gap: 4px; }
+.stat-sub.positive { color: var(--green); }
+.stat-sub.warning  { color: var(--yellow); }
+.stat-sub.neutral  { color: var(--text-secondary); }
+
+/* ── Charts Row ── */
+.charts-row { display: grid; grid-template-columns: 1fr 340px; gap: 16px; margin-bottom: 24px; }
+
+.card {
+    background: var(--bg-card); border-radius: var(--radius);
+    padding: 22px; box-shadow: var(--shadow);
+    border: 1px solid var(--border); animation: fadeUp 0.4s ease both;
+}
+.card:nth-child(1) { animation-delay: 0.25s; }
+.card:nth-child(2) { animation-delay: 0.3s; }
+
+.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.card-title  { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.chart-legend { display: flex; gap: 14px; }
+.legend-item  { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-secondary); }
+.legend-dot   { width: 8px; height: 8px; border-radius: 50%; }
+
+/* ── Activity ── */
+.activity-list { display: flex; flex-direction: column; gap: 14px; }
+.activity-item { display: flex; align-items: flex-start; gap: 10px; }
+.activity-dot  { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+.activity-dot.green  { background: var(--green); }
+.activity-dot.yellow { background: var(--yellow); }
+.activity-dot.gray   { background: #cbd5e1; }
+.activity-text strong { display: block; font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.activity-text span   { font-size: 11px; color: var(--text-muted); }
+
+/* ── Bottom Row ── */
+.bottom-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* ── Dashboard Table (scoped to .card so it doesn't bleed) ── */
+.card .table-wrapper { overflow-x: auto; margin-top: 4px; }
+.card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.card thead th {
+    text-align: left; padding: 10px 12px;
+    font-size: 11px; font-weight: 600; color: var(--text-secondary);
+    text-transform: uppercase; letter-spacing: 0.6px;
+    border-bottom: 1px solid var(--border); background: var(--bg-main);
+}
+.card tbody tr  { transition: background 0.12s; }
+.card tbody tr:hover { background: var(--accent-light); }
+.card tbody td  { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-primary); }
+.card tbody tr:last-child td { border-bottom: none; }
+
+.badge {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+}
+.badge.paid       { background: var(--green-light);  color: var(--green);  }
+.badge.pending    { background: var(--yellow-light); color: var(--yellow); }
+.badge.processing { background: var(--blue-light);   color: var(--blue);   }
+
+/* ── Payroll Schedule ── */
+.payroll-schedule { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+.schedule-item {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 14px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--bg-main); transition: background 0.15s;
+}
+.schedule-item:hover { background: var(--accent-light); }
+.schedule-date {
+    width: 42px; height: 42px; border-radius: 10px;
+    background: var(--accent); color: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.schedule-date .day   { font-size: 16px; font-weight: 700; line-height: 1; }
+.schedule-date .month { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85; }
+.schedule-info { flex: 1; }
+.schedule-info strong { display: block; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.schedule-info span   { font-size: 12px; color: var(--text-secondary); }
+.schedule-amount { font-size: 14px; font-weight: 700; color: var(--accent); }
+
+/* ── Presence ── */
+.presence-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.presence-tab {
+    padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    cursor: pointer; border: 1.5px solid var(--border);
+    color: var(--text-secondary); background: transparent; transition: all 0.15s;
+}
+.presence-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.presence-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.presence-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 12.5px;
+}
+.presence-name { font-weight: 500; color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
+.presence-name::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; display: inline-block; flex-shrink: 0; }
+.presence-name.present { color: var(--green); }
+.presence-name.late    { color: var(--yellow); }
+.presence-name.absent  { color: var(--red); }
+
+.pbadge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+.pbadge.present { background: var(--green-light);  color: var(--green);  }
+.pbadge.late    { background: var(--yellow-light); color: var(--yellow); }
+.pbadge.absent  { background: var(--red-light);    color: var(--red);    }
+
+.live-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--green-light); color: var(--green);
+    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px;
+}
+.live-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 1.5s infinite; }
+
+.presence-stats { display: flex; gap: 14px; margin-bottom: 12px; font-size: 12px; }
+.pstat { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); }
+.pstat-dot { width: 7px; height: 7px; border-radius: 50%; }

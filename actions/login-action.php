@@ -1,0 +1,72 @@
+<?php
+
+require_once __DIR__ . '/../includes/auth.php';
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header('Location: ' . BASE_URL . 'modules/auth/login.php');
+    exit;
+}
+
+$username = trim($_POST['username'] ?? '');
+$password = $_POST['password'] ?? '';
+
+if ($username === '' || $password === '') {
+    setFlash('danger', 'Username and password are required.');
+    header('Location: ' . BASE_URL . 'modules/auth/login.php');
+    exit;
+}
+
+$sql = "
+    SELECT 
+        u.user_id,
+        u.username,
+        u.password_hash,
+        u.is_active,
+        r.role_name,
+        e.employee_id,
+        e.first_name,
+        e.last_name
+    FROM users u
+    INNER JOIN roles r ON u.role_id = r.role_id
+    LEFT JOIN employees e ON u.employee_id = e.employee_id
+    WHERE u.username = :username
+    LIMIT 1
+";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute(['username' => $username]);
+$user = $stmt->fetch();
+
+if (!$user) {
+    setFlash('danger', 'Invalid username or password.');
+    header('Location: ' . BASE_URL . 'modules/auth/login.php');
+    exit;
+}
+
+if ((int)$user['is_active'] !== 1) {
+    setFlash('danger', 'Your account is inactive.');
+    header('Location: ' . BASE_URL . 'modules/auth/login.php');
+    exit;
+}
+
+if (!password_verify($password, $user['password_hash'])) {
+    setFlash('danger', 'Invalid username or password.');
+    header('Location: ' . BASE_URL . 'modules/auth/login.php');
+    exit;
+}
+
+$_SESSION['user'] = [
+    'user_id' => $user['user_id'],
+    'employee_id' => $user['employee_id'],
+    'username' => $user['username'],
+    'role_name' => $user['role_name'],
+    'first_name' => $user['first_name'] ?? '',
+    'last_name' => $user['last_name'] ?? ''
+];
+
+$updateLogin = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE user_id = :user_id");
+$updateLogin->execute(['user_id' => $user['user_id']]);
+
+setFlash('success', 'Login successful.');
+header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
+exit;
