@@ -3,7 +3,7 @@
 // Handles both ADD (no deduction_type_id) and EDIT (with deduction_type_id)
 
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../config/auth.php';
+require_once __DIR__ . '/../includes/auth.php';
 
 header('Content-Type: application/json');
 requireLogin();

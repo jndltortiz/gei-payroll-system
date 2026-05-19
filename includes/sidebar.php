@@ -54,7 +54,7 @@ if (!function_exists('isActive')) {
     </a>
 
     <div class="nav-section-label">Reports & Analytics</div>
-    <a class="nav-item" href="<?= BASE_URL ?>modules/reports/index.php">
+    <a class="nav-item" href="<?= BASE_URL ?>modules/analytics/index.php">
       <i class="fa fa-chart-line"></i>
       <span>Analytics</span>
     </a>

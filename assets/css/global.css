@@ -217,6 +217,24 @@ body {
     scrollbar-color: var(--border) transparent;
 }
 
+/* .main — same role as .main-wrapper, used by dashboard/attendance/payroll */
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+/* .content — scrollable inner area used by dashboard and attendance */
+.content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 32px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
 /* ── Flash / Alert ── */
 .alert-flash {
     display: flex; align-items: center; justify-content: space-between;

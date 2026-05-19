@@ -129,10 +129,26 @@ require_once __DIR__ . '/../../includes/head.php';
                     <h1 class="page-title">Leave Management</h1>
                     <p class="page-subtitle">File your own leave requests and manage employee leave records.</p>
                 </div>
+                <?php if ($employeeId): ?>
                 <button class="btn-file-leave" id="btnFileLeave">
                     <i class="fa fa-plus"></i> File a Leave
                 </button>
+                <?php else: ?>
+                <button class="btn-file-leave" disabled
+                    title="Your admin account is not linked to an employee record."
+                    style="opacity:0.5;cursor:not-allowed;">
+                    <i class="fa fa-plus"></i> File a Leave
+                </button>
+                <?php endif; ?>
             </div>
+
+            <!-- NOTICE: admin account not linked to employee -->
+            <?php if (!$employeeId): ?>
+            <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;display:flex;align-items:center;gap:8px;">
+                <i class="fa fa-triangle-exclamation"></i>
+                <span>Your admin account is not linked to an employee record. You can view and manage all leave requests below, but cannot file a leave for yourself.</span>
+            </div>
+            <?php endif; ?>
 
             <!-- STAT CARDS -->
             <div class="stat-cards">

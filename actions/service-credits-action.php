@@ -1,10 +1,11 @@
 <?php
 // actions/service_credits_action.php
-require_once '../config/database.php';
-require_once '../config/session.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/auth.php';
+
 
 requireLogin();
-requireAdmin();
+
 
 $action = $_POST['action'] ?? '';
 
@@ -12,7 +13,7 @@ $action = $_POST['action'] ?? '';
 function redirectBack(string $status, string $message): void
 {
     $_SESSION['sc_' . $status] = $message;
-    header('Location: ../modules/service_credits/index.php');
+    header('Location: ../modules/service-credits/index.php');
     exit;
 }
 
@@ -80,7 +81,7 @@ if ($action === 'add') {
         ]);
 
         // Log the action
-        logAction($pdo, $_SESSION['user_id'], 'ADD_SERVICE_CREDIT', 'service_credits',
+        logAction($pdo, $_SESSION['user']['user_id'], 'ADD_SERVICE_CREDIT', 'service_credits',
             (int)$pdo->lastInsertId(),
             "Added {$days} service credit(s) for employee #{$employeeId}");
 
@@ -138,7 +139,7 @@ if ($action === 'edit') {
             ':id'        => $creditId,
         ]);
 
-        logAction($pdo, $_SESSION['user_id'], 'EDIT_SERVICE_CREDIT', 'service_credits',
+        logAction($pdo, $_SESSION['user']['user_id'], 'EDIT_SERVICE_CREDIT', 'service_credits',
             $creditId, "Updated service credit #{$creditId}");
 
         redirectBack('success', 'Service credit updated successfully.');
@@ -161,7 +162,7 @@ if ($action === 'delete') {
         $stmt = $pdo->prepare("DELETE FROM service_credits WHERE service_credit_id = :id");
         $stmt->execute([':id' => $creditId]);
 
-        logAction($pdo, $_SESSION['user_id'], 'DELETE_SERVICE_CREDIT', 'service_credits',
+        logAction($pdo, $_SESSION['user']['user_id'], 'DELETE_SERVICE_CREDIT', 'service_credits',
             $creditId, "Deleted service credit #{$creditId}");
 
         redirectBack('success', 'Service credit deleted successfully.');

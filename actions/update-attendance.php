@@ -1,61 +1,96 @@
 <?php
-require '../config/database.php';
+/**
+ * actions/update-attendance.php
+ * Updates a single attendance_records row.
+ * Returns JSON — called by the edit-attendance modal via fetch().
+ */
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/auth.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+header('Content-Type: application/json');
+requireLogin();
 
-    $stmt = $pdo->prepare("
-        UPDATE employees SET
-            first_name        = :first_name,
-            middle_name       = :middle_name,
-            last_name         = :last_name,
-            suffix            = :suffix,
-            sex               = :sex,
-            birth_date        = :birth_date,
-            civil_status      = :civil_status,
-            contact_no        = :contact_no,
-            email             = :email,
-            address           = :address,
-            employee_no       = :employee_no,
-            department_id     = :department_id,
-            position_id       = :position_id,
-            employment_type   = :employment_type,
-            employee_status   = :employee_status,
-            hire_date         = :hire_date,
-            sss_no            = :sss_no,
-            philhealth_no     = :philhealth_no,
-            pagibig_no        = :pagibig_no,
-            tin_no            = :tin_no,
-            peraa_no          = :peraa_no,
-            rfid_uid          = :rfid_uid
-        WHERE employee_id = :employee_id
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
+    exit;
+}
+
+$attendanceId = (int)($_POST['attendance_id'] ?? 0);
+$date         = trim($_POST['date']           ?? '');
+$timeIn       = trim($_POST['time_in']        ?? '') ?: null;
+$timeOut      = trim($_POST['time_out']       ?? '') ?: null;
+$status       = trim($_POST['status']         ?? 'PRESENT');
+$remarks      = trim($_POST['remarks']        ?? '') ?: null;
+
+$validStatuses = ['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'INCOMPLETE', 'LEAVE', 'HOLIDAY'];
+
+if (!$attendanceId) {
+    echo json_encode(['success' => false, 'message' => 'Invalid attendance record ID.']);
+    exit;
+}
+if (!$date || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+    echo json_encode(['success' => false, 'message' => 'Invalid date.']);
+    exit;
+}
+if (!in_array($status, $validStatuses)) {
+    echo json_encode(['success' => false, 'message' => 'Invalid status.']);
+    exit;
+}
+
+// Calculate late_minutes if time_in provided and we can get the shift
+$lateMinutes = 0;
+if ($timeIn) {
+    $row = $pdo->prepare("
+        SELECT s.start_time, s.grace_period_minutes
+        FROM attendance_records ar
+        JOIN employees e ON ar.employee_id = e.employee_id
+        LEFT JOIN shifts s ON e.shift_id = s.shift_id
+        WHERE ar.attendance_id = :id
     ");
+    $row->execute([':id' => $attendanceId]);
+    $shift = $row->fetch();
+    if ($shift && $shift['start_time']) {
+        $shiftStart  = strtotime($date . ' ' . $shift['start_time']);
+        $grace       = (int)($shift['grace_period_minutes'] ?? 0);
+        $actualIn    = strtotime($date . ' ' . $timeIn);
+        $diff        = ($actualIn - $shiftStart - ($grace * 60)) / 60;
+        $lateMinutes = $diff > 0 ? (int)$diff : 0;
+    }
+}
 
+try {
+    $stmt = $pdo->prepare("
+        UPDATE attendance_records SET
+            attendance_date    = :date,
+            time_in            = :time_in,
+            time_out           = :time_out,
+            attendance_status  = :status,
+            late_minutes       = :late_minutes,
+            remarks            = :remarks,
+            updated_at         = NOW()
+        WHERE attendance_id = :id
+    ");
     $stmt->execute([
-        ':employee_id'      => $_POST['employee_id'],
-        ':first_name'       => $_POST['first_name'],
-        ':middle_name'      => $_POST['middle_name'] ?? null,
-        ':last_name'        => $_POST['last_name'],
-        ':suffix'           => $_POST['suffix'] ?? null,
-        ':sex'              => $_POST['sex'],
-        ':birth_date'       => $_POST['birth_date'] ?? null,
-        ':civil_status'     => $_POST['civil_status'] ?? null,
-        ':contact_no'       => $_POST['contact_no'] ?? null,
-        ':email'            => $_POST['email'] ?? null,
-        ':address'          => $_POST['address'] ?? null,
-        ':employee_no'      => $_POST['employee_no'],
-        ':department_id'    => $_POST['department_id'],
-        ':position_id'      => $_POST['position_id'],
-        ':employment_type'  => $_POST['employment_type'],
-        ':employee_status'  => $_POST['employee_status'],
-        ':hire_date'        => $_POST['hire_date'],
-        ':sss_no'           => $_POST['sss_no'] ?? null,
-        ':philhealth_no'    => $_POST['philhealth_no'] ?? null,
-        ':pagibig_no'       => $_POST['pagibig_no'] ?? null,
-        ':tin_no'           => $_POST['tin_no'] ?? null,
-        ':peraa_no'         => $_POST['peraa_no'] ?? null,
-        ':rfid_uid'         => $_POST['rfid_uid'] ?? null,
+        ':date'         => $date,
+        ':time_in'      => $timeIn,
+        ':time_out'     => $timeOut,
+        ':status'       => $status,
+        ':late_minutes' => $lateMinutes,
+        ':remarks'      => $remarks,
+        ':id'           => $attendanceId,
     ]);
 
-    header("Location: ../modules/employees/index.php");
-    exit();
+    // Audit log
+    $userId = $_SESSION['user']['user_id'] ?? null;
+    if ($userId) {
+        $pdo->prepare("
+            INSERT INTO audit_logs (user_id, action, table_name, record_id, description)
+            VALUES (?, 'UPDATE', 'attendance_records', ?, ?)
+        ")->execute([$userId, $attendanceId, "Updated attendance #{$attendanceId} to {$status}"]);
+    }
+
+    echo json_encode(['success' => true, 'message' => 'Attendance updated successfully.']);
+
+} catch (PDOException $e) {
+    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
 }

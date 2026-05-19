@@ -1,146 +1,154 @@
 <?php
-require_once __DIR__ . '/../config/database.php';
+/**
+ * actions/generate-payroll.php
+ * Generates payroll records for all active employees for a given pay period.
+ * Returns JSON — called via fetch() from the generate modal.
+ */
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/auth.php';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+header('Content-Type: application/json');
+requireLogin();
 
-    $period_id = $_POST['period_id'];
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
+    exit;
+}
 
-    // 🟢 GET EMPLOYEES WITH SALARY
+$periodId = (int)($_POST['period_id'] ?? 0);
+if (!$periodId) {
+    echo json_encode(['success' => false, 'message' => 'No pay period selected.']);
+    exit;
+}
+
+// Verify period exists and is OPEN
+$period = $pdo->prepare("SELECT * FROM payroll_periods WHERE period_id = ? AND status = 'OPEN'");
+$period->execute([$periodId]);
+$period = $period->fetch();
+if (!$period) {
+    echo json_encode(['success' => false, 'message' => 'Pay period not found or not open.']);
+    exit;
+}
+
+try {
+    $pdo->beginTransaction();
+
+    // Get all active employees with salary
     $employees = $pdo->query("
-        SELECT 
-            e.employee_id,
-            ec.monthly_salary
+        SELECT e.employee_id, ec.monthly_salary, ec.daily_rate
         FROM employees e
-        LEFT JOIN employee_compensations ec
-            ON e.employee_id = ec.employee_id
-        WHERE ec.is_active = 1
-    ");
+        JOIN employee_compensations ec ON e.employee_id = ec.employee_id
+        WHERE e.employee_status = 'ACTIVE' AND ec.is_active = 1
+    ")->fetchAll();
+
+    $generated = 0;
+    $skipped   = 0;
 
     foreach ($employees as $emp) {
+        $employeeId = $emp['employee_id'];
+        $basic      = (float)($emp['monthly_salary'] ?? 0);
 
-        $employee_id = $emp['employee_id'];
-        $basic = $emp['monthly_salary'] ?? 0;
-
-        // 🔒 PREVENT DUPLICATE PAYROLL
-        $check = $pdo->prepare("
-            SELECT payroll_id 
-            FROM payroll_records 
-            WHERE employee_id = ? AND period_id = ?
-        ");
-        $check->execute([$employee_id, $period_id]);
-
-        if ($check->rowCount() > 0) {
+        // Skip if payroll already exists for this period
+        $check = $pdo->prepare("SELECT payroll_id FROM payroll_records WHERE employee_id = ? AND period_id = ?");
+        $check->execute([$employeeId, $periodId]);
+        if ($check->fetch()) {
+            $skipped++;
             continue;
         }
 
-        // 🟢 INSERT PAYROLL RECORD
-        $stmt = $pdo->prepare("
+        // Insert base payroll record
+        $pdo->prepare("
             INSERT INTO payroll_records
-            (period_id, employee_id, basic_pay, gross_pay, total_deductions, net_pay, payroll_status)
-            VALUES (?, ?, ?, 0, 0, 0, 'DRAFT')
+                (period_id, employee_id, basic_pay, gross_pay, total_allowances, total_deductions, net_pay, payroll_status)
+            VALUES (?, ?, ?, 0, 0, 0, 0, 'DRAFT')
+        ")->execute([$periodId, $employeeId, $basic]);
+        $payrollId = (int)$pdo->lastInsertId();
+
+        // Allowances — only those assigned to this employee
+        $atypes = $pdo->prepare("
+            SELECT at.allowance_type_id, at.default_amount
+            FROM allowance_types at
+            JOIN allowance_assignments aa ON at.allowance_type_id = aa.allowance_type_id
+            WHERE at.is_active = 1 AND aa.is_active = 1
+              AND (aa.applies_to = 'ALL'
+                   OR (aa.applies_to = 'EMPLOYEE' AND aa.target_id = :eid))
         ");
-        $stmt->execute([$period_id, $employee_id, $basic]);
-
-        $payroll_id = $pdo->lastInsertId();
-
-        // =========================
-        // 🔵 ALLOWANCES (FROM DB)
-        // =========================
-        $atypes = $pdo->query("
-            SELECT * FROM allowance_types WHERE is_active = 1
-        ");
-
-        $total_allowances = 0;
-
-        foreach ($atypes as $type) {
-
-            $amount = $type['default_amount'];
-            $total_allowances += $amount;
-
-            $insertA = $pdo->prepare("
-                INSERT INTO payroll_allowances
-                (payroll_id, allowance_type_id, amount)
-                VALUES (?, ?, ?)
-            ");
-
-            $insertA->execute([
-                $payroll_id,
-                $type['allowance_type_id'],
-                $amount
-            ]);
+        $atypes->execute([':eid' => $employeeId]);
+        $totalAllowances = 0;
+        foreach ($atypes->fetchAll() as $type) {
+            $amt = (float)$type['default_amount'];
+            $totalAllowances += $amt;
+            $pdo->prepare("INSERT INTO payroll_allowances (payroll_id, allowance_type_id, amount) VALUES (?,?,?)")
+                ->execute([$payrollId, $type['allowance_type_id'], $amt]);
         }
 
-        // =========================
-        // 🔴 AUTO DEDUCTIONS
-        // =========================
-        $types = $pdo->query("
-            SELECT * FROM deduction_types WHERE is_active = 1
-        ");
+        // Deductions — government contributions using official logic
+        $dtypes = $pdo->query("SELECT * FROM deduction_types WHERE is_active = 1")->fetchAll();
+        $totalDeductions = 0;
+        foreach ($dtypes as $type) {
+            $amt = 0;
+            $name = $type['deduction_name'];
 
-        $total_deductions = 0;
-
-        foreach ($types as $type) {
-
-            $amount = 0;
-
-            // 💡 AUTO COMPUTE BASED ON SALARY
-            if ($type['deduction_name'] == 'SSS Premium') {
-                $amount = $basic * 0.045; // 4.5%
+            if ($name === 'SSS Premium') {
+                // Look up bracket from sss_contribution_table
+                $sss = $pdo->prepare("
+                    SELECT employee_share FROM sss_contribution_table
+                    WHERE min_salary <= :sal AND max_salary >= :sal AND is_active = 1
+                    ORDER BY effective_date DESC LIMIT 1
+                ");
+                $sss->execute([':sal' => $basic]);
+                $row = $sss->fetch();
+                $amt = $row ? (float)$row['employee_share'] : round($basic * 0.045, 2);
+            } elseif ($name === 'PhilHealth') {
+                $ph = $pdo->prepare("
+                    SELECT employee_share FROM philhealth_contribution_table
+                    WHERE min_salary <= :sal AND max_salary >= :sal AND is_active = 1
+                    ORDER BY effective_date DESC LIMIT 1
+                ");
+                $ph->execute([':sal' => $basic]);
+                $row = $ph->fetch();
+                $amt = $row ? (float)$row['employee_share'] : round($basic * 0.025, 2);
+            } elseif ($name === 'Pag-IBIG' || $name === 'HDMF Premium') {
+                $pi = $pdo->prepare("
+                    SELECT employee_share FROM pagibig_contribution_table
+                    WHERE min_salary <= :sal AND max_salary >= :sal AND is_active = 1
+                    ORDER BY effective_date DESC LIMIT 1
+                ");
+                $pi->execute([':sal' => $basic]);
+                $row = $pi->fetch();
+                $amt = $row ? (float)$row['employee_share'] : 200;
+            } elseif ($type['deduction_value_type'] === 'FIXED') {
+                $amt = (float)$type['deduction_amount'];
+            } elseif ($type['deduction_value_type'] === 'PERCENTAGE') {
+                $amt = round($basic * ($type['deduction_rate'] / 100), 2);
             }
+            // Loans default to 0
 
-            if ($type['deduction_name'] == 'PhilHealth') {
-                $amount = $basic * 0.03; // 3%
-            }
-
-            if ($type['deduction_name'] == 'HDMF Premium') {
-                $amount = 200; // fixed
-            }
-
-            if ($type['deduction_name'] == 'PERAA Premium') {
-                $amount = 500; // fixed
-            }
-
-            // loans default 0
-            if ($type['deduction_name'] == 'SSS Loan') $amount = 0;
-            if ($type['deduction_name'] == 'HDMF Loan') $amount = 0;
-            if ($type['deduction_name'] == 'PERAA Loan') $amount = 0;
-
-            $total_deductions += $amount;
-
-            $insertD = $pdo->prepare("
-                INSERT INTO payroll_deductions
-                (payroll_id, deduction_type_id, amount)
-                VALUES (?, ?, ?)
-            ");
-
-            $insertD->execute([
-                $payroll_id,
-                $type['deduction_type_id'],
-                $amount
-            ]);
+            $totalDeductions += $amt;
+            $pdo->prepare("INSERT INTO payroll_deductions (payroll_id, deduction_type_id, amount) VALUES (?,?,?)")
+                ->execute([$payrollId, $type['deduction_type_id'], $amt]);
         }
 
-        // =========================
-        // 🔥 FINAL COMPUTATION
-        // =========================
-        $gross = $basic + $total_allowances;
-        $net = $gross - $total_deductions;
-
-        $update = $pdo->prepare("
+        // Final totals
+        $gross = $basic + $totalAllowances;
+        $net   = $gross - $totalDeductions;
+        $pdo->prepare("
             UPDATE payroll_records
-            SET gross_pay = ?, total_deductions = ?, net_pay = ?
-            WHERE payroll_id = ?
-        ");
+            SET gross_pay=?, total_allowances=?, total_deductions=?, net_pay=?
+            WHERE payroll_id=?
+        ")->execute([$gross, $totalAllowances, $totalDeductions, $net, $payrollId]);
 
-        $update->execute([
-            $gross,
-            $total_deductions,
-            $net,
-            $payroll_id
-        ]);
+        $generated++;
     }
 
-    header("Location: ../modules/payroll/index.php");
-    exit;
+    $pdo->commit();
+
+    $msg = "Payroll generated for {$generated} employee(s).";
+    if ($skipped) $msg .= " {$skipped} already existed and were skipped.";
+
+    echo json_encode(['success' => true, 'message' => $msg, 'generated' => $generated]);
+
+} catch (PDOException $e) {
+    $pdo->rollBack();
+    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
 }
-?>

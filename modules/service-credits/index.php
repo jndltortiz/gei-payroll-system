@@ -1,6 +1,6 @@
 <?php
-require_once '../../config/database.php';
-require_once '../../includes/auth.php';
+require_once __DIR__ . '/../../config/config.php';
+require_once __DIR__ . '/../../includes/auth.php';
 
 requireLogin();
 
@@ -106,22 +106,21 @@ $successMsg = $_SESSION['sc_success'] ?? '';
 $errorMsg   = $_SESSION['sc_error']   ?? '';
 unset($_SESSION['sc_success'], $_SESSION['sc_error']);
 
-
+$pageTitle = 'Service Credits';
+$extraCSS  = [BASE_URL . 'assets/css/service-credits.css'];
+require_once __DIR__ . '/../../includes/head.php';
 ?>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-<link rel="stylesheet" href="../../assets/css/global.css">   
+<body>
+<div class="layout">
+<?php include __DIR__ . '/../../includes/sidebar.php'; ?>
 
-
-<link rel="stylesheet" href="../../assets/css/service-credits.css">
-
-<?php require_once '../../includes/sidebar.php'; ?>
-
-<div class="main-content">
-    <?php require_once '../../includes/header.php';?>
+<div class="main">
+    <?php include __DIR__ . '/../../includes/header.php'; ?>
+  <div class="main-content">
   <!-- Page Header -->
   <div class="page-header">
     <div class="page-header-icon">
-      <i class="ph-bold ph-medal"></i>
+      <i class="fa fa-medal"></i>
     </div>
     <div>
       <h1 class="page-title">Service Credits Management</h1>
@@ -428,8 +427,9 @@ unset($_SESSION['sc_success'], $_SESSION['sc_error']);
       </div>
     </form>
   </div>
-</div>
+</div><!-- end .main-content -->
+</div><!-- end .main -->
+</div><!-- end .layout -->
 
-<script src="../../assets/js/service-credits.js"></script>
-
-<?php require_once '../../includes/footer.php'; ?>
+<script src="<?= BASE_URL ?>assets/js/service-credits.js"></script>
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

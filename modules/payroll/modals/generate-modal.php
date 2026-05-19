@@ -17,7 +17,7 @@
                 <label>Pay Period</label>
                 <select name="period_id" required>
                     <?php
-                   require_once $_SERVER['DOCUMENT_ROOT'] . '/gei-payroll-system/config/database.php';
+                   // $pdo already available via auth.php included by the parent page
                     $periods = $pdo->query("SELECT * FROM payroll_periods WHERE status='OPEN'");
                     while ($p = $periods->fetch()):
                     ?>
@@ -36,4 +36,3 @@
         </form>
     </div>
 </div>
-
