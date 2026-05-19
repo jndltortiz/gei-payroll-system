@@ -1,6 +1,6 @@
 /* loans.css — GEI HR System */
 
-.loans-page { max-width: 1200px; }
+.loans-page { width: 100%; }
 
 /* Header */
 .loans-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; }

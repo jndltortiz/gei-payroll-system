@@ -69,7 +69,9 @@ $totalEmployeesCount = $totalEmployees;
 $presentCount = count($presentEmployees);
 $lateCount    = count($lateEmployees);
 $absentCount  = count($absentEmployees);
-$presentToday = $presentCount;
+
+// Late employees attended — count them in the attendance rate
+$presentToday = $presentCount + $lateCount;
 
 // New employees this month
 $newThisMonth = $pdo->prepare("
@@ -88,9 +90,9 @@ $attendanceRate = $totalEmployees > 0
 $totalPayroll = $pdo->query("SELECT SUM(net_pay) FROM payroll_records")->fetchColumn();
 
 $weeklyAttendance = $pdo->query("
-    SELECT 
+    SELECT
         DATE(attendance_date) as date,
-        SUM(attendance_status = 'PRESENT') as present_count,
+        SUM(attendance_status IN ('PRESENT','LATE')) as present_count,
         SUM(attendance_status = 'ABSENT') as absent_count
     FROM attendance_records
     WHERE attendance_date >= CURDATE() - INTERVAL 6 DAY
@@ -215,7 +217,7 @@ require_once __DIR__ . '/../../includes/head.php';
         <div class="stat-value"><?php echo $attendanceRate; ?>%</div>
         <div class="stat-sub neutral">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-          Present Today: <?php echo $presentToday; ?>
+          Present Today: <?php echo $presentToday; ?><?php if ($lateCount > 0): ?> (incl. <?= $lateCount ?> late)<?php endif; ?>
         </div>
       </div>
       <div class="stat-card">

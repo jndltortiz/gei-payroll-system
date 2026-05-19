@@ -266,9 +266,45 @@ window.autoFillUsername = function(emailId, usernameId) {
     const email    = document.getElementById(emailId);
     const username = document.getElementById(usernameId);
     if (!email || !username) return;
-    const prefix = email.value.split('@')[0];
-    username.value = prefix;
+
+    let val = email.value;
+
+    // Auto-enforce @gei.edu.ph: if user typed something without @, append domain
+    // If they typed @ already, leave it; if no @, we'll append on blur
+    const prefix = val.split('@')[0];
+    username.value = prefix.toLowerCase().replace(/[^a-z0-9.]/g, '');
 };
+
+// On blur: enforce @gei.edu.ph if user didn't type a domain
+document.addEventListener('DOMContentLoaded', () => {
+    ['addEmail', 'editEmail'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('blur', function() {
+            if (this.value && !this.value.includes('@')) {
+                this.value = this.value.toLowerCase() + '@gei.edu.ph';
+                // re-trigger username fill
+                const usernameId = id === 'addEmail' ? 'addUsername' : 'editUsername';
+                autoFillUsername(id, usernameId);
+            } else if (this.value.includes('@') && !this.value.endsWith('@gei.edu.ph')) {
+                // Wrong domain — correct it
+                const prefix = this.value.split('@')[0];
+                this.value = prefix.toLowerCase() + '@gei.edu.ph';
+            }
+        });
+        // Show the domain hint while typing
+        el.addEventListener('focus', function() {
+            if (!this.value) {
+                this.placeholder = 'firstname.lastname';
+            }
+        });
+        el.addEventListener('input', function() {
+            if (!this.value.includes('@')) {
+                this.style.backgroundImage = '';
+            }
+        });
+    });
+});
 
 // ================================
 // PASSWORD TOGGLE

@@ -1,16 +1,19 @@
-// Today's date
-  const d = new Date();
-  document.getElementById('todayDate').textContent = d.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
+// Today's date — set directly (script is at bottom, DOM is already ready)
+const _dateEl = document.getElementById('todayDate');
+if (_dateEl) {
+    _dateEl.textContent = new Date().toLocaleDateString('en-PH',
+        { month: 'long', day: 'numeric', year: 'numeric' });
+}
 
-  // Sidebar collapse
-  const sidebar = document.getElementById('sidebar');
-  document.getElementById('collapseBtn').addEventListener('click', () => {
-    sidebar.classList.toggle('collapsed');
-  });
-
-  // Attendance Chart
-  document.addEventListener("DOMContentLoaded", function () {
-    const ctx = document.getElementById('attendanceChart').getContext('2d');
+// Attendance Chart — initialize directly, no DOMContentLoaded needed
+(function initChart() {
+    const canvas = document.getElementById('attendanceChart');
+    if (!canvas) return;   // guard: page might not have chart
+    if (typeof Chart === 'undefined') {
+        console.warn('Chart.js not loaded — chart will not render.');
+        return;
+    }
+    const ctx = canvas.getContext('2d');
 
   new Chart(ctx, {
     type: 'bar',
