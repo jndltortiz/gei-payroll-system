@@ -60,7 +60,8 @@ if ($scope === 'specific' && empty($empIds)) {
 
 // ── Build employee list ───────────────────────────────────────────────────────
 $baseSQL = "
-    SELECT e.employee_id, e.department_id, e.position_id, ec.monthly_salary, ec.daily_rate
+    SELECT e.employee_id, e.department_id, e.position_id, e.employment_type,
+           ec.monthly_salary, ec.daily_rate
     FROM employees e
     JOIN employee_compensations ec ON e.employee_id = ec.employee_id AND ec.is_active = 1
     WHERE e.employee_status = 'ACTIVE'
@@ -179,11 +180,45 @@ try {
             VALUES (?,?,?)
         ");
 
+        // Fetch this employee's ACTIVE loans upfront for use in loan deductions
+        $empLoanStmt = $pdo->prepare("
+            SELECT el.loan_id, el.monthly_deduction, el.balance_amount, lt.loan_name
+            FROM employee_loans el
+            JOIN loan_types lt ON el.loan_type_id = lt.loan_type_id
+            WHERE el.employee_id = :eid
+              AND el.status = 'ACTIVE'
+              AND el.start_date <= CURDATE()
+              AND (el.end_date IS NULL OR el.end_date >= CURDATE())
+              AND el.balance_amount > 0
+        ");
+        $empLoanStmt->execute([':eid' => $employeeId]);
+        $empActiveLoansList = $empLoanStmt->fetchAll();
+
+        // Build lookup: keyword → total monthly deduction + loan IDs to update balance
+        $loanAmounts = ['sss'=>0,'hdmf'=>0,'peraa'=>0,'rural'=>0];
+        $loanIds     = ['sss'=>[],'hdmf'=>[],'peraa'=>[],'rural'=>[]];
+        foreach ($empActiveLoansList as $el) {
+            $ln = strtolower($el['loan_name']);
+            $ma = (float)$el['monthly_deduction'];
+            $ma = min($ma, (float)$el['balance_amount']); // never deduct more than balance
+            if      (strpos($ln,'sss')   !== false) { $loanAmounts['sss']   += $ma; $loanIds['sss'][]   = [$el['loan_id'],$ma]; }
+            elseif  (strpos($ln,'rural') !== false) { $loanAmounts['rural'] += $ma; $loanIds['rural'][] = [$el['loan_id'],$ma]; }
+            elseif  (strpos($ln,'peraa') !== false) { $loanAmounts['peraa'] += $ma; $loanIds['peraa'][] = [$el['loan_id'],$ma]; }
+            elseif  (strpos($ln,'pag-ibig') !== false || strpos($ln,'hdmf') !== false) {
+                $loanAmounts['hdmf'] += $ma; $loanIds['hdmf'][] = [$el['loan_id'],$ma];
+            }
+        }
+
         foreach ($dtypes as $type) {
             $amt  = 0;
             $name = strtolower($type['deduction_name']);
 
             if ($type['is_government']) {
+                // PERAA — permanent (FULL_TIME) employees only
+                if (strpos($name, 'peraa') !== false && $type['is_government']) {
+                    if (($emp['employment_type'] ?? 'FULL_TIME') !== 'FULL_TIME') continue;
+                }
+
                 if (strpos($name, 'sss') !== false && strpos($name, 'loan') === false) {
                     $row = $pdo->prepare("
                         SELECT employee_share FROM sss_contribution_table
@@ -205,25 +240,65 @@ try {
                     $amt = $r ? (float)$r['employee_share'] : round($basic * 0.025, 2);
 
                 } elseif (strpos($name, 'pag-ibig') !== false || strpos($name, 'hdmf') !== false) {
-                    $row = $pdo->prepare("
-                        SELECT employee_share FROM pagibig_contribution_table
-                        WHERE min_salary <= ? AND max_salary >= ? AND is_active = 1
-                        ORDER BY effective_date DESC LIMIT 1
-                    ");
-                    $row->execute([$basic, $basic]);
-                    $r = $row->fetch();
-                    $amt = $r ? (float)$r['employee_share'] : 200;
+                    if (strpos($name, 'loan') !== false) {
+                        // Pag-IBIG/HDMF loan deduction — use from employee_loans
+                        $amt = $loanAmounts['hdmf'];
+                    } else {
+                        $row = $pdo->prepare("
+                            SELECT employee_share FROM pagibig_contribution_table
+                            WHERE min_salary <= ? AND max_salary >= ? AND is_active = 1
+                            ORDER BY effective_date DESC LIMIT 1
+                        ");
+                        $row->execute([$basic, $basic]);
+                        $r = $row->fetch();
+                        $amt = $r ? (float)$r['employee_share'] : 200;
+                    }
+                } elseif (strpos($name, 'peraa') !== false) {
+                    if (strpos($name, 'loan') !== false) {
+                        // PERAA loan — full_time only (already checked above)
+                        $amt = $loanAmounts['peraa'];
+                    }
+                    // PERAA premium handled below in non-government OR stays 0
                 }
-                // Loans (sss loan, hdmf loan, peraa loan) start at 0
+
+            } elseif ($type['is_loan']) {
+                // Non-government loan deductions — read from employee_loans
+                if      (strpos($name, 'sss')   !== false) $amt = $loanAmounts['sss'];
+                elseif  (strpos($name, 'hdmf')  !== false || strpos($name, 'pag-ibig') !== false) $amt = $loanAmounts['hdmf'];
+                elseif  (strpos($name, 'peraa') !== false) {
+                    // PERAA loan — permanent employees only
+                    if (($emp['employment_type'] ?? 'FULL_TIME') !== 'FULL_TIME') continue;
+                    $amt = $loanAmounts['peraa'];
+                }
+                elseif  (strpos($name, 'rural') !== false) $amt = $loanAmounts['rural'];
 
             } elseif ($type['deduction_value_type'] === 'PERCENTAGE') {
                 $amt = round($basic * ($type['deduction_rate'] / 100), 2);
             } elseif ($type['deduction_value_type'] === 'FIXED') {
+                // PERAA premium — full_time only
+                if (strpos($name, 'peraa') !== false) {
+                    if (($emp['employment_type'] ?? 'FULL_TIME') !== 'FULL_TIME') continue;
+                }
                 $amt = (float)$type['deduction_amount'];
             }
 
-            $insD->execute([$payrollId, $type['deduction_type_id'], $amt]);
-            $totalDeductions += $amt;
+            if ($amt >= 0) {
+                $insD->execute([$payrollId, $type['deduction_type_id'], $amt]);
+                $totalDeductions += $amt;
+            }
+        }
+
+        // Auto-reduce loan balances for the amounts deducted in this payroll
+        $updBalance = $pdo->prepare("
+            UPDATE employee_loans
+            SET balance_amount = GREATEST(0, balance_amount - ?),
+                status = IF(GREATEST(0, balance_amount - ?) <= 0, 'COMPLETED', status)
+            WHERE loan_id = ?
+        ");
+        foreach (['sss','hdmf','peraa','rural'] as $key) {
+            foreach ($loanIds[$key] as [$lid, $deducted]) {
+                if ($deducted > 0) $updBalance->execute([$deducted, $deducted, $lid]);
+            }
         }
 
         // Final totals

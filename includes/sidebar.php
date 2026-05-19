@@ -38,6 +38,10 @@ if (!function_exists('isActive')) {
       <i class="fa fa-money-bill"></i>
       <span>Payroll</span>
     </a>
+    <a class="nav-item" href="<?= BASE_URL ?>modules/loans/index.php">
+      <i class="fa fa-hand-holding-dollar"></i>
+      <span>Loans</span>
+    </a>
     <a class="nav-item" href="<?= BASE_URL ?>modules/service-credits/index.php">
       <i class="fa fa-medal"></i>
       <span>Service Credits</span>
@@ -54,7 +58,7 @@ if (!function_exists('isActive')) {
     </a>
 
     <div class="nav-section-label">Reports & Analytics</div>
-    <a class="nav-item" href="<?= BASE_URL ?>modules/analytics/index.php">
+    <a class="nav-item" href="<?= BASE_URL ?>modules/reports/index.php">
       <i class="fa fa-chart-line"></i>
       <span>Analytics</span>
     </a>

@@ -131,13 +131,13 @@ require_once __DIR__ . '/../../includes/head.php';
   <!-- Alerts -->
   <?php if ($successMsg): ?>
   <div class="alert alert-success">
-    <i class="ph ph-check-circle"></i> <?= htmlspecialchars($successMsg) ?>
+    <i class="fa fa-circle-check"></i> <?= htmlspecialchars($successMsg) ?>
     <button class="alert-close" onclick="this.parentElement.remove()">×</button>
   </div>
   <?php endif; ?>
   <?php if ($errorMsg): ?>
   <div class="alert alert-error">
-    <i class="ph ph-warning-circle"></i> <?= htmlspecialchars($errorMsg) ?>
+    <i class="fa fa-triangle-exclamation"></i> <?= htmlspecialchars($errorMsg) ?>
     <button class="alert-close" onclick="this.parentElement.remove()">×</button>
   </div>
   <?php endif; ?>
@@ -150,7 +150,7 @@ require_once __DIR__ . '/../../includes/head.php';
           <p class="stat-label">Total Credits Earned</p>
           <p class="stat-value"><?= number_format($totalCreditsEarned, 1) ?></p>
         </div>
-        <div class="stat-icon stat-icon--teal"><i class="ph ph-trend-up"></i></div>
+        <div class="stat-icon stat-icon--teal"><i class="fa fa-arrow-trend-up"></i></div>
       </div>
     </div>
     <div class="stat-card">
@@ -159,7 +159,7 @@ require_once __DIR__ . '/../../includes/head.php';
           <p class="stat-label">Credits Used</p>
           <p class="stat-value"><?= number_format($totalCreditsUsed, 1) ?></p>
         </div>
-        <div class="stat-icon stat-icon--blue"><i class="ph ph-calendar-check"></i></div>
+        <div class="stat-icon stat-icon--blue"><i class="fa fa-calendar-check"></i></div>
       </div>
     </div>
     <div class="stat-card">
@@ -168,7 +168,7 @@ require_once __DIR__ . '/../../includes/head.php';
           <p class="stat-label">Credits Available</p>
           <p class="stat-value"><?= number_format($totalCreditsAvail, 1) ?></p>
         </div>
-        <div class="stat-icon stat-icon--amber"><i class="ph ph-medal"></i></div>
+        <div class="stat-icon stat-icon--amber"><i class="fa fa-medal"></i></div>
       </div>
     </div>
   </div>
@@ -178,7 +178,7 @@ require_once __DIR__ . '/../../includes/head.php';
     <form method="GET" class="filter-bar-form" id="filterForm">
       <div class="filter-bar-left">
         <div class="search-wrap">
-          <i class="ph ph-magnifying-glass search-icon"></i>
+          <i class="fa fa-magnifying-glass search-icon"></i>
           <input
             type="text"
             name="search"
@@ -188,7 +188,7 @@ require_once __DIR__ . '/../../includes/head.php';
             value="<?= htmlspecialchars($search) ?>"
           >
         </div>
-        <i class="ph ph-funnel filter-icon"></i>
+        <i class="fa fa-filter filter-icon"></i>
         <select name="month" class="form-select month-select" onchange="this.form.submit()">
           <option value="all" <?= ($monthFilter === '' || $monthFilter === 'all') ? 'selected' : '' ?>>All Months</option>
           <?php for ($i = 0; $i < 12; $i++):
@@ -201,7 +201,7 @@ require_once __DIR__ . '/../../includes/head.php';
         </select>
       </div>
       <button type="button" class="btn btn-primary" id="btnAddCredit">
-        <i class="ph ph-plus"></i> Add Service Credit
+        <i class="fa fa-plus"></i> Add Service Credit
       </button>
     </form>
   </div>
@@ -215,11 +215,11 @@ require_once __DIR__ . '/../../includes/head.php';
 
       <?php if (empty($credits)): ?>
       <div class="empty-state">
-        <i class="ph ph-medal empty-icon"></i>
+        <i class="fa fa-medal empty-icon"></i>
         <p class="empty-title">No service credits found</p>
         <p class="empty-sub">Click "Add Service Credit" to get started</p>
         <button class="btn btn-primary" id="btnAddCreditEmpty">
-          <i class="ph ph-plus"></i> Add Your First Credit
+          <i class="fa fa-plus"></i> Add Your First Credit
         </button>
       </div>
       <?php else: ?>
@@ -266,11 +266,11 @@ require_once __DIR__ . '/../../includes/head.php';
               <td class="sc-actions">
                 <button class="icon-btn icon-btn--edit" title="Edit"
                   onclick="openEditModal(<?= htmlspecialchars(json_encode($cr)) ?>)">
-                  <i class="ph ph-pencil-simple"></i>
+                  <i class="fa fa-pen"></i>
                 </button>
                 <button class="icon-btn icon-btn--delete" title="Delete"
                   onclick="openDeleteModal(<?= (int)$cr['service_credit_id'] ?>, '<?= htmlspecialchars($cr['first_name'] . ' ' . $cr['last_name']) ?>', <?= $earned ?>)">
-                  <i class="ph ph-trash"></i>
+                  <i class="fa fa-trash"></i>
                 </button>
               </td>
             </tr>
@@ -286,14 +286,14 @@ require_once __DIR__ . '/../../includes/head.php';
         </span>
         <div class="pagination-controls">
           <?php if ($currentPage > 1): ?>
-          <a href="?page=<?= $currentPage - 1 ?>&search=<?= urlencode($search) ?>&month=<?= urlencode($monthFilter) ?>" class="page-btn"><i class="ph ph-caret-left"></i></a>
+          <a href="?page=<?= $currentPage - 1 ?>&search=<?= urlencode($search) ?>&month=<?= urlencode($monthFilter) ?>" class="page-btn"><i class="fa fa-chevron-left"></i></a>
           <?php endif; ?>
           <?php for ($p = max(1, $currentPage - 2); $p <= min($totalPages, $currentPage + 2); $p++): ?>
           <a href="?page=<?= $p ?>&search=<?= urlencode($search) ?>&month=<?= urlencode($monthFilter) ?>"
              class="page-btn <?= $p === $currentPage ? 'active' : '' ?>"><?= $p ?></a>
           <?php endfor; ?>
           <?php if ($currentPage < $totalPages): ?>
-          <a href="?page=<?= $currentPage + 1 ?>&search=<?= urlencode($search) ?>&month=<?= urlencode($monthFilter) ?>" class="page-btn"><i class="ph ph-caret-right"></i></a>
+          <a href="?page=<?= $currentPage + 1 ?>&search=<?= urlencode($search) ?>&month=<?= urlencode($monthFilter) ?>" class="page-btn"><i class="fa fa-chevron-right"></i></a>
           <?php endif; ?>
         </div>
       </div>
@@ -318,9 +318,9 @@ require_once __DIR__ . '/../../includes/head.php';
               <span class="summary-emp-name"><?= htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name']) ?></span>
               <span class="summary-emp-pos"><?= htmlspecialchars($emp['position_name']) ?></span>
               <div class="summary-meta">
-                <span class="meta-earned"><i class="ph ph-arrow-up"></i> <?= number_format($empEarned, 1) ?> earned</span>
+                <span class="meta-earned"><i class="fa fa-arrow-up"></i> <?= number_format($empEarned, 1) ?> earned</span>
                 <span class="meta-dot">·</span>
-                <span class="meta-used"><i class="ph ph-arrow-down"></i> <?= number_format($empUsed, 1) ?> used</span>
+                <span class="meta-used"><i class="fa fa-arrow-down"></i> <?= number_format($empUsed, 1) ?> used</span>
               </div>
             </div>
             <span class="summary-credits"><?= number_format($empAvailable, 1) ?> credits</span>
@@ -415,7 +415,7 @@ require_once __DIR__ . '/../../includes/head.php';
       <button class="modal-close" onclick="closeModal('deleteModal')">×</button>
     </div>
     <div class="modal-body modal-body--center">
-      <div class="delete-warning-icon"><i class="ph ph-warning"></i></div>
+      <div class="delete-warning-icon"><i class="fa fa-triangle-exclamation"></i></div>
       <p class="modal-desc" id="deleteDesc"></p>
     </div>
     <form method="POST" action="../../actions/service-credits-action.php">
