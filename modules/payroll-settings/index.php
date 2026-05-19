@@ -96,26 +96,21 @@ $pagibigRates= $pdo->query("SELECT * FROM pagibig_contribution_table WHERE is_ac
 $departments = $pdo->query("SELECT department_id, department_name FROM departments ORDER BY department_name")->fetchAll();
 $positions   = $pdo->query("SELECT position_id, position_name FROM positions ORDER BY position_name")->fetchAll();
 $employees   = $pdo->query("SELECT employee_id, CONCAT(first_name,' ',last_name) as full_name FROM employees WHERE employee_status='ACTIVE' ORDER BY last_name, first_name")->fetchAll();
+
+$pageTitle     = 'Payroll Settings';
+$extraCSS      = [BASE_URL . 'assets/css/payroll-settings.css'];
+$loadBootstrap = true;
+require_once __DIR__ . '/../../includes/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>Payroll Settings | GEI HR System</title>
-    <?php include '../../includes/head.php'; ?>
-    <link rel="stylesheet" href="<?= BASE_URL ?>assets/css/global.css">
-    <link rel="stylesheet" href="<?= BASE_URL ?>assets/css/payroll-settings.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-</head>
 <body>
 
 <div class="layout">
 
-    <?php include '../../includes/sidebar.php'; ?>
+    <?php include __DIR__ . '/../../includes/sidebar.php'; ?>
 
     <div class="main-wrapper">
 
-        <?php include '../../includes/navbar.php'; ?>
+        <?php include __DIR__ . '/../../includes/header.php'; ?>
 
         <div class="main-content">
         <div class="ps-content">
@@ -686,7 +681,5 @@ const PAGIBIG_RATES = <?= json_encode($pagibigRates) ?>;
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<?php include '../../includes/footer.php'; ?>
 <script src="<?= BASE_URL ?>assets/js/payroll-settings.js"></script>
-</body>
-</html>
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

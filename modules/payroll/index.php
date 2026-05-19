@@ -1,18 +1,9 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+$pageTitle = 'Payroll Management';
+$extraCSS  = [BASE_URL . 'assets/css/payroll.css'];
+require_once __DIR__ . '/../../includes/head.php';
 ?>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payroll</title>
-
-    <link rel="stylesheet" href="<?= BASE_URL ?>assets/css/global.css">
-    <link rel="stylesheet" href="<?= BASE_URL ?>assets/css/payroll.css">
-</head>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <body>
 
     <div class="layout">
@@ -243,7 +234,5 @@ require_once __DIR__ . '/../../includes/auth.php';
 <?php include __DIR__ . '/modals/generate-modal.php'; ?>
 
 <!-- JS -->
-<script src="/gei-payroll-system/assets/js/payroll.js?v=<?= time() ?>"></script>
-
-</body>
-</html>
+<script src="<?= BASE_URL ?>assets/js/payroll.js?v=<?= time() ?>"></script>
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

@@ -381,15 +381,6 @@ input:focus, select:focus, textarea:focus {
   border-radius: 10px;
 }   
 
-/* FORCE EMPLOYEE PAGE STYLING */
-.content {
-  background: var(--bg-main);
-}
-
-.card {
-  margin-top: 10px;
-}
-
 /* ICONS */
 .modal.small .modal-box {
   width: 420px;

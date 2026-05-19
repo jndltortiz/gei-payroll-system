@@ -2,27 +2,13 @@
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../config/database.php';
 
-// Protect page (redirect if not logged in)
-if (!isset($_SESSION['user'])) {
-    header('Location: ' . BASE_URL . 'modules/auth/login.php');
-    exit;
-}
+requireLogin();
 
-// Queries
-$totalEmployees = $pdo->query("SELECT COUNT(*) FROM employees")->fetchColumn();
-$totalUsers = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+// TODAY'S DATE — defined once at top so all queries below can use it
+$today = date('Y-m-d');
 
-$employees = $pdo->query("
-    SELECT 
-        e.first_name,
-        e.last_name,
-        d.department_name,
-        p.position_name
-    FROM employees e
-    LEFT JOIN departments d ON e.department_id = d.department_id
-    LEFT JOIN positions p ON e.position_id = p.position_id
-    LIMIT 5
-")->fetchAll();
+// ── Stat card queries ──
+$totalEmployees = $pdo->query("SELECT COUNT(*) FROM employees WHERE employee_status = 'ACTIVE'")->fetchColumn();
 
 $payrolls = $pdo->query("
     SELECT 
@@ -44,50 +30,62 @@ $pendingLeaves = $pdo->query("
     WHERE status = 'PENDING'
 ")->fetchColumn();
 
-// TODAY'S DATE
-$today = date('Y-m-d');
-
-// ✅ FIRST: get employees
-$presentEmployees = $pdo->query("
+// ── Today's attendance ──
+$presentEmployees = $pdo->prepare("
     SELECT e.first_name, e.last_name
     FROM attendance_records ar
     JOIN employees e ON ar.employee_id = e.employee_id
-    WHERE ar.attendance_date = '$today'
+    WHERE ar.attendance_date = :today
     AND ar.attendance_status = 'PRESENT'
-")->fetchAll();
+");
+$presentEmployees->execute([':today' => $today]);
+$presentEmployees = $presentEmployees->fetchAll();
 
-$absentEmployees = $pdo->query("
+$lateEmployees = $pdo->prepare("
+    SELECT e.first_name, e.last_name
+    FROM attendance_records ar
+    JOIN employees e ON ar.employee_id = e.employee_id
+    WHERE ar.attendance_date = :today
+    AND ar.attendance_status = 'LATE'
+");
+$lateEmployees->execute([':today' => $today]);
+$lateEmployees = $lateEmployees->fetchAll();
+
+$absentEmployees = $pdo->prepare("
     SELECT e.first_name, e.last_name
     FROM employees e
-    WHERE e.employee_id NOT IN (
+    WHERE e.employee_status = 'ACTIVE'
+    AND e.employee_id NOT IN (
         SELECT employee_id 
         FROM attendance_records 
-        WHERE attendance_date = '$today'
+        WHERE attendance_date = :today
     )
-")->fetchAll();
+");
+$absentEmployees->execute([':today' => $today]);
+$absentEmployees = $absentEmployees->fetchAll();
 
-// ✅ THEN: counts
-$totalEmployeesCount = $pdo->query("SELECT COUNT(*) FROM employees")->fetchColumn();
+// ── Derived counts (no extra queries needed) ──
+$totalEmployeesCount = $totalEmployees;
 $presentCount = count($presentEmployees);
-$absentCount = count($absentEmployees);
+$lateCount    = count($lateEmployees);
+$absentCount  = count($absentEmployees);
+$presentToday = $presentCount;
 
-// present today
-$presentToday = $pdo->query("
-    SELECT COUNT(*) 
-    FROM attendance_records 
-    WHERE attendance_date = '$today'
-    AND attendance_status = 'PRESENT'
-")->fetchColumn();
+// New employees this month
+$newThisMonth = $pdo->prepare("
+    SELECT COUNT(*) FROM employees 
+    WHERE MONTH(hire_date) = MONTH(CURDATE()) 
+    AND YEAR(hire_date) = YEAR(CURDATE())
+");
+$newThisMonth->execute();
+$newThisMonth = (int)$newThisMonth->fetchColumn();
 
-// attendance rate %
+// ── Attendance rate ──
 $attendanceRate = $totalEmployees > 0 
     ? round(($presentToday / $totalEmployees) * 100) 
     : 0;
 
-$totalPayroll = $pdo->query("
-    SELECT SUM(net_pay) 
-    FROM payroll_records
-")->fetchColumn();
+$totalPayroll = $pdo->query("SELECT SUM(net_pay) FROM payroll_records")->fetchColumn();
 
 $weeklyAttendance = $pdo->query("
     SELECT 
@@ -124,30 +122,7 @@ for ($i = 6; $i >= 0; $i--) {
     }
 }
 
-foreach ($weeklyAttendance as $row) {
-    $presentData[] = (int)$row['present_count'];
-    $absentData[] = (int)$row['absent_count'];
-}
-
-$today = date('Y-m-d');
-
-$presentEmployees = $pdo->query("
-    SELECT e.first_name, e.last_name
-    FROM attendance_records ar
-    JOIN employees e ON ar.employee_id = e.employee_id
-    WHERE ar.attendance_date = '$today'
-    AND ar.attendance_status = 'PRESENT'
-")->fetchAll();
-
-$absentEmployees = $pdo->query("
-    SELECT e.first_name, e.last_name
-    FROM employees e
-    WHERE e.employee_id NOT IN (
-        SELECT employee_id 
-        FROM attendance_records 
-        WHERE attendance_date = '$today'
-    )
-")->fetchAll();
+// NOTE: $today, $presentEmployees, $absentEmployees are already set above — used for activities below
 
 $activities = [];
 
@@ -183,20 +158,13 @@ foreach ($leaveLogs as $log) {
     ];
 }
 ?>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GEI HR System – Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<?php
+$pageTitle = 'Dashboard';
+$extraCSS  = [BASE_URL . 'assets/css/dashboard.css'];
+require_once __DIR__ . '/../../includes/head.php';
+?>
+<!-- Chart.js loaded here because it's only needed by the dashboard -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<link rel="stylesheet" href="<?php echo BASE_URL; ?>assets/css/dashboard.css">
-<link rel="stylesheet" href="<?= BASE_URL ?>assets/css/global.css">
-
-</head>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <body>
 
 <!-- ═══ SIDEBAR ═══ -->
@@ -232,9 +200,9 @@ foreach ($leaveLogs as $log) {
           </div>
         </div>
         <div class="stat-value"><?php echo $totalEmployees; ?></div>
-        <div class="stat-sub positive">
+        <div class="stat-sub <?= $newThisMonth > 0 ? 'positive' : 'neutral' ?>">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-          +2 this month
+          <?= $newThisMonth > 0 ? "+$newThisMonth this month" : "No new hires this month" ?>
         </div>
       </div>
       <div class="stat-card">
@@ -360,28 +328,36 @@ foreach ($leaveLogs as $log) {
         </div>
         <div class="presence-stats">
           <div class="pstat"><div class="pstat-dot" style="background:var(--green)"></div> <?php echo $presentCount; ?> Present</div>
-          <div class="pstat"><div class="pstat-dot" style="background:var(--yellow)"></div> 0 Late</div>
+          <div class="pstat"><div class="pstat-dot" style="background:var(--yellow)"></div> <?php echo $lateCount; ?> Late</div>
           <div class="pstat"><div class="pstat-dot" style="background:var(--red)"></div> <?php echo $absentCount; ?> Absent</div>
         </div>
         <div class="presence-tabs">
           <button class="presence-tab active" onclick="filterPresence('all', this)">All <strong><?php echo $totalEmployeesCount; ?></strong></button>
           <button class="presence-tab" onclick="filterPresence('present', this)">Present <strong><?php echo $presentCount; ?></strong></button>
-          <button class="presence-tab" onclick="filterPresence('late', this)">Late <strong>0</strong></button>
+          <button class="presence-tab" onclick="filterPresence('late', this)">Late <strong><?php echo $lateCount; ?></strong></button>
           <button class="presence-tab" onclick="filterPresence('absent', this)">Absent <strong><?php echo $absentCount; ?></strong></button>
         </div>
         <div class="presence-grid" id="presenceGrid">
           <?php foreach ($presentEmployees as $emp): ?>
-            <div class="presence-item">
+            <div class="presence-item" data-status="present">
                 <span class="presence-name present">
-                <?php echo $emp['first_name'] . ' ' . $emp['last_name']; ?>
+                <?php echo htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name']); ?>
+                </span>
+            </div>
+            <?php endforeach; ?>
+
+            <?php foreach ($lateEmployees as $emp): ?>
+            <div class="presence-item" data-status="late">
+                <span class="presence-name late">
+                <?php echo htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name']); ?>
                 </span>
             </div>
             <?php endforeach; ?>
 
             <?php foreach ($absentEmployees as $emp): ?>
-            <div class="presence-item">
+            <div class="presence-item" data-status="absent">
                 <span class="presence-name absent">
-                <?php echo $emp['first_name'] . ' ' . $emp['last_name']; ?>
+                <?php echo htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name']); ?>
                 </span>
             </div>
             <?php endforeach; ?>
@@ -396,6 +372,5 @@ foreach ($leaveLogs as $log) {
     </div>
   </div>
 </div>
-<script src="<?php echo BASE_URL; ?>assets/js/dashboard.js"></script>
-</body>
-</html>
+<script src="<?= BASE_URL ?>assets/js/dashboard.js"></script>
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

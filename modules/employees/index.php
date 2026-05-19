@@ -60,19 +60,15 @@ foreach ($params as $k => $v) {
 }
 $stmt->execute();
 $result = $stmt->fetchAll();
+
+$pageTitle = 'Employee Management';
+$extraCSS  = [BASE_URL . 'assets/css/employee.css'];
+require_once __DIR__ . '/../../includes/head.php';
 ?>
-
-<?php include __DIR__ . '/../../includes/head.php'; ?>
-
-<link rel="stylesheet" href="<?= BASE_URL ?>assets/css/dashboard.css">
-<link rel="stylesheet" href="<?= BASE_URL ?>assets/css/global.css">
-<link rel="stylesheet" href="../../assets/css/employee.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
 <body>
     <?php include __DIR__ . '/../../includes/sidebar.php'; ?>
     <div class="main">
-        <?php include __DIR__ . '/../../includes/navbar.php'; ?>    
+        <?php include __DIR__ . '/../../includes/header.php'; ?>
         <div class="content">
 
             <!-- HEADER -->
@@ -189,5 +185,5 @@ $result = $stmt->fetchAll();
     <script>
         window.allPositions = <?= json_encode($positions) ?>;
     </script>
-    <script src="../../assets/js/employee.js?v=<?= filemtime(__DIR__ . '/../../assets/js/employee.js') ?>"></script>
-</body>
+    <script src="<?= BASE_URL ?>assets/js/employee.js?v=<?= filemtime(__DIR__ . '/../../assets/js/employee.js') ?>"></script>
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

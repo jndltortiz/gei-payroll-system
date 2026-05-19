@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../config/database.php';
-include __DIR__ . '/../../includes/head.php';
 
 $dateToday = date('Y-m-d');
 $tab = isset($_GET['tab']) ? $_GET['tab'] : 'today';
@@ -10,7 +9,7 @@ $tab = isset($_GET['tab']) ? $_GET['tab'] : 'today';
 $present = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='PRESENT'")->fetchColumn();
 $late    = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='LATE'")->fetchColumn();
 $absent  = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='ABSENT'")->fetchColumn();
-$leave   = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='INC'")->fetchColumn();
+$leave   = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='LEAVE'")->fetchColumn();
 
 // TODAY tab filters
 $search       = isset($_GET['search']) ? trim($_GET['search']) : '';
@@ -92,7 +91,7 @@ $avgRate = ($ct['te'] > 0 && $workingDays > 0) ? round(($ct['tp'] / ($ct['te'] *
 
 $empStmt = $pdo->prepare("SELECT e.employee_id, e.first_name, e.last_name, d.department_name,
     SUM(ar.attendance_status='PRESENT') ep, SUM(ar.attendance_status='LATE') el,
-    SUM(ar.attendance_status='ABSENT') ea, SUM(ar.attendance_status='INC') ev
+    SUM(ar.attendance_status='ABSENT') ea, SUM(ar.attendance_status='LEAVE') ev
     FROM employees e
     LEFT JOIN attendance_records ar ON e.employee_id=ar.employee_id AND ar.attendance_date BETWEEN :cs3 AND :ce3
     LEFT JOIN departments d ON e.department_id=d.department_id
@@ -100,17 +99,15 @@ $empStmt = $pdo->prepare("SELECT e.employee_id, e.first_name, e.last_name, d.dep
     GROUP BY e.employee_id ORDER BY e.first_name ASC");
 $empStmt->execute([':cs3'=>$cutoffStart,':ce3'=>$cutoffEnd]);
 $empRows = $empStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$pageTitle = 'Attendance Records';
+$extraCSS  = [BASE_URL . 'assets/css/attendance.css'];
+require_once __DIR__ . '/../../includes/head.php';
 ?>
-
-<link rel="stylesheet" href="<?= BASE_URL ?>assets/css/global.css">
-<link rel="stylesheet" href="../../assets/css/dashboard.css">    
-<link rel="stylesheet" href="../../assets/css/attendance.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
 <body>
 <?php include __DIR__ . '/../../includes/sidebar.php'; ?>
 <div class="main">
-    <?php include __DIR__ . '/../../includes/navbar.php'; ?>
+    <?php include __DIR__ . '/../../includes/header.php'; ?>
     <div class="content att-page">
 
         <!-- HEADER -->
@@ -194,7 +191,7 @@ $empRows = $empStmt->fetchAll(PDO::FETCH_ASSOC);
                             <option value="PRESENT" <?= $filterStatus==='PRESENT'?'selected':'' ?>>Present</option>
                             <option value="LATE"    <?= $filterStatus==='LATE'   ?'selected':'' ?>>Late</option>
                             <option value="ABSENT"  <?= $filterStatus==='ABSENT' ?'selected':'' ?>>Absent</option>
-                            <option value="INC"     <?= $filterStatus==='INC'    ?'selected':'' ?>>On Leave</option>
+                            <option value="LEAVE"   <?= $filterStatus==='LEAVE'  ?'selected':'' ?>>On Leave</option>
                         </select>
                         <button type="submit" class="att-btn filter-btn">
                             <i class="fa fa-sliders"></i> Filters
@@ -353,5 +350,5 @@ $empRows = $empStmt->fetchAll(PDO::FETCH_ASSOC);
 
 <?php include __DIR__ . '/modals/add-attendance-modal.php'; ?>
 <?php include __DIR__ . '/modals/edit-attendance-modal.php'; ?>
-<script src="/gei-payroll-system/assets/js/attendance.js"></script>
-</body>
+<script src="<?= BASE_URL ?>assets/js/attendance.js"></script>
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

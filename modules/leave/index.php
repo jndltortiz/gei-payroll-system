@@ -107,16 +107,11 @@ $leaveRecords = $stmtLeave->fetchAll();
 $stmtTypes = $pdo->query("SELECT leave_type_id, leave_name FROM leave_types WHERE 1 ORDER BY leave_name");
 $leaveTypes = $stmtTypes->fetchAll();
 
+$pageTitle     = $pageTitle ?? 'Leave Management';
+$extraCSS      = [BASE_URL . 'assets/css/leave.css'];
+$loadBootstrap = true;
+require_once __DIR__ . '/../../includes/head.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <?php include __DIR__ . '/../../includes/head.php'; ?>
-    <title><?= $pageTitle ?> – GEI HR System</title>
-        <link rel="stylesheet" href="<?= BASE_URL ?>assets/css/global.css">
-    <link rel="stylesheet" href="<?= BASE_URL ?>assets/css/leave.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-</head>
 <body>
 <div class="layout">
 
@@ -124,7 +119,7 @@ $leaveTypes = $stmtTypes->fetchAll();
 
     <div class="main-wrapper">
 
-        <?php include __DIR__ . '/../../includes/navbar.php'; ?>
+        <?php include __DIR__ . '/../../includes/header.php'; ?>
 
         <main class="main-content">
 
@@ -283,13 +278,10 @@ $leaveTypes = $stmtTypes->fetchAll();
 <?php include __DIR__ . '/modals/confirm-action.php'; ?>
 <?php include __DIR__ . '/modals/deny-reason.php'; ?>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // Pass PHP data to JS
     const LEAVE_TYPES = <?= json_encode($leaveTypes) ?>;
     const BASE_URL    = '<?= BASE_URL ?>';
     const EMPLOYEE_ID = <?= $employeeId ?? 'null' ?>;
 </script>
 <script src="<?= BASE_URL ?>assets/js/leave.js"></script>
-</body>
-</html>
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

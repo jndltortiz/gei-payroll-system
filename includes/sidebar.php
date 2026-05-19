@@ -1,3 +1,12 @@
+<?php
+if (!function_exists('isActive')) {
+  function isActive($name)
+  {
+    // returns 'active' if global $activePage matches $name, otherwise empty string
+    return (isset($GLOBALS['activePage']) && $GLOBALS['activePage'] === $name) ? 'active' : '';
+  }
+}
+?>
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-logo">
     <div class="logo-box">GEI</div>
@@ -9,7 +18,7 @@
   
   <nav class="sidebar-nav">
     <div class="nav-section-label">Overview</div>
-    <a class="nav-item active" href="<?= BASE_URL ?>modules/dashboard/index.php">
+    <a class="nav-item" href="<?= BASE_URL ?>modules/dashboard/index.php">
       <i class="fa fa-home"></i>
       <span>Dashboard</span>
     </a>
@@ -28,6 +37,10 @@
     <a class="nav-item" href="<?= BASE_URL ?>modules/payroll/index.php">
       <i class="fa fa-money-bill"></i>
       <span>Payroll</span>
+    </a>
+    <a class="nav-item" href="<?= BASE_URL ?>modules/service-credits/index.php">
+      <i class="fa fa-medal"></i>
+      <span>Service Credits</span>
     </a>
     <a class="nav-item" href="<?= BASE_URL ?>modules/payroll-settings/index.php">
       <i class="fa fa-sliders-h"></i>
@@ -76,7 +89,7 @@
             </div>
         </div>
 
-        <a class="nav-item logout" href="http://localhost/gei-payroll-system/logout.php">
+        <a class="nav-item logout" href="<?= BASE_URL ?>actions/logout.php">
             <i class="fa fa-sign-out-alt"></i>
             <span>Logout</span>
         </a>
