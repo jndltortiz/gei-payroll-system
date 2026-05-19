@@ -2,25 +2,7 @@
    payroll-settings.css  —  GEI HR System
    ============================================================ */
 
-/* ── Reset scroll issues ── */
-html, body {
-    height: 100%;
-    overflow-x: hidden;
-}
-
-/* ── Layout ── */
-.main-wrapper {
-    margin-left: 240px;          /* expanded sidebar */
-    min-height: 100vh;
-    background: #f1f5f9;
-    overflow-y: auto;
-    overflow-x: hidden;
-    transition: margin-left .3s;
-}
-
-/* Collapsed sidebar variant — add class "sidebar-collapsed" to body */
-body.sidebar-collapsed .main-wrapper,
-.sidebar-collapsed + .main-wrapper { margin-left: 72px; }
+/* ── Layout: handled by global.css flexbox — no overrides needed here ── */
 
 .ps-content {
     max-width: 1260px;
@@ -527,13 +509,11 @@ body.sidebar-collapsed .ps-save-bar { left: 72px; }
 
 /* ── Responsive ── */
 @media (max-width: 1024px) {
-    .main-wrapper { margin-left: 72px; }
-    .ps-save-bar  { left: 72px; }
+        .ps-save-bar  { left: 72px; }
 }
 
 @media (max-width: 768px) {
-    .main-wrapper { margin-left: 0; }
-    .ps-save-bar  { left: 0; padding: 10px 16px; }
+        .ps-save-bar  { left: 0; padding: 10px 16px; }
     .ps-content   { padding: 16px 12px 0; }
     .ps-page-title { font-size: 20px; }
 
@@ -550,3 +530,21 @@ body.sidebar-collapsed .ps-save-bar { left: 72px; }
     .ps-gov-toggle-row { flex-direction: column; align-items: flex-start; }
     .row.align-items-start .col-lg-6 { margin-bottom: 0; }
 }
+/* ── Pay Period Manager ──────────────────────────────────────────────────── */
+.pp-toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 14px;
+}
+.pp-summary { display: flex; gap: 16px; font-size: 13px; color: #6b7280; }
+.pp-summary-item strong { color: #0f172a; }
+.pp-summary-item--open strong { color: #059669; }
+
+.pp-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #94a3b8; }
+.pp-table td { font-size: 13px; }
+
+.pp-empty {
+    text-align: center; padding: 40px 20px; color: #94a3b8;
+}
+.pp-empty p    { margin: 12px 0 4px; font-size: 14px; }
+.pp-empty p strong { color: #0f172a; }
+.pp-empty small { font-size: 12px; }

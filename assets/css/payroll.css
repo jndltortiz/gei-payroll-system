@@ -338,3 +338,289 @@
     gap: 10px;
     margin-top: 20px;
 }
+/* ── Filter bar ──────────────────────────────────────────────────────────── */
+.pay-period-row {
+    display: flex; align-items: center; gap: 12px; margin: 14px 0 10px;
+}
+.period-status-badge {
+    padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+}
+.period-status--open       { background: #d1fae5; color: #065f46; }
+.period-status--processing { background: #fef3c7; color: #92400e; }
+.period-status--approved   { background: #dbeafe; color: #1e40af; }
+.period-status--released   { background: #f3f4f6; color: #374151; }
+
+.filter-bar {
+    display: flex; align-items: center; gap: 10px;
+    background: #f9fafb; border: 1px solid #e5e7eb;
+    padding: 10px 14px; border-radius: 10px; margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.filter-search {
+    position: relative; flex: 1; min-width: 180px;
+}
+.filter-search input {
+    width: 100%; padding: 8px 10px 8px 32px;
+    border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;
+}
+.filter-search-icon {
+    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    color: #9ca3af; font-size: 13px;
+}
+.filter-bar select {
+    padding: 8px 10px; border: 1px solid #d1d5db;
+    border-radius: 8px; font-size: 13px; background: #fff;
+}
+.btn-filter { padding: 8px 14px; font-size: 13px; white-space: nowrap; }
+
+/* ── Badge variants ──────────────────────────────────────────────────────── */
+.badge--draft    { background: #fef3c7; color: #b45309; }
+.badge--approved { background: #d1fae5; color: #065f46; }
+.badge--released { background: #dbeafe; color: #1e40af; }
+
+/* ── Table row actions ───────────────────────────────────────────────────── */
+.row-actions { white-space: nowrap; }
+.btn-icon {
+    background: transparent; border: none; cursor: pointer;
+    color: #0f766e; padding: 4px 6px; border-radius: 6px; font-size: 14px;
+    transition: background 0.15s;
+}
+.btn-icon:hover { background: #f0fdf4; }
+.btn-icon--edit:hover { background: #fffbeb; color: #b45309; }
+
+/* ── Totals bar ──────────────────────────────────────────────────────────── */
+.totals-bar {
+    display: flex; align-items: center; gap: 24px;
+    margin-top: 20px; padding-top: 16px;
+    border-top: 1px solid #e5e7eb; flex-wrap: wrap;
+}
+.total-item span { display: block; font-size: 11px; color: #94a3b8; text-transform: uppercase; }
+.total-item strong { font-size: 18px; }
+.total-item--net strong { color: #059669; font-size: 20px; }
+.submit-btn { margin-left: auto; }
+
+/* ── Edit modal body ─────────────────────────────────────────────────────── */
+.edit-modal-body { padding: 4px 2px; }
+.edit-loading, .edit-error {
+    text-align: center; padding: 40px; color: #9ca3af; font-size: 14px;
+}
+.edit-error { color: #ef4444; }
+
+.edit-employee-card {
+    display: flex; align-items: center; gap: 12px;
+    background: #f8fafc; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px;
+}
+.edit-employee-avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: #0f766e; color: #fff; display: flex; align-items: center;
+    justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0;
+}
+.edit-employee-card strong { display: block; font-size: 14px; }
+.edit-employee-card span   { font-size: 12px; color: #6b7280; }
+
+.edit-period-notice {
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+    padding: 9px 12px; font-size: 12px; color: #1e40af; margin-bottom: 14px;
+}
+.edit-period-notice i { margin-right: 6px; }
+
+.edit-field { margin-bottom: 14px; }
+.edit-field label { display: block; font-size: 12px; color: #6b7280; margin-bottom: 4px; font-weight: 600; }
+
+.peso-input {
+    display: flex; align-items: center;
+    border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden;
+}
+.peso-input span {
+    padding: 0 10px; background: #f3f4f6; color: #6b7280;
+    font-size: 14px; border-right: 1px solid #d1d5db; white-space: nowrap;
+}
+.peso-input input {
+    flex: 1; border: none; padding: 9px 10px; font-size: 14px; outline: none;
+}
+.peso-input--sm { width: 130px; }
+.peso-input--sm input { font-size: 13px; }
+
+.edit-section { margin-bottom: 16px; }
+.edit-section-title {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px; flex-wrap: wrap; gap: 8px;
+}
+.edit-section-title > span {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    color: #6b7280; letter-spacing: 0.5px;
+}
+
+.edit-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid #f1f5f9;
+}
+.edit-row:last-child { border-bottom: none; }
+.edit-row-label { flex: 1; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.edit-empty { font-size: 13px; color: #9ca3af; padding: 8px 0; margin: 0; }
+
+.row-tag {
+    padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600;
+}
+.row-tag--taxable { background: #fef3c7; color: #b45309; }
+.row-tag--gov     { background: #dbeafe; color: #1e40af; }
+.row-tag--loan    { background: #fce7f3; color: #9d174d; }
+
+.btn-remove-row {
+    background: transparent; border: none; color: #9ca3af;
+    cursor: pointer; padding: 4px; border-radius: 4px; font-size: 12px; flex-shrink: 0;
+}
+.btn-remove-row:hover:not(:disabled) { color: #ef4444; background: #fef2f2; }
+.btn-remove-row--disabled, .btn-remove-row:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.add-row-group { display: flex; gap: 6px; align-items: center; }
+.add-row-group select {
+    font-size: 12px; padding: 5px 8px; border: 1px solid #d1d5db;
+    border-radius: 6px; background: #fff; max-width: 220px;
+}
+.btn-add-row {
+    background: #0f766e; color: #fff; border: none; cursor: pointer;
+    padding: 5px 9px; border-radius: 6px; font-size: 12px;
+}
+.btn-add-row:hover { background: #0d6660; }
+
+.edit-computed {
+    display: flex; justify-content: space-between;
+    background: #f8fafc; border-radius: 10px; padding: 14px 16px;
+    margin-top: 16px; gap: 8px;
+}
+.computed-item small { display: block; font-size: 11px; color: #94a3b8; }
+.computed-item strong { font-size: 15px; }
+.computed-item--net strong { font-size: 17px; color: #059669; }
+.period-tag {
+    font-size: 11px; font-weight: 400; color: #6b7280;
+    background: #f3f4f6; padding: 2px 8px; border-radius: 999px; margin-left: 8px;
+}
+
+/* ── Generate modal ──────────────────────────────────────────────────────── */
+.gen-field { margin-bottom: 14px; }
+.gen-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.gen-field select { width: 100%; padding: 9px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; }
+.gen-field--checkbox label { font-weight: 400; }
+
+.mode-options { display: flex; gap: 10px; }
+.mode-option {
+    flex: 1; cursor: pointer;
+}
+.mode-option input { display: none; }
+.mode-option span {
+    display: block; border: 1.5px solid #e5e7eb; border-radius: 10px;
+    padding: 12px 14px; text-align: center; font-size: 13px;
+    transition: border-color 0.15s, background 0.15s;
+}
+.mode-option span strong { display: block; margin: 4px 0 2px; }
+.mode-option span small { color: #9ca3af; font-size: 11px; }
+.mode-option span i { font-size: 18px; color: #6b7280; }
+.mode-option input:checked + span {
+    border-color: #0f766e; background: #f0fdf4;
+}
+.mode-option input:checked + span i { color: #0f766e; }
+
+/* ── Period-locked state ──────────────────────────────────────────────────── */
+.payroll-locked-notice {
+    background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px;
+    padding: 10px 14px; font-size: 13px; color: #92400e; margin-bottom: 14px;
+}
+
+/* ── Generate modal — scope cards ───────────────────────────────────────── */
+.gen-modal-box { width: 560px; }
+
+.scope-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px;
+}
+.scope-card { cursor: pointer; }
+.scope-card input { display: none; }
+.scope-card-inner {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    border: 1.5px solid #e5e7eb; border-radius: 10px; padding: 12px 10px;
+    text-align: center; font-size: 12px; transition: border-color 0.15s, background 0.15s;
+}
+.scope-card-inner i { font-size: 20px; color: #6b7280; margin-bottom: 2px; }
+.scope-card-inner strong { font-size: 13px; color: var(--text-primary, #111); }
+.scope-card-inner small  { color: #9ca3af; font-size: 11px; }
+.scope-card input:checked + .scope-card-inner {
+    border-color: #0f766e; background: #f0fdf4;
+}
+.scope-card input:checked + .scope-card-inner i { color: #0f766e; }
+
+.gen-sub-field {
+    background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 12px;
+}
+.gen-sub-field label { font-size: 12px; font-weight: 600; margin-bottom: 6px; display: block; }
+.gen-sub-field select { width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; }
+
+/* ── Employee checklist ──────────────────────────────────────────────────── */
+.emp-checklist-toolbar {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.emp-checklist-toolbar input[type="text"] {
+    flex: 1; padding: 7px 10px; border: 1px solid #d1d5db;
+    border-radius: 8px; font-size: 13px;
+}
+.select-all-label {
+    display: flex; align-items: center; gap: 6px; font-size: 12px;
+    white-space: nowrap; cursor: pointer; color: #6b7280;
+}
+.emp-checklist {
+    max-height: 220px; overflow-y: auto; border: 1px solid #e5e7eb;
+    border-radius: 8px; background: #fff;
+    scrollbar-width: thin; scrollbar-color: #e5e7eb transparent;
+}
+.emp-check-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #f3f4f6;
+    transition: background 0.1s;
+}
+.emp-check-item:last-child { border-bottom: none; }
+.emp-check-item:hover { background: #f9fafb; }
+.emp-check-item input[type="checkbox"] { flex-shrink: 0; width: 15px; height: 15px; accent-color: #0f766e; }
+.emp-check-info strong { display: block; font-size: 13px; }
+.emp-check-info small  { font-size: 11px; color: #9ca3af; }
+.emp-checklist-count   { font-size: 12px; color: #6b7280; margin-top: 6px; text-align: right; }
+
+.gen-notice { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+.gen-notice--warn { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }
+.gen-field--checkbox label {
+    display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-weight: 400;
+}
+.gen-field--checkbox label input { flex-shrink: 0; margin-top: 2px; accent-color: #0f766e; }
+.gen-field--checkbox label small { display: block; color: #9ca3af; font-size: 11px; margin-top: 2px; }
+
+/* ── Client payroll format table ─────────────────────────────────────────── */
+.payroll-table th {
+    font-size: 10px; padding: 8px 6px; vertical-align: middle; line-height: 1.3;
+}
+.payroll-table td {
+    padding: 12px 8px; font-size: 12px;
+}
+.payroll-table .ded-col { background: #fffbeb; font-size: 12px; }
+.payroll-table .add-col { background: #f0fdf4; font-size: 12px; }
+.payroll-table th[colspan] { text-align: center; }
+
+/* Print styles — matches the physical payroll sheet */
+@media print {
+    .sidebar, .header, .filter-bar, .pay-period-row,
+    .row-actions, .submit-btn, #payrollFlash,
+    #generateModal, #editModal, #payslipModal,
+    .actions button { display: none !important; }
+
+    .main-content { padding: 0 !important; }
+    .payroll-container { box-shadow: none; margin: 0; padding: 0; }
+
+    .payroll-table { font-size: 9px; }
+    .payroll-table th, .payroll-table td { padding: 4px 5px; }
+
+    /* Print header matching the client document */
+    .payroll-container::before {
+        content: "GREAT EASTERN INSTITUTE\ALA PAZ, TARLAC";
+        display: block; text-align: center;
+        font-size: 12px; font-weight: bold; margin-bottom: 16px;
+        white-space: pre;
+    }
+}

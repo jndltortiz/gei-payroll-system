@@ -52,14 +52,18 @@ try {
     $totalRecords = 0;
 }
 
-require_once __DIR__ . '/../../includes/header.php';
+$pageTitle     = 'Departments';
+$extraCSS      = [];
+$loadBootstrap = true;
+require_once __DIR__ . '/../../includes/head.php';
 ?>
+<body>
 
 <div class="app-wrapper">
-    <?php require_once __DIR__ . '/../../includes/sidebar.php'; ?>
+    <?php include __DIR__ . '/../../includes/sidebar.php'; ?>
 
     <div class="main-content">
-        <?php require_once __DIR__ . '/../../includes/navbar.php'; ?>
+        <?php include __DIR__ . '/../../includes/header.php'; ?>
 
         <div class="content-area">
 
@@ -229,3 +233,4 @@ function confirmDelete(id, name) {
     new bootstrap.Modal(document.getElementById('deleteModal')).show();
 }
 </script>
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

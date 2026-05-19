@@ -585,3 +585,96 @@ function showToast(msg, type = 'success') {
         setTimeout(() => toast.remove(), 200);
     }, 3000);
 }
+
+// ─── Pay Period Manager ───────────────────────────────────────────────────────
+
+let modalPayPeriods = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Init Bootstrap modal for pay periods
+    const ppEl = document.getElementById('modalPayPeriods');
+    if (ppEl) {
+        modalPayPeriods = new bootstrap.Modal(ppEl);
+        ppEl.addEventListener('hidden.bs.modal', () => {
+            document.getElementById('ppModalFlash').style.display = 'none';
+            const btn = document.getElementById('ppCreateBtn');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-plus-lg"></i> Create'; }
+        });
+    }
+
+    // Scope radio toggle (month vs year)
+    document.querySelectorAll('input[name="ppCreateFor"]').forEach(radio => {
+        radio.addEventListener('change', function () {
+            const isMonth = this.value === 'month';
+            document.getElementById('ppMonthRow').style.display    = isMonth ? 'flex' : 'none';
+            document.getElementById('ppYearOnlyRow').style.display = isMonth ? 'none' : 'block';
+        });
+    });
+});
+
+function openCreatePeriodsModal() {
+    if (modalPayPeriods) modalPayPeriods.show();
+}
+
+async function submitCreatePeriods() {
+    const createFor = document.querySelector('input[name="ppCreateFor"]:checked')?.value || 'month';
+    const month     = document.getElementById('ppMonth')?.value;
+    const year      = createFor === 'year'
+        ? document.getElementById('ppYearOnly')?.value
+        : document.getElementById('ppYear')?.value;
+
+    const btn   = document.getElementById('ppCreateBtn');
+    const flash = document.getElementById('ppModalFlash');
+
+    btn.disabled  = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating…';
+    flash.style.display = 'none';
+
+    const fd = new FormData();
+    fd.append('create_for', createFor);
+    fd.append('month', month || '');
+    fd.append('year',  year  || '');
+
+    try {
+        const res  = await fetch(`${BASE_URL}actions/create-payroll-periods.php`, { method: 'POST', body: fd });
+        const data = await res.json();
+
+        flash.style.cssText = `display:block; padding:10px 14px; border-radius:8px;
+            font-size:13px; margin-bottom:0; margin-top:4px;
+            ${data.success
+              ? 'background:#d1fae5; color:#065f46; border:1px solid #6ee7b7;'
+              : 'background:#fee2e2; color:#991b1b; border:1px solid #fca5a5;'}`;
+        flash.textContent = data.message;
+
+        if (data.success && data.created > 0) {
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            btn.disabled  = false;
+            btn.innerHTML = '<i class="bi bi-plus-lg"></i> Create';
+        }
+    } catch {
+        flash.style.cssText = 'display:block; padding:10px 14px; border-radius:8px; font-size:13px; background:#fee2e2; color:#991b1b;';
+        flash.textContent   = 'Network error. Please try again.';
+        btn.disabled  = false;
+        btn.innerHTML = '<i class="bi bi-plus-lg"></i> Create';
+    }
+}
+
+async function deletePeriod(id, name) {
+    if (!confirm(`Delete period "${name}"?\n\nThis cannot be undone and will only work if no payroll records exist for this period.`)) return;
+
+    try {
+        const fd = new FormData();
+        fd.append('action', 'delete');
+        fd.append('period_id', id);
+        const res  = await fetch(`${BASE_URL}actions/create-payroll-periods.php`, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.message);
+        }
+    } catch {
+        alert('Network error. Please try again.');
+    }
+}

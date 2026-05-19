@@ -145,7 +145,7 @@ require_once __DIR__ . '/../../includes/head.php';
                     <i class="bi bi-chevron-up ps-collapse-icon" id="icon-card-gov-body"></i>
                 </div>
 
-                <div class="ps-card-body" id="card-gov-body">
+                <div class="ps-card-body d-none" id="card-gov-body">
                     <div class="ps-gov-toggle-row">
                         <div>
                             <div class="ps-setting-label">Use Official Government Tables</div>
@@ -363,7 +363,7 @@ require_once __DIR__ . '/../../includes/head.php';
                         <i class="bi bi-chevron-up ps-collapse-icon" id="icon-card-deductions-body"></i>
                     </div>
                 </div>
-                <div class="ps-card-body" id="card-deductions-body">
+                <div class="ps-card-body d-none" id="card-deductions-body">
                     <table class="ps-data-table">
                         <thead>
                             <tr><th>DEDUCTION NAME</th><th>AMOUNT / RATE</th><th>TYPE</th><th>APPLIES TO</th><th>STATUS</th><th>ACTIONS</th></tr>
@@ -432,7 +432,7 @@ require_once __DIR__ . '/../../includes/head.php';
                         <i class="bi bi-chevron-up ps-collapse-icon" id="icon-card-allowances-body"></i>
                     </div>
                 </div>
-                <div class="ps-card-body" id="card-allowances-body">
+                <div class="ps-card-body d-none" id="card-allowances-body">
                     <table class="ps-data-table">
                         <thead>
                             <tr><th>ALLOWANCE NAME</th><th>DEFAULT AMOUNT</th><th>APPLIES TO</th><th>STATUS</th><th>ACTIONS</th></tr>
@@ -476,7 +476,7 @@ require_once __DIR__ . '/../../includes/head.php';
             </div>
 
             <!-- ========== PAYROLL RULES + CUTOFF (2-col) ========== -->
-            <div class="row g-3 align-items-start mb-0">
+            <div class="row g-3 align-items-start mb-3">
                 <div class="col-lg-6">
                     <div class="ps-card" id="card-rules">
                         <div class="ps-card-header" data-toggle="card-rules-body">
@@ -489,7 +489,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             </div>
                             <i class="bi bi-chevron-up ps-collapse-icon" id="icon-card-rules-body"></i>
                         </div>
-                        <div class="ps-card-body" id="card-rules-body">
+                        <div class="ps-card-body d-none" id="card-rules-body">
                             <div class="ps-form-group">
                                 <label class="ps-form-label">Payroll Frequency</label>
                                 <select class="ps-form-select" name="payroll_frequency" id="payrollFrequency">
@@ -525,7 +525,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             </div>
                             <i class="bi bi-chevron-up ps-collapse-icon" id="icon-card-cutoff-body"></i>
                         </div>
-                        <div class="ps-card-body" id="card-cutoff-body">
+                        <div class="ps-card-body d-none" id="card-cutoff-body">
                             <div class="ps-cutoff-block">
                                 <div class="ps-cutoff-label"><span class="ps-cutoff-num">1</span> 1st Cutoff Period</div>
                                 <div class="row g-2 mt-1">
@@ -587,7 +587,7 @@ require_once __DIR__ . '/../../includes/head.php';
                     </div>
                     <i class="bi bi-chevron-up ps-collapse-icon" id="icon-card-auto-body"></i>
                 </div>
-                <div class="ps-card-body" id="card-auto-body">
+                <div class="ps-card-body d-none" id="card-auto-body">
                     <div class="ps-toggle-row">
                         <div>
                             <div class="ps-setting-label">Auto-apply Allowances</div>
@@ -621,6 +621,107 @@ require_once __DIR__ . '/../../includes/head.php';
                 </div>
             </div>
 
+
+            <!-- ========== PAY PERIOD MANAGER ========== -->
+            <div class="ps-card" id="card-periods">
+                <div class="ps-card-header" data-toggle="card-periods-body">
+                    <div class="ps-card-title-wrap">
+                        <span class="ps-card-accent teal"></span>
+                        <div>
+                            <h2 class="ps-card-title">Pay Period Management</h2>
+                            <p class="ps-card-sub">Create and manage payroll periods based on your cutoff configuration.</p>
+                        </div>
+                    </div>
+                    <i class="bi bi-chevron-up ps-collapse-icon" id="icon-card-periods-body"></i>
+                </div>
+                <div class="ps-card-body d-none" id="card-periods-body">
+
+                    <?php
+                    $existingPeriods = $pdo->query("
+                        SELECT * FROM payroll_periods
+                        ORDER BY pay_period_start DESC
+                        LIMIT 24
+                    ")->fetchAll();
+                    $statusColors = [
+                        'OPEN'       => ['bg'=>'#d1fae5','color'=>'#065f46'],
+                        'PROCESSING' => ['bg'=>'#fef3c7','color'=>'#92400e'],
+                        'APPROVED'   => ['bg'=>'#dbeafe','color'=>'#1e40af'],
+                        'RELEASED'   => ['bg'=>'#f3f4f6','color'=>'#374151'],
+                    ];
+                    ?>
+
+                    <div class="pp-toolbar">
+                        <div class="pp-summary">
+                            <?php
+                            $openCount = count(array_filter($existingPeriods, fn($p) => $p['status']==='OPEN'));
+                            ?>
+                            <span class="pp-summary-item">
+                                <strong><?= count($existingPeriods) ?></strong> total periods
+                            </span>
+                            <span class="pp-summary-item pp-summary-item--open">
+                                <strong><?= $openCount ?></strong> open
+                            </span>
+                        </div>
+                        <button type="button" class="ps-btn-primary" onclick="openCreatePeriodsModal()">
+                            <i class="bi bi-plus-lg"></i> Create Pay Periods
+                        </button>
+                    </div>
+
+                    <?php if (empty($existingPeriods)): ?>
+                    <div class="pp-empty">
+                        <i class="bi bi-calendar-x" style="font-size:32px;color:#cbd5e1;"></i>
+                        <p>No pay periods yet. Click <strong>Create Pay Periods</strong> to get started.</p>
+                        <small>Periods are created based on your Payroll Cutoff Configuration above.</small>
+                    </div>
+                    <?php else: ?>
+                    <table class="ps-data-table pp-table">
+                        <thead>
+                            <tr>
+                                <th>Period Name</th>
+                                <th>Start Date</th>
+                                <th>End Date</th>
+                                <th>Pay Date</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($existingPeriods as $p):
+                            $sc = $statusColors[$p['status']] ?? ['bg'=>'#f3f4f6','color'=>'#374151'];
+                        ?>
+                        <tr>
+                            <td><strong><?= htmlspecialchars($p['period_name']) ?></strong></td>
+                            <td><?= date('M d, Y', strtotime($p['pay_period_start'])) ?></td>
+                            <td><?= date('M d, Y', strtotime($p['pay_period_end'])) ?></td>
+                            <td><?= date('M d, Y', strtotime($p['pay_date'])) ?></td>
+                            <td>
+                                <span style="background:<?= $sc['bg'] ?>;color:<?= $sc['color'] ?>;
+                                      padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;">
+                                    <?= ucfirst(strtolower($p['status'])) ?>
+                                </span>
+                            </td>
+                            <td>
+                                <?php if ($p['status'] === 'OPEN'): ?>
+                                <button type="button" class="ps-action-btn ps-action-btn--danger"
+                                        onclick="deletePeriod(<?= $p['period_id'] ?>, '<?= htmlspecialchars($p['period_name']) ?>')"
+                                        title="Delete period">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                                <?php else: ?>
+                                <span style="font-size:12px;color:#94a3b8;">Locked</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <?php endif; ?>
+
+                    <div id="ppFlash" style="display:none;margin-top:12px;"></div>
+
+                </div>
+            </div>
+
             <!-- Spacer for floating save bar -->
             <div style="height:100px;"></div>
 
@@ -643,6 +744,7 @@ require_once __DIR__ . '/../../includes/head.php';
 </div><!-- .layout -->
 
 <!-- ========== MODALS ========== -->
+<?php include __DIR__ . '/modals/modal-pay-periods.php'; ?>
 <?php include 'modals/modal-add-deduction.php'; ?>
 <?php include 'modals/modal-edit-deduction.php'; ?>
 <?php include 'modals/modal-add-allowance.php'; ?>
@@ -682,4 +784,6 @@ const PAGIBIG_RATES = <?= json_encode($pagibigRates) ?>;
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="<?= BASE_URL ?>assets/js/payroll-settings.js"></script>
+
+
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
