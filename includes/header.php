@@ -1,8 +1,7 @@
 <?php
 /**
  * includes/header.php
- * Unified top navigation bar — replaces both the old header.php and navbar.php.
- * Requires an active session ($_SESSION['user']) to be set.
+ * Top navigation bar for GEI HR System.
  */
 $_firstName = htmlspecialchars($_SESSION['user']['first_name'] ?? '');
 $_lastName  = htmlspecialchars($_SESSION['user']['last_name']  ?? '');
@@ -31,13 +30,13 @@ $_initials  = strtoupper(
 
   <!-- Right: notifications + user -->
   <div class="header-right">
-    <div class="notif-btn">
+    <button class="notif-btn" aria-label="Notifications">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
         <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
       </svg>
-      <div class="notif-dot"></div>
-    </div>
+      <span class="notif-dot"></span>
+    </button>
     <div class="header-user">
       <div class="header-user-text">
         <strong><?= $_firstName . ' ' . $_lastName ?></strong>

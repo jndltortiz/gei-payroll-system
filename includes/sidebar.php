@@ -1,13 +1,17 @@
 <?php
 /**
  * includes/sidebar.php
- * Unified sidebar navigation.
+ * Unified sidebar navigation — matches GEI HR System design.
  * Active state auto-detected from REQUEST_URI.
  */
 function sidebarActive(string $path): string {
     $uri = $_SERVER['REQUEST_URI'] ?? '';
     return str_contains($uri, $path) ? 'active' : '';
 }
+
+$_sidebarFirst = htmlspecialchars($_SESSION['user']['first_name'] ?? 'Admin');
+$_sidebarRole  = htmlspecialchars($_SESSION['user']['role_name']  ?? '');
+$_sidebarInit  = strtoupper(substr($_SESSION['user']['first_name'] ?? 'A', 0, 1));
 ?>
 <nav class="sidebar" id="sidebar">
 
@@ -22,17 +26,23 @@ function sidebarActive(string $path): string {
     </div>
   </div>
 
-  <!-- Toggle button -->
+  <!-- Toggle button (chevron on right edge) -->
   <button class="sidebar-toggle-btn" id="sidebarToggle" title="Collapse sidebar">
-    <i class="fa fa-bars"></i>
+    <i class="fa fa-chevron-left" id="sidebarChevron"></i>
   </button>
+
+  <!-- User role card (visible when expanded) -->
+  <div class="sidebar-role-card" id="sidebarRoleCard">
+    <div class="sidebar-role-label"><?= strtoupper($_sidebarRole) ?></div>
+    <div class="sidebar-role-name"><?= $_sidebarFirst ?></div>
+  </div>
 
   <div class="sidebar-nav">
 
     <div class="nav-section-label">OVERVIEW</div>
     <a class="nav-item <?= sidebarActive('modules/dashboard') ?>"
        href="<?= BASE_URL ?>modules/dashboard/index.php">
-      <i class="fa fa-house"></i>
+      <i class="fa fa-table-cells-large"></i>
       <span>Dashboard</span>
     </a>
 
@@ -51,7 +61,7 @@ function sidebarActive(string $path): string {
     <div class="nav-section-label">PAYROLL</div>
     <a class="nav-item <?= sidebarActive('modules/payroll/index') ?>"
        href="<?= BASE_URL ?>modules/payroll/index.php">
-      <i class="fa fa-wallet"></i>
+      <i class="fa fa-file-invoice-dollar"></i>
       <span>Payroll</span>
     </a>
     <a class="nav-item <?= sidebarActive('modules/loans') ?>"
@@ -79,8 +89,8 @@ function sidebarActive(string $path): string {
 
     <div class="nav-section-label">REPORTS &amp; ANALYTICS</div>
     <a class="nav-item <?= sidebarActive('modules/analytics') ?>"
-       href="<?= BASE_URL ?>modules/reports/index.php">
-      <i class="fa fa-chart-line"></i>
+       href="<?= BASE_URL ?>modules/analytics/index.php">
+      <i class="fa fa-chart-bar"></i>
       <span>Analytics</span>
     </a>
     <a class="nav-item <?= sidebarActive('modules/reports') ?>"
@@ -95,6 +105,11 @@ function sidebarActive(string $path): string {
       <i class="fa fa-shield-halved"></i>
       <span>Audit Logs</span>
     </a>
+    <a class="nav-item <?= sidebarActive('modules/holidays') ?>"
+       href="<?= BASE_URL ?>modules/holidays/index.php">
+      <i class="fa fa-calendar-check"></i>
+      <span>Holidays</span>
+    </a>
     <a class="nav-item <?= sidebarActive('modules/settings') ?>"
        href="<?= BASE_URL ?>modules/settings/index.php">
       <i class="fa fa-gear"></i>
@@ -103,15 +118,13 @@ function sidebarActive(string $path): string {
 
   </div><!-- .sidebar-nav -->
 
-  <!-- User / Logout -->
+  <!-- User / Logout footer -->
   <div class="sidebar-footer">
     <div class="sidebar-user">
-      <div class="sidebar-user-avatar">
-        <?= strtoupper(substr($_SESSION['user']['first_name'] ?? 'A', 0, 1)) ?>
-      </div>
+      <div class="sidebar-user-avatar"><?= $_sidebarInit ?></div>
       <div class="sidebar-user-info">
-        <strong><?= htmlspecialchars($_SESSION['user']['first_name'] ?? 'Admin') ?></strong>
-        <span><?= htmlspecialchars($_SESSION['user']['role_name'] ?? '') ?></span>
+        <strong><?= $_sidebarFirst ?></strong>
+        <span><?= $_sidebarRole ?></span>
       </div>
     </div>
     <a class="nav-item nav-item--logout" href="<?= BASE_URL ?>actions/logout.php">
@@ -123,22 +136,26 @@ function sidebarActive(string $path): string {
 </nav>
 
 <script>
-// Sidebar toggle — runs immediately (no DOMContentLoaded needed, script is at bottom)
-(function() {
+(function () {
     function initSidebar() {
         const sidebar  = document.getElementById('sidebar');
         const btn      = document.getElementById('sidebarToggle');
+        const chevron  = document.getElementById('sidebarChevron');
         if (!sidebar || !btn) return;
 
-        // Restore saved state
-        if (localStorage.getItem('sidebarCollapsed') === '1') {
-            sidebar.classList.add('collapsed');
+        function applyState(collapsed) {
+            sidebar.classList.toggle('collapsed', collapsed);
+            if (chevron) {
+                chevron.className = collapsed ? 'fa fa-chevron-right' : 'fa fa-chevron-left';
+            }
         }
 
+        applyState(localStorage.getItem('sidebarCollapsed') === '1');
+
         btn.addEventListener('click', function () {
-            sidebar.classList.toggle('collapsed');
-            localStorage.setItem('sidebarCollapsed',
-                sidebar.classList.contains('collapsed') ? '1' : '0');
+            const next = !sidebar.classList.contains('collapsed');
+            applyState(next);
+            localStorage.setItem('sidebarCollapsed', next ? '1' : '0');
         });
     }
 

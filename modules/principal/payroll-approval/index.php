@@ -1,4 +1,8 @@
 <?php
+/**
+ * modules/principal/payroll-approval/index.php
+ * Principal Portal – Payroll Approvals
+ */
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../includes/auth.php';
 requireLogin();
@@ -6,10 +10,10 @@ requireLogin();
 // ── Pending periods (PROCESSING — awaiting Principal approval) ────────────────
 $pending = $pdo->query("
     SELECT pp.*,
-           COUNT(pr.payroll_id)    AS emp_count,
-           SUM(pr.gross_pay)       AS total_gross,
-           SUM(pr.total_deductions)AS total_deductions,
-           SUM(pr.net_pay)         AS total_net
+           COUNT(pr.payroll_id)      AS emp_count,
+           SUM(pr.gross_pay)         AS total_gross,
+           SUM(pr.total_deductions)  AS total_deductions,
+           SUM(pr.net_pay)           AS total_net
     FROM payroll_periods pp
     LEFT JOIN payroll_records pr ON pp.period_id = pr.period_id
     WHERE pp.status = 'PROCESSING'
@@ -38,7 +42,8 @@ require_once __DIR__ . '/../../../includes/head.php';
 <?php include __DIR__ . '/../../../includes/principal-sidebar.php'; ?>
 
 <div class="main">
-  <!-- Header -->
+
+  <!-- ── Page Header ── -->
   <div class="header">
     <div style="display:flex;align-items:center;gap:10px;">
       <i class="fa fa-file-invoice-dollar" style="color:#0f766e;font-size:18px;"></i>
@@ -48,11 +53,12 @@ require_once __DIR__ . '/../../../includes/head.php';
       </div>
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
-      <i class="fa fa-bell" style="font-size:16px;color:#64748b;"></i>
+      <button style="background:none;border:none;cursor:pointer;position:relative;">
+        <i class="fa fa-bell" style="font-size:16px;color:#64748b;"></i>
+      </button>
       <div style="text-align:right;">
         <div style="font-size:14px;font-weight:600;color:#0f172a;">
-          <?= htmlspecialchars($_SESSION['user']['first_name'] ?? '') . ' ' .
-              htmlspecialchars($_SESSION['user']['last_name'] ?? '') ?>
+          <?= htmlspecialchars(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['user']['last_name'] ?? '')) ?>
         </div>
         <div style="font-size:11px;color:#64748b;">School Principal</div>
       </div>
@@ -72,7 +78,7 @@ require_once __DIR__ . '/../../../includes/head.php';
     </div>
 
     <?php if (empty($pending)): ?>
-    <!-- No pending payrolls -->
+    <!-- ── No Pending ── -->
     <div class="pr-no-pending">
       <i class="fa fa-circle-check"></i>
       <h3>All up to date</h3>
@@ -80,7 +86,7 @@ require_once __DIR__ . '/../../../includes/head.php';
     </div>
 
     <?php else: ?>
-    <!-- Pending Review Cards -->
+    <!-- ── Pending Review Cards ── -->
     <?php foreach ($pending as $p):
         $periodLabel = date('M j', strtotime($p['pay_period_start'])) . ' – ' .
                        date('M j, Y', strtotime($p['pay_period_end']));
@@ -112,11 +118,11 @@ require_once __DIR__ . '/../../../includes/head.php';
       <div class="pr-pending-actions">
         <div class="pr-action-btns">
           <button class="pr-btn-approve"
-                  onclick="openApproveConfirm(<?= $p['period_id'] ?>, '<?= htmlspecialchars($periodLabel) ?>')">
+                  onclick="openApproveConfirm(<?= $p['period_id'] ?>, '<?= htmlspecialchars($periodLabel, ENT_QUOTES) ?>')">
             <i class="fa fa-circle-check"></i> Approve &amp; Authorize Disbursement
           </button>
           <button class="pr-btn-reject"
-                  onclick="openRejectModal(<?= $p['period_id'] ?>, '<?= htmlspecialchars($periodLabel) ?>')">
+                  onclick="openRejectModal(<?= $p['period_id'] ?>, '<?= htmlspecialchars($periodLabel, ENT_QUOTES) ?>')">
             <i class="fa fa-circle-xmark"></i> Reject &amp; Return to Admin
           </button>
         </div>
@@ -133,7 +139,7 @@ require_once __DIR__ . '/../../../includes/head.php';
     <?php endforeach; ?>
     <?php endif; ?>
 
-    <!-- Past Approved Payrolls -->
+    <!-- ── Past Approved Payrolls ── -->
     <div class="pr-history-section">
       <h2>Past Approved Payrolls</h2>
 
@@ -169,10 +175,10 @@ require_once __DIR__ . '/../../../includes/head.php';
             </td>
             <td>
               <div style="display:flex;gap:12px;align-items:center;">
-                <button class="pr-link" onclick="openRegisterModal(<?= $h['period_id'] ?>)">
+                <button class="pr-link" onclick="openSummaryModal(<?= $h['period_id'] ?>)">
                   <i class="fa fa-eye"></i> View
                 </button>
-                <button class="pr-link" onclick="printPayrollPDF(<?= $h['period_id'] ?>)">
+                <button class="pr-link" onclick="openRegisterModal(<?= $h['period_id'] ?>)">
                   <i class="fa fa-file-pdf"></i> PDF
                 </button>
               </div>
@@ -190,310 +196,16 @@ require_once __DIR__ . '/../../../includes/head.php';
 </div><!-- .main -->
 </div><!-- .layout -->
 
-<!-- ══ MODALS ══════════════════════════════════════════════════════════════ -->
+<!-- ══ MODALS ════════════════════════════════════════════════════════════════ -->
+<?php include __DIR__ . '/modals/modal-summary.php'; ?>
+<?php include __DIR__ . '/modals/modal-register.php'; ?>
+<?php include __DIR__ . '/modals/modal-approve.php'; ?>
+<?php include __DIR__ . '/modals/modal-reject.php'; ?>
 
-<!-- View Payroll Summary -->
-<div class="pr-modal-overlay" id="summaryOverlay">
-  <div class="pr-modal-box pr-modal-box--md">
-    <div class="pr-modal-header">
-      <h3 id="summaryTitle">Payroll Summary</h3>
-      <button onclick="closeSummary()"><i class="fa fa-times"></i></button>
-    </div>
-    <div class="pr-modal-body" id="summaryBody">
-      <div class="pr-loading"><i class="fa fa-spinner fa-spin"></i> Loading…</div>
-    </div>
-  </div>
-</div>
-
-<!-- View Detailed Register -->
-<div class="pr-modal-overlay" id="registerOverlay">
-  <div class="pr-modal-box pr-modal-box--xl">
-    <div class="pr-modal-header">
-      <h3 id="registerTitle">Detailed Payroll Register</h3>
-      <div style="display:flex;gap:10px;align-items:center;">
-        <button class="pr-btn-export" id="registerExportBtn" onclick="exportRegisterPDF()">
-          <i class="fa fa-download"></i> Export PDF
-        </button>
-        <button onclick="closeRegister()"><i class="fa fa-times"></i></button>
-      </div>
-    </div>
-    <div class="pr-modal-body" id="registerBody">
-      <div class="pr-loading"><i class="fa fa-spinner fa-spin"></i> Loading…</div>
-    </div>
-  </div>
-</div>
-
-<!-- Approve Confirmation -->
-<div class="pr-modal-overlay" id="approveOverlay">
-  <div class="pr-modal-box pr-modal-box--sm">
-    <div class="pr-confirm-icon">
-      <i class="fa fa-circle-check" style="color:#0f766e;font-size:28px;"></i>
-    </div>
-    <h3 class="pr-confirm-title">Approve &amp; Authorize Payroll</h3>
-    <p class="pr-confirm-desc" id="approveDesc"></p>
-    <div class="pr-confirm-actions">
-      <button class="pr-btn-cancel" onclick="closeApprove()">Cancel</button>
-      <button class="pr-btn-approve-confirm" id="approveConfirmBtn"
-              onclick="submitApprove()">
-        Yes, Approve &amp; Authorize
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- Reject Modal -->
-<div class="pr-modal-overlay" id="rejectOverlay">
-  <div class="pr-modal-box pr-modal-box--sm">
-    <div class="pr-modal-header">
-      <h3>Reject Payroll</h3>
-      <button onclick="closeReject()"><i class="fa fa-times"></i></button>
-    </div>
-    <div class="pr-modal-body">
-      <div class="pr-reject-info">
-        <i class="fa fa-triangle-exclamation"></i>
-        Please provide remarks explaining why the payroll is being returned.
-        This will be sent to the HR Admin for corrections.
-      </div>
-      <div style="margin-top:14px;">
-        <label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:6px;">
-          Remarks <span style="color:#ef4444;">*</span>
-        </label>
-        <textarea id="rejectRemarks" rows="4"
-                  placeholder="Describe the issues that need to be corrected before resubmission…"
-                  style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;
-                         font-size:13px;resize:vertical;"></textarea>
-        <div id="rejectError" style="display:none;color:#ef4444;font-size:12px;margin-top:4px;">
-          Please enter a reason for rejection.
-        </div>
-      </div>
-    </div>
-    <div class="pr-modal-footer">
-      <button class="pr-btn-cancel" onclick="closeReject()">Cancel</button>
-      <button class="pr-btn-reject-confirm" id="rejectSubmitBtn" onclick="submitReject()">
-        <i class="fa fa-circle-xmark"></i> Submit Rejection
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- Flash message -->
-<div id="prFlash" style="display:none;position:fixed;bottom:24px;right:24px;z-index:99999;
-     padding:14px 20px;border-radius:10px;font-size:14px;font-weight:500;
-     box-shadow:0 4px 20px rgba(0,0,0,0.12);max-width:380px;"></div>
-
+<!-- ── JS ─────────────────────────────────────────────────────────────────── -->
 <script>
-const BASE_URL    = '<?= BASE_URL ?>';
-let _activePeriod = null;
-let _activePeriodLabel = '';
-let _currentRegisterData = null;
-
-// ── View Summary ──────────────────────────────────────────────────────────────
-async function openSummaryModal(periodId) {
-    document.getElementById('summaryOverlay').style.display = 'flex';
-    document.getElementById('summaryBody').innerHTML =
-        '<div class="pr-loading"><i class="fa fa-spinner fa-spin"></i> Loading…</div>';
-    try {
-        const res  = await fetch(`${BASE_URL}actions/get-payroll-summary.php?period_id=${periodId}&type=summary`);
-        const data = await res.json();
-        if (!data.success) throw new Error('Failed to load');
-        const p = data.period, t = data.totals;
-        const label = formatPeriodLabel(p.pay_period_start, p.pay_period_end);
-        document.getElementById('summaryTitle').textContent = 'Payroll Summary — ' + label;
-
-        const deptRows = (data.departments || []).map(d => `
-            <div class="pr-dept-row">
-                <div>
-                    <strong>${escH(d.department_name)}</strong>
-                    <small>${d.emp_count} employee${d.emp_count!=1?'s':''}</small>
-                </div>
-                <span>₱${fmtNum(d.gross_total)}</span>
-            </div>`).join('');
-
-        document.getElementById('summaryBody').innerHTML = `
-            <div class="pr-summary-grid">
-                <div class="pr-summary-card">
-                    <small>PAY PERIOD</small>
-                    <strong>${label}</strong>
-                </div>
-                <div class="pr-summary-card">
-                    <small>TOTAL EMPLOYEES</small>
-                    <strong>${t.emp_count} Employees</strong>
-                </div>
-                <div class="pr-summary-card pr-summary-card--green">
-                    <small>TOTAL GROSS PAY</small>
-                    <strong>₱${fmtNum(t.total_gross)}</strong>
-                </div>
-                <div class="pr-summary-card pr-summary-card--red">
-                    <small>TOTAL DEDUCTIONS</small>
-                    <strong>₱${fmtNum(t.total_deductions)}</strong>
-                </div>
-            </div>
-            <div class="pr-net-box">
-                <div>TOTAL NET PAYABLE</div>
-                <strong>₱${fmtNum(t.total_net)}</strong>
-            </div>
-            <div class="pr-dept-section">
-                <h4>Department Breakdown</h4>
-                ${deptRows || '<p style="color:#9ca3af;font-size:13px;">No breakdown available.</p>'}
-            </div>
-            <div class="pr-modal-footer" style="margin:0;padding-top:16px;">
-                <button class="pr-btn-cancel" onclick="closeSummary()">Close</button>
-                <button class="pr-btn-approve-confirm" onclick="closeSummary();openRegisterModal(${periodId})">
-                    <i class="fa fa-table-list"></i> View Full Register
-                </button>
-            </div>`;
-    } catch { document.getElementById('summaryBody').innerHTML = '<p style="color:red;padding:20px;">Failed to load data.</p>'; }
-}
-function closeSummary() { document.getElementById('summaryOverlay').style.display = 'none'; }
-
-// ── View Detailed Register ────────────────────────────────────────────────────
-async function openRegisterModal(periodId) {
-    document.getElementById('registerOverlay').style.display = 'flex';
-    document.getElementById('registerBody').innerHTML =
-        '<div class="pr-loading"><i class="fa fa-spinner fa-spin"></i> Loading…</div>';
-    try {
-        const res  = await fetch(`${BASE_URL}actions/get-payroll-summary.php?period_id=${periodId}&type=register`);
-        const data = await res.json();
-        if (!data.success) throw new Error('Failed');
-        _currentRegisterData = data;
-        const label = formatPeriodLabel(data.period.pay_period_start, data.period.pay_period_end);
-        document.getElementById('registerTitle').textContent = 'Detailed Payroll Register — ' + label;
-
-        const rows = data.records.map(r => `
-            <tr>
-                <td><strong>${escH(r.employee_name)}</strong><br>
-                    <small style="color:#9ca3af">${escH(r.position_name||'')}</small></td>
-                <td>₱${fmtNum(r.basic_pay)}</td>
-                <td>₱${fmtNum(r.addl_assign)}</td>
-                <td>₱${fmtNum(r.rice_sub)}</td>
-                <td>₱${fmtNum(r.laundry)}</td>
-                <td class="reg-col-gross">₱${fmtNum(r.gross_pay)}</td>
-                <td class="reg-col-ded">₱${fmtNum(r.peraa_p)}</td>
-                <td class="reg-col-ded">₱${fmtNum(r.peraa_l)}</td>
-                <td class="reg-col-ded">₱${fmtNum(r.hdmf_p)}</td>
-                <td class="reg-col-ded">₱${fmtNum(r.hdmf_l)}</td>
-                <td class="reg-col-ded">₱${fmtNum(r.philhealth)}</td>
-                <td class="reg-col-ded">₱${fmtNum(r.sss_p)}</td>
-                <td class="reg-col-ded">₱${fmtNum(r.sss_l)}</td>
-                <td class="reg-col-total-ded"><strong>₱${fmtNum(r.total_deductions)}</strong></td>
-                <td class="reg-col-net"><strong>₱${fmtNum(r.net_pay)}</strong></td>
-            </tr>`).join('');
-
-        const t = data.totals;
-        document.getElementById('registerBody').innerHTML = `
-            <div class="reg-table-wrap">
-              <table class="reg-table">
-                <thead>
-                  <tr>
-                    <th>Employee</th><th>Basic</th><th>Add'l Assign.</th>
-                    <th>Rice Sub.</th><th>Laundry</th>
-                    <th class="reg-col-gross">Gross</th>
-                    <th class="reg-col-ded">PERAA-P</th><th class="reg-col-ded">PERAA-L</th>
-                    <th class="reg-col-ded">HDMF-P</th><th class="reg-col-ded">HDMF-L</th>
-                    <th class="reg-col-ded">PhilHealth</th>
-                    <th class="reg-col-ded">SSS-P</th><th class="reg-col-ded">SSS-L</th>
-                    <th class="reg-col-total-ded">Total Ded.</th>
-                    <th class="reg-col-net">Net Pay</th>
-                  </tr>
-                </thead>
-                <tbody>${rows}</tbody>
-              </table>
-            </div>
-            <div class="reg-totals-bar">
-              <div><small>TOTAL GROSS</small><strong>₱${fmtNum(t.gross)}</strong></div>
-              <div><small>TOTAL DEDUCTIONS</small><strong style="color:#ef4444">₱${fmtNum(t.deductions)}</strong></div>
-              <div><small>TOTAL NET PAY</small><strong style="color:#0f766e">₱${fmtNum(t.net)}</strong></div>
-            </div>
-            <div class="pr-modal-footer" style="margin:0;padding-top:12px;">
-                <button class="pr-btn-cancel" onclick="closeRegister()">Close</button>
-            </div>`;
-    } catch { document.getElementById('registerBody').innerHTML = '<p style="color:red;padding:20px;">Failed to load register.</p>'; }
-}
-function closeRegister() { document.getElementById('registerOverlay').style.display = 'none'; }
-function exportRegisterPDF() { window.print(); }
-function printPayrollPDF(periodId) { openRegisterModal(periodId); }
-
-// ── Approve ───────────────────────────────────────────────────────────────────
-function openApproveConfirm(periodId, label) {
-    _activePeriod = periodId; _activePeriodLabel = label;
-    document.getElementById('approveDesc').textContent =
-        `Are you sure you want to approve and authorize the disbursement of payroll for ${label}? This action will lock the payroll and cannot be undone.`;
-    document.getElementById('approveOverlay').style.display = 'flex';
-}
-function closeApprove() { document.getElementById('approveOverlay').style.display = 'none'; }
-async function submitApprove() {
-    const btn = document.getElementById('approveConfirmBtn');
-    btn.disabled = true; btn.textContent = 'Processing…';
-    const fd = new FormData();
-    fd.append('action', 'approve'); fd.append('period_id', _activePeriod);
-    try {
-        const res  = await fetch(`${BASE_URL}actions/payroll-approve.php`, {method:'POST',body:fd});
-        const data = await res.json();
-        closeApprove();
-        showPrFlash(data.message, data.success);
-        if (data.success) setTimeout(() => location.reload(), 1400);
-        else { btn.disabled = false; btn.textContent = 'Yes, Approve & Authorize'; }
-    } catch {
-        showPrFlash('Network error. Please try again.', false);
-        btn.disabled = false; btn.textContent = 'Yes, Approve & Authorize';
-    }
-}
-
-// ── Reject ────────────────────────────────────────────────────────────────────
-function openRejectModal(periodId, label) {
-    _activePeriod = periodId; _activePeriodLabel = label;
-    document.getElementById('rejectRemarks').value = '';
-    document.getElementById('rejectError').style.display = 'none';
-    document.getElementById('rejectOverlay').style.display = 'flex';
-}
-function closeReject() { document.getElementById('rejectOverlay').style.display = 'none'; }
-async function submitReject() {
-    const remarks = document.getElementById('rejectRemarks').value.trim();
-    if (!remarks) {
-        document.getElementById('rejectError').style.display = 'block'; return;
-    }
-    const btn = document.getElementById('rejectSubmitBtn');
-    btn.disabled = true; btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Submitting…';
-    const fd = new FormData();
-    fd.append('action','return'); fd.append('period_id',_activePeriod); fd.append('notes',remarks);
-    try {
-        const res  = await fetch(`${BASE_URL}actions/payroll-approve.php`,{method:'POST',body:fd});
-        const data = await res.json();
-        closeReject();
-        showPrFlash(data.message, data.success);
-        if (data.success) setTimeout(() => location.reload(), 1400);
-        else { btn.disabled=false; btn.innerHTML='<i class="fa fa-circle-xmark"></i> Submit Rejection'; }
-    } catch {
-        showPrFlash('Network error.',false);
-        btn.disabled=false; btn.innerHTML='<i class="fa fa-circle-xmark"></i> Submit Rejection';
-    }
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function formatPeriodLabel(start, end) {
-    const s = new Date(start + 'T00:00:00');
-    const e = new Date(end   + 'T00:00:00');
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    if (s.getMonth() === e.getMonth())
-        return `${months[s.getMonth()]} ${s.getDate()}–${e.getDate()}, ${e.getFullYear()}`;
-    return `${months[s.getMonth()]} ${s.getDate()} – ${months[e.getMonth()]} ${e.getDate()}, ${e.getFullYear()}`;
-}
-function fmtNum(v) {
-    return (parseFloat(v)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
-}
-function escH(s) {
-    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-function showPrFlash(msg, ok) {
-    const el = document.getElementById('prFlash');
-    el.style.cssText = `display:block;position:fixed;bottom:24px;right:24px;z-index:99999;
-        padding:14px 20px;border-radius:10px;font-size:14px;font-weight:500;
-        box-shadow:0 4px 20px rgba(0,0,0,.12);max-width:380px;
-        ${ok?'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7'
-            :'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5'}`;
-    el.textContent = msg;
-    if (ok) setTimeout(()=>el.style.display='none',5000);
-}
+const BASE_URL = '<?= BASE_URL ?>';
 </script>
+<script src="<?= BASE_URL ?>assets/js/principal-payroll-approval.js"></script>
 
 <?php include __DIR__ . '/../../../includes/footer.php'; ?>
