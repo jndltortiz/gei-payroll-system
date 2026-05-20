@@ -21,7 +21,7 @@ $shifts = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, grace_
       <span class="close-btn" onclick="closeModal('addEmployeeModal')">&#x2715;</span>
     </div>
 
-  <form method="POST" action="<?= BASE_URL ?>actions/employee-save.php" id="addEmployeeForm" novalidate>
+  <form method="POST" action="<?= BASE_URL ?>actions/employee-save.php" id="addEmployeeForm" enctype="multipart/form-data" novalidate>
 
     <div class="modal-body">
 
@@ -235,6 +235,173 @@ $shifts = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, grace_
       </div>
 
       <!-- ACCOUNT CREDENTIALS -->
+
+      <!-- ── SECTION: Government IDs ────────────────────────────────── -->
+      <div class="form-section">
+        <div class="section-header">
+          <div class="section-icon"><i class="fa fa-id-card"></i></div>
+          <div>
+            <h4>Government IDs & Benefits</h4>
+            <p>For payroll deductions and statutory contributions</p>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>SSS Number</label>
+            <input type="text" name="sss_no" placeholder="e.g. 33-1234567-8">
+          </div>
+          <div class="form-group">
+            <label>PhilHealth Number</label>
+            <input type="text" name="philhealth_no" placeholder="e.g. 12-123456789-1">
+          </div>
+          <div class="form-group">
+            <label>Pag-IBIG / HDMF Number</label>
+            <input type="text" name="pagibig_no" placeholder="e.g. 1234-5678-9012">
+          </div>
+          <div class="form-group">
+            <label>TIN Number</label>
+            <input type="text" name="tin_no" placeholder="e.g. 123-456-789-000">
+          </div>
+          <div class="form-group">
+            <label>PERAA Number <span class="opt">(permanent employees)</span></label>
+            <input type="text" name="peraa_no" placeholder="e.g. PERAA-00001">
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SECTION: Emergency Contact ────────────────────────────── -->
+      <div class="form-section">
+        <div class="section-header">
+          <div class="section-icon"><i class="fa fa-phone-volume"></i></div>
+          <div>
+            <h4>Emergency Contact</h4>
+            <p>Person to contact in case of emergency</p>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Contact Name</label>
+            <input type="text" name="emergency_contact_name" placeholder="Full name">
+          </div>
+          <div class="form-group">
+            <label>Relationship</label>
+            <input type="text" name="emergency_contact_relation" placeholder="e.g. Spouse, Parent">
+          </div>
+          <div class="form-group form-group--full">
+            <label>Contact Number</label>
+            <input type="text" name="emergency_contact_number" placeholder="e.g. 09XX-XXX-XXXX">
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SECTION: Educational Background (multiple entries) ─────── -->
+      <div class="form-section">
+        <div class="section-header">
+          <div class="section-icon"><i class="fa fa-graduation-cap"></i></div>
+          <div>
+            <h4>Educational Background</h4>
+            <p>Add all educational attainments (201 file)</p>
+          </div>
+        </div>
+
+        <div id="eduEntriesContainer">
+          <div class="edu-entry" data-index="0">
+            <div class="edu-entry-header">
+              <span class="edu-entry-label">Entry 1</span>
+              <button type="button" class="edu-remove-btn" onclick="removeEduEntry(this)"
+                      style="display:none;">
+                <i class="fa fa-times"></i> Remove
+              </button>
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Level / Degree</label>
+                <select name="edu_degree[]">
+                  <option value="">— Select —</option>
+                  <option>Bachelor's Degree</option>
+                  <option>Master's Degree</option>
+                  <option>Doctorate</option>
+                  <option>Senior High School</option>
+                  <option>High School</option>
+                  <option>Vocational / Tech</option>
+                  <option>Elementary</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Course / Major</label>
+                <input type="text" name="edu_course[]"
+                       placeholder="e.g. Bachelor of Secondary Education">
+              </div>
+              <div class="form-group">
+                <label>School / University</label>
+                <input type="text" name="edu_school[]"
+                       placeholder="e.g. Tarlac State University">
+              </div>
+              <div class="form-group">
+                <label>Year Graduated</label>
+                <input type="number" name="edu_year[]" min="1950" max="2030"
+                       placeholder="e.g. 2018">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button type="button" class="edu-add-btn" onclick="addEduEntry()">
+          <i class="fa fa-plus"></i> Add Another Education Entry
+        </button>
+      </div>
+
+      <!-- ── SECTION: Document Attachments ─────────────────────────── -->
+      <div class="form-section">
+        <div class="section-header">
+          <div class="section-icon"><i class="fa fa-folder-open"></i></div>
+          <div>
+            <h4>201 File Documents</h4>
+            <p>Upload supporting documents (diplomas, IDs, contracts, etc.)</p>
+          </div>
+        </div>
+
+        <div id="docUploadList">
+          <div class="doc-upload-row" data-index="0">
+            <div class="form-grid" style="align-items:end;">
+              <div class="form-group">
+                <label>Document Type</label>
+                <select name="doc_type[]">
+                  <option value="">— Select type —</option>
+                  <option>Diploma / Transcript</option>
+                  <option>Employment Contract</option>
+                  <option>SSS Card / Number</option>
+                  <option>PhilHealth Card</option>
+                  <option>Pag-IBIG Card</option>
+                  <option>TIN Card</option>
+                  <option>Government ID</option>
+                  <option>NBI Clearance</option>
+                  <option>Medical Certificate</option>
+                  <option>Certificate of Employment</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>File</label>
+                <input type="file" name="doc_file[]" accept=".pdf,.jpg,.jpeg,.png"
+                       class="doc-file-input">
+                <small style="font-size:11px;color:#9ca3af;">PDF, JPG, PNG — max 5MB each</small>
+              </div>
+              <div class="form-group" style="flex:0;min-width:80px;">
+                <button type="button" class="edu-remove-btn" onclick="removeDocRow(this)"
+                        style="display:none;margin-top:24px;">
+                  <i class="fa fa-trash"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button type="button" class="edu-add-btn" onclick="addDocRow()">
+          <i class="fa fa-plus"></i> Add Another Document
+        </button>
+      </div>
+
       <div class="form-section">
         <div class="section-header">
           <div class="section-icon"><i class="fa fa-key"></i></div>

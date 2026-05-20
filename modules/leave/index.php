@@ -94,8 +94,15 @@ $sql = "
 
 $params = [];
 if ($filterStatus !== 'ALL') {
-    $sql .= " WHERE lr.status = ?";
-    $params[] = $filterStatus;
+    if ($filterStatus === 'REJECTED') {
+        // Show any request that has at least one rejected date OR overall status rejected
+        $sql .= " WHERE (lr.status = 'REJECTED' OR lr.leave_id IN (
+            SELECT DISTINCT leave_id FROM leave_request_dates WHERE status = 'REJECTED'
+        ))";
+    } else {
+        $sql .= " WHERE lr.status = ?";
+        $params[] = $filterStatus;
+    }
 }
 $sql .= " ORDER BY lr.created_at DESC";
 
@@ -217,7 +224,14 @@ require_once __DIR__ . '/../../includes/head.php';
                                     // Parse dates for display
                                     $startDate = new DateTime($record['start_date']);
                                     $endDate   = new DateTime($record['end_date']);
-                                    $totalDays = (float)$record['total_days'];
+                                    // Count only approved dates for this request
+$approvedDaysStmt = $pdo->prepare("
+    SELECT COUNT(*) FROM leave_request_dates
+    WHERE leave_id = ? AND status = 'APPROVED'
+");
+$approvedDaysStmt->execute([$record['leave_id']]);
+$approvedDays = (int)$approvedDaysStmt->fetchColumn();
+$totalDays = $approvedDays > 0 ? (float)$approvedDays : (float)$record['total_days'];
 
                                     // Build date pills: start + end + overflow
                                     $diffDays = (int)$endDate->diff($startDate)->days;

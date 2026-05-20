@@ -643,3 +643,35 @@ function escHtml(str) {
 document.addEventListener('DOMContentLoaded', () => {
     renderCalendar();
 });
+// ── Leave file attachment ─────────────────────────────────────────────────────
+function onleaveFileSelected(input) {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+        if (typeof showToast === 'function') showToast('File too large — max 5 MB.', 'error');
+        input.value = ''; return;
+    }
+    const preview = document.getElementById('leaveFilePreview');
+    const name    = document.getElementById('leaveFileName');
+    if (name)    name.textContent = file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
+    if (preview) preview.style.display = 'flex';
+    const area = document.getElementById('leaveFileArea');
+    if (area) area.style.borderColor = '#0f766e';
+}
+function handleLeaveFileDrop(e) {
+    e.preventDefault();
+    const area = document.getElementById('leaveFileArea');
+    if (area) area.classList.remove('drag-over');
+    const dt = e.dataTransfer;
+    if (!dt?.files?.length) return;
+    const input = document.getElementById('leaveFileInput');
+    if (input) { input.files = dt.files; onleaveFileSelected(input); }
+}
+function clearLeaveFile() {
+    const input   = document.getElementById('leaveFileInput');
+    const preview = document.getElementById('leaveFilePreview');
+    const area    = document.getElementById('leaveFileArea');
+    if (input)   input.value = '';
+    if (preview) preview.style.display = 'none';
+    if (area)    area.style.borderColor = '';
+}

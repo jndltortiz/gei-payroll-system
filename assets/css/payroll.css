@@ -624,3 +624,16 @@
         white-space: pre;
     }
 }
+
+/* ── Payroll workflow buttons ─────────────────────────────────────────────── */
+.payroll-flow-actions {
+    display: flex; align-items: center; gap: 10px;
+    margin-left: auto; flex-wrap: wrap; justify-content: flex-end;
+}
+.processing-notice, .approved-notice, .released-notice {
+    font-size: 13px; font-weight: 600; padding: 8px 14px;
+    border-radius: 8px; display: flex; align-items: center; gap: 6px;
+}
+.processing-notice { background: #fef3c7; color: #92400e; }
+.approved-notice   { background: #d1fae5; color: #065f46; }
+.released-notice   { background: #ede9fe; color: #5b21b6; }

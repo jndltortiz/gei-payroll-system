@@ -74,6 +74,39 @@ if (!isset($leaveTypes)) {
                         placeholder="Please provide a brief description..." required></textarea>
                 </div>
 
+                <div class="leave-form-group" style="margin-top: 14px;">
+                    <label class="form-label">
+                        Supporting Document
+                        <span style="font-size:11px;color:#9ca3af;font-weight:400;">
+                            (optional — required for Sick Leave)
+                        </span>
+                    </label>
+                    <div class="file-upload-area" id="leaveFileArea"
+                         onclick="document.getElementById('leaveFileInput').click()"
+                         ondragover="event.preventDefault();this.classList.add('drag-over')"
+                         ondragleave="this.classList.remove('drag-over')"
+                         ondrop="handleLeaveFileDrop(event)">
+                        <i class="fa fa-file-arrow-up" style="font-size:24px;color:#94a3b8;margin-bottom:6px;"></i>
+                        <p style="font-size:13px;color:#6b7280;margin:0;">
+                            Click or drag to upload<br>
+                            <small style="color:#9ca3af;">PDF, JPG, PNG — max 5MB</small>
+                        </p>
+                        <input type="file" id="leaveFileInput" name="attachment"
+                               accept=".pdf,.jpg,.jpeg,.png" style="display:none"
+                               onchange="onLeaveFileSelected(this)">
+                    </div>
+                    <div id="leaveFilePreview" style="display:none;margin-top:8px;padding:10px 12px;
+                         background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;
+                         display:none;align-items:center;gap:10px;font-size:13px;">
+                        <i class="fa fa-file" style="color:#0f766e;font-size:18px;"></i>
+                        <span id="leaveFileName" style="flex:1;">—</span>
+                        <button type="button" onclick="clearLeaveFile()"
+                                style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:12px;">
+                            <i class="fa fa-times"></i> Remove
+                        </button>
+                    </div>
+                </div>
+
                 <div class="modal-footer modal-footer--form">
                     <button type="button" class="btn btn--ghost" onclick="closeFileLeaveModal()">Cancel</button>
                     <button type="button" class="btn btn--teal" id="btnSubmitLeave" onclick="submitFileLeave()">

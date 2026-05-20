@@ -94,6 +94,31 @@ try {
         "Filed leave request #{$leaveId} for {$totalDays} date(s) starting {$startDate}"
     ]);
 
+
+    // ── Handle attachment upload ──────────────────────────────────────────────
+    $attachFile = $_FILES['attachment'] ?? null;
+    if ($attachFile && $attachFile['error'] === UPLOAD_ERR_OK) {
+        $maxSize = 5 * 1024 * 1024; // 5 MB
+        if ($attachFile['size'] <= $maxSize) {
+            $uploadDir = __DIR__ . '/../uploads/leaves/';
+            if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
+
+            $ext      = strtolower(pathinfo($attachFile['name'], PATHINFO_EXTENSION));
+            $allowed  = ['pdf','jpg','jpeg','png'];
+            if (in_array($ext, $allowed)) {
+                $fileName = 'leave_' . $leaveId . '_' . time() . '.' . $ext;
+                $filePath = 'uploads/leaves/' . $fileName;
+                if (move_uploaded_file($attachFile['tmp_name'], $uploadDir . $fileName)) {
+                    $pdo->prepare("
+                        INSERT INTO leave_attachments (leave_id, file_path, file_name, file_type, file_size)
+                        VALUES (?, ?, ?, ?, ?)
+                    ")->execute([$leaveId, $filePath, $attachFile['name'],
+                                 $attachFile['type'], $attachFile['size']]);
+                }
+            }
+        }
+    }
+
     $pdo->commit();
 
     echo json_encode([

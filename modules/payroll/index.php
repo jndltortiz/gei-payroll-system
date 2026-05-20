@@ -311,11 +311,76 @@ require_once __DIR__ . '/../../includes/head.php';
             <span>Total Net Pay</span>
             <strong id="total-net">₱<?= number_format($totalNet, 2) ?></strong>
         </div>
-        <?php if ($periodIsEditable && !empty($records)): ?>
-        <button class="btn-primary submit-btn" onclick="submitForApproval(<?= $selectedId ?>)">
-            <i class="fa fa-paper-plane"></i> Submit for Principal Approval
-        </button>
+
+        <div class="payroll-flow-actions">
+        <?php if ($selectedPeriod): ?>
+          <?php if ($selectedPeriod['status'] === 'OPEN' && !empty($records)): ?>
+            <!-- STEP 1: Accounting submits to Principal -->
+            <button class="btn-primary" onclick="confirmPayrollAction('submit',<?= $selectedId ?>)">
+              <i class="fa fa-paper-plane"></i> Submit for Principal Approval
+            </button>
+
+          <?php elseif ($selectedPeriod['status'] === 'PROCESSING'): ?>
+            <!-- STEP 2: Principal reviews (Approve or Return) -->
+            <div class="processing-notice">
+              <i class="fa fa-clock"></i> Awaiting Principal Approval
+            </div>
+            <button class="btn-outline" onclick="confirmPayrollAction('return',<?= $selectedId ?>)"
+                    style="border-color:#d97706;color:#b45309;">
+              <i class="fa fa-rotate-left"></i> Return for Revision
+            </button>
+            <button class="btn-primary" onclick="confirmPayrollAction('approve',<?= $selectedId ?>)"
+                    style="background:#059669;">
+              <i class="fa fa-circle-check"></i> Approve Payroll
+            </button>
+
+          <?php elseif ($selectedPeriod['status'] === 'APPROVED'): ?>
+            <!-- STEP 3: Accounting releases and prints payslips -->
+            <div class="approved-notice">
+              <i class="fa fa-circle-check" style="color:#059669"></i> Approved — ready to release
+            </div>
+            <button class="btn-outline" onclick="window.print()">
+              <i class="fa fa-print"></i> Print Payslips
+            </button>
+            <button class="btn-primary" onclick="confirmPayrollAction('release',<?= $selectedId ?>)"
+                    style="background:#7c3aed;">
+              <i class="fa fa-money-bill-wave"></i> Release Payroll
+            </button>
+
+          <?php elseif ($selectedPeriod['status'] === 'RELEASED'): ?>
+            <!-- STEP 4: Released — archive/print only -->
+            <div class="released-notice">
+              <i class="fa fa-circle-check" style="color:#7c3aed"></i> Released
+            </div>
+            <button class="btn-outline" onclick="window.print()">
+              <i class="fa fa-print"></i> Print Payslips
+            </button>
+          <?php endif; ?>
         <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Payroll action confirmation modal -->
+    <div id="payrollConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);
+         z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:14px;padding:24px;width:420px;max-width:95%;
+                  box-shadow:0 16px 48px rgba(0,0,0,0.12);">
+        <h3 id="pcm-title" style="font-size:16px;font-weight:700;margin:0 0 8px;"></h3>
+        <p id="pcm-desc" style="font-size:13px;color:#64748b;margin:0 0 14px;"></p>
+        <div id="pcm-notes-wrap" style="display:none;margin-bottom:14px;">
+          <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px;">
+            Notes / Reason <span style="color:#9ca3af;font-weight:400;">(optional)</span>
+          </label>
+          <textarea id="pcm-notes" rows="2" placeholder="Add a note for the accounting team…"
+                    style="width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;"></textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;">
+          <button class="btn-outline" style="padding:9px 16px;font-size:13px;"
+                  onclick="closePayrollConfirm()">Cancel</button>
+          <button id="pcm-confirm-btn" class="btn-primary" style="padding:9px 20px;font-size:13px;"
+                  onclick="executePayrollAction()">Confirm</button>
+        </div>
+      </div>
     </div>
 
 </div><!-- .payroll-container -->
@@ -372,25 +437,81 @@ function showFlash(msg, ok) {
 }
 
 // ── Submit for approval ───────────────────────────────────────────────────────
-async function submitForApproval(periodId) {
-    if (!confirm('Submit this payroll for Principal approval?\nThis will lock the period from further changes.')) return;
+// ── Payroll workflow confirmation ─────────────────────────────────────────────
+let _pcmAction = null, _pcmPeriodId = null;
 
-    const btn = document.querySelector('.submit-btn');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Submitting…'; }
+const _pcmConfig = {
+    submit:  {
+        title: 'Submit for Principal Approval',
+        desc:  'This will lock the payroll for editing and send it to the Principal/Treasurer for review. Continue?',
+        notes: false, btnLabel: 'Submit', btnColor: '#0f766e',
+        url: BASE_URL + 'actions/payroll-submit-approval.php',
+        field: 'period_id'
+    },
+    approve: {
+        title: 'Approve Payroll',
+        desc:  'Approve this payroll period? All records will be marked APPROVED and accounting can proceed to release.',
+        notes: true, btnLabel: 'Approve', btnColor: '#059669',
+        url: BASE_URL + 'actions/payroll-approve.php', field: 'period_id'
+    },
+    return:  {
+        title: 'Return for Revision',
+        desc:  'Return this payroll to accounting for corrections. The period will reopen for editing.',
+        notes: true, btnLabel: 'Return', btnColor: '#d97706',
+        url: BASE_URL + 'actions/payroll-approve.php', field: 'period_id'
+    },
+    release: {
+        title: 'Release Payroll',
+        desc:  'Mark this payroll as released? This confirms that salaries have been distributed to employees.',
+        notes: false, btnLabel: 'Release', btnColor: '#7c3aed',
+        url: BASE_URL + 'actions/payroll-approve.php', field: 'period_id'
+    }
+};
 
+function confirmPayrollAction(action, periodId) {
+    const cfg = _pcmConfig[action];
+    if (!cfg) return;
+    _pcmAction = action; _pcmPeriodId = periodId;
+    document.getElementById('pcm-title').textContent     = cfg.title;
+    document.getElementById('pcm-desc').textContent      = cfg.desc;
+    document.getElementById('pcm-notes-wrap').style.display = cfg.notes ? 'block' : 'none';
+    document.getElementById('pcm-notes').value           = '';
+    const btn = document.getElementById('pcm-confirm-btn');
+    btn.textContent = cfg.btnLabel;
+    btn.style.background = cfg.btnColor;
+    document.getElementById('payrollConfirmModal').style.display = 'flex';
+}
+
+function closePayrollConfirm() {
+    document.getElementById('payrollConfirmModal').style.display = 'none';
+    _pcmAction = null; _pcmPeriodId = null;
+}
+
+async function executePayrollAction() {
+    const cfg = _pcmConfig[_pcmAction];
+    if (!cfg || !_pcmPeriodId) return;
+    const btn = document.getElementById('pcm-confirm-btn');
+    btn.disabled = true; btn.textContent = 'Processing…';
+    const fd = new FormData();
+    fd.append(cfg.field, _pcmPeriodId);
+    if (_pcmAction !== 'submit') fd.append('action', _pcmAction);
+    const notes = document.getElementById('pcm-notes').value.trim();
+    if (notes) fd.append('notes', notes);
     try {
-        const fd = new FormData();
-        fd.append('period_id', periodId);
-        const res = await fetch(`${BASE_URL}actions/payroll-submit-approval.php`, { method:'POST', body:fd });
+        const res  = await fetch(cfg.url, { method: 'POST', body: fd });
         const data = await res.json();
+        closePayrollConfirm();
         showFlash(data.message, data.success);
-        if (data.success) setTimeout(() => location.reload(), 1500);
-        else if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-paper-plane"></i> Submit for Principal Approval'; }
+        if (data.success) setTimeout(() => location.reload(), 1400);
+        else { btn.disabled = false; btn.textContent = cfg.btnLabel; }
     } catch {
         showFlash('Network error. Please try again.', false);
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-paper-plane"></i> Submit for Principal Approval'; }
+        btn.disabled = false; btn.textContent = cfg.btnLabel;
     }
 }
+
+// Keep old name as alias for any remaining references
+async function submitForApproval(periodId) { confirmPayrollAction('submit', periodId); }
 
 // ── Generate modal ────────────────────────────────────────────────────────────
 window.openGenerateModal = () => document.getElementById('generateModal').style.display = 'flex';

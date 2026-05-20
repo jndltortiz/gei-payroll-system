@@ -1,5 +1,5 @@
 <?php
-require_once '../../config/config.php';
+require_once __DIR__ . '/../config/config.php';
 if (!isset($_SESSION['user'])) {
     header('Location: ' . BASE_URL . 'modules/auth/login.php');
     exit;

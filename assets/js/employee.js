@@ -177,9 +177,34 @@ window.prepareSave = function(formId, type) {
     }
 };
 
-window.confirmSave = function(type) {
-    if (_pendingFormId) {
-        const form = document.getElementById(_pendingFormId);
+window.confirmSave = async function(type) {
+    if (!_pendingFormId) return;
+    const form = document.getElementById(_pendingFormId);
+    if (!form) return;
+
+    if (type === 'add') {
+        // Close confirm modal, submit via fetch for JSON response + toast
+        closeModal('saveAddModal');
+        const btn = form.querySelector('button[type="button"].btn-save');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+        try {
+            const res  = await fetch(BASE_URL + 'actions/employee-save.php',
+                                     { method: 'POST', body: new FormData(form) });
+            const data = await res.json();
+            if (data.success) {
+                if (typeof showToast === 'function') showToast(data.message + ' Username: ' + data.username, 'success', 5000);
+                setTimeout(() => location.reload(), 1200);
+            } else {
+                if (typeof showToast === 'function') showToast(data.message || 'Failed to save employee.', 'error');
+                if (btn) { btn.disabled = false; btn.textContent = 'Add Employee'; }
+            }
+        } catch {
+            if (typeof showToast === 'function') showToast('Network error. Please try again.', 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Add Employee'; }
+        }
+    } else {
+        // Edit — keep existing form submit behaviour
         if (form) form.submit();
     }
 };
@@ -378,3 +403,121 @@ function formatDate(dateStr) {
     const d = new Date(dateStr);
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
+// ── Leave file attachment helpers ─────────────────────────────────────────────
+function onLeaveFileSelected(input) {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+        if (typeof showToast === 'function') showToast('File too large — maximum 5 MB.', 'error');
+        input.value = ''; return;
+    }
+    document.getElementById('leaveFileName').textContent    = file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)';
+    document.getElementById('leaveFilePreview').style.display = 'flex';
+    document.getElementById('leaveFileArea').style.borderColor = '#0f766e';
+}
+function handleLeaveFileDrop(e) {
+    e.preventDefault();
+    document.getElementById('leaveFileArea').classList.remove('drag-over');
+    const dt = e.dataTransfer; if (!dt?.files?.length) return;
+    document.getElementById('leaveFileInput').files = dt.files;
+    onLeaveFileSelected(document.getElementById('leaveFileInput'));
+}
+function clearLeaveFile() {
+    document.getElementById('leaveFileInput').value = '';
+    document.getElementById('leaveFilePreview').style.display = 'none';
+    document.getElementById('leaveFileArea').style.borderColor = '';
+}
+
+// ── Dynamic education entries ─────────────────────────────────────────────────
+let _eduCount = 1;
+window.addEduEntry = function() {
+    _eduCount++;
+    const container = document.getElementById('eduEntriesContainer');
+    if (!container) return;
+    const div = document.createElement('div');
+    div.className = 'edu-entry';
+    div.dataset.index = _eduCount;
+    div.innerHTML = `
+      <div class="edu-entry-header">
+        <span class="edu-entry-label">Entry ${_eduCount}</span>
+        <button type="button" class="edu-remove-btn" onclick="removeEduEntry(this)">
+          <i class="fa fa-times"></i> Remove
+        </button>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Level / Degree</label>
+          <select name="edu_degree[]">
+            <option value="">— Select —</option>
+            <option>Bachelor's Degree</option><option>Master's Degree</option>
+            <option>Doctorate</option><option>Senior High School</option>
+            <option>High School</option><option>Vocational / Tech</option>
+            <option>Elementary</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Course / Major</label>
+          <input type="text" name="edu_course[]" placeholder="e.g. Bachelor of Education">
+        </div>
+        <div class="form-group">
+          <label>School / University</label>
+          <input type="text" name="edu_school[]" placeholder="e.g. Tarlac State University">
+        </div>
+        <div class="form-group">
+          <label>Year Graduated</label>
+          <input type="number" name="edu_year[]" min="1950" max="2030" placeholder="e.g. 2018">
+        </div>
+      </div>`;
+    container.appendChild(div);
+    // Show remove buttons when more than 1 entry
+    container.querySelectorAll('.edu-remove-btn').forEach(b => b.style.display = 'inline-flex');
+};
+window.removeEduEntry = function(btn) {
+    const entry = btn.closest('.edu-entry');
+    if (entry) entry.remove();
+    // Hide remove btn if only 1 left
+    const container = document.getElementById('eduEntriesContainer');
+    const entries = container?.querySelectorAll('.edu-entry') ?? [];
+    if (entries.length === 1) entries[0].querySelector('.edu-remove-btn').style.display = 'none';
+};
+
+// ── Dynamic document rows ─────────────────────────────────────────────────────
+let _docCount = 1;
+window.addDocRow = function() {
+    _docCount++;
+    const list = document.getElementById('docUploadList');
+    if (!list) return;
+    const div = document.createElement('div');
+    div.className = 'doc-upload-row';
+    div.dataset.index = _docCount;
+    div.innerHTML = `
+      <div class="form-grid" style="align-items:end;">
+        <div class="form-group">
+          <label>Document Type</label>
+          <select name="doc_type[]">
+            <option value="">— Select type —</option>
+            <option>Diploma / Transcript</option><option>Employment Contract</option>
+            <option>SSS Card / Number</option><option>PhilHealth Card</option>
+            <option>Pag-IBIG Card</option><option>TIN Card</option>
+            <option>Government ID</option><option>NBI Clearance</option>
+            <option>Medical Certificate</option><option>Certificate of Employment</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>File</label>
+          <input type="file" name="doc_file[]" accept=".pdf,.jpg,.jpeg,.png" class="doc-file-input">
+          <small style="font-size:11px;color:#9ca3af;">PDF, JPG, PNG — max 5MB</small>
+        </div>
+        <div class="form-group" style="flex:0;min-width:80px;">
+          <button type="button" class="edu-remove-btn" onclick="removeDocRow(this)" style="margin-top:24px;">
+            <i class="fa fa-trash"></i>
+          </button>
+        </div>
+      </div>`;
+    list.appendChild(div);
+};
+window.removeDocRow = function(btn) {
+    const row = btn.closest('.doc-upload-row');
+    if (row) row.remove();
+};
