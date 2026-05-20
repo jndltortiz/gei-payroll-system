@@ -217,7 +217,7 @@ require_once __DIR__ . '/../../includes/head.php';
         <div class="stat-value"><?php echo $attendanceRate; ?>%</div>
         <div class="stat-sub neutral">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-          Present Today: <?php echo $presentToday; ?><?php if ($lateCount > 0): ?> (incl. <?= $lateCount ?> late)<?php endif; ?>
+          Present Today: <?php echo $presentToday; ?>
         </div>
       </div>
       <div class="stat-card">

@@ -8,6 +8,7 @@ window.switchTab = function(tab) {
 // ADD MODAL
 window.openAttModal = function() {
     document.getElementById('addAttendanceModal').classList.add('open');
+    document.getElementById('addAttendanceModal').style.display = 'flex';
     document.getElementById('empSearchInput').focus();
 };
 
