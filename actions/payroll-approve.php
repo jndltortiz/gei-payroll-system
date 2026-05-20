@@ -130,6 +130,14 @@ try {
             $pdo->prepare("UPDATE payroll_records SET payroll_status='RELEASED', released_by=?, released_at=NOW()
                            WHERE period_id=? AND payroll_status='APPROVED'")->execute([$uid, $periodId]);
 
+            // ── Release linked service credits ───────────────────────────
+            $pdo->prepare("
+                UPDATE service_credits sc
+                JOIN payroll_records pr ON sc.payroll_id = pr.payroll_id
+                SET sc.status = 'RELEASED', sc.updated_at = NOW()
+                WHERE pr.period_id = ? AND sc.status = 'APPLIED'
+            ")->execute([$periodId]);
+
             $pdo->prepare("INSERT INTO payroll_workflow_log
                 (period_id,event_type,performed_by,performer_name,gross_total,net_total,emp_count)
                 VALUES(?,'RELEASED',?,?,?,?,?)")

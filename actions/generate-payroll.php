@@ -145,7 +145,7 @@ try {
 
         // Allowances — based on assignment rules
         $atypes = $pdo->prepare("
-            SELECT DISTINCT at2.allowance_type_id, at2.default_amount
+            SELECT DISTINCT at2.allowance_type_id, at2.allowance_name, at2.default_amount
             FROM allowance_types at2
             JOIN allowance_assignments aa ON at2.allowance_type_id = aa.allowance_type_id
             WHERE at2.is_active = 1 AND aa.is_active = 1
@@ -162,15 +162,93 @@ try {
             ':pos'  => $emp['position_id'],
         ]);
 
+        // ── Fetch APPROVED service credits for this employee in this payroll period ──
+        // Approved credits are merged into Additional Assignment Payment
+        $scStmt = $pdo->prepare("
+            SELECT service_credit_id, equivalent_pay
+            FROM service_credits
+            WHERE employee_id = :eid
+              AND status = 'APPROVED'
+              AND payroll_id IS NULL
+              AND work_date BETWEEN :start AND :end
+        ");
+        $scStmt->execute([
+            ':eid'   => $employeeId,
+            ':start' => $period['pay_period_start'],
+            ':end'   => $period['pay_period_end'],
+        ]);
+        $approvedCredits  = $scStmt->fetchAll();
+        $serviceCreditPay = array_sum(array_column($approvedCredits, 'equivalent_pay'));
+        $scIds            = array_column($approvedCredits, 'service_credit_id');
+
         $totalAllowances = 0;
         $insA = $pdo->prepare("
             INSERT INTO payroll_allowances (payroll_id, allowance_type_id, amount)
             VALUES (?,?,?)
         ");
+
+        // Track if Additional Assignment allowance was found + updated
+        $addlAssignTypeId  = null;
+        $addlAssignBaseAmt = 0;
+
         foreach ($atypes->fetchAll() as $type) {
-            $amt = (float)$type['default_amount'];
+            $amt  = (float)$type['default_amount'];
+            $name = strtolower($type['allowance_name'] ?? '');
+
+            // Merge service credit pay into Additional Assignment allowance
+            if ((strpos($name, 'additional') !== false && strpos($name, 'assign') !== false)
+                 || strpos($name, 'addl') !== false || strpos($name, 'add\'l') !== false) {
+                $addlAssignTypeId  = $type['allowance_type_id'];
+                $addlAssignBaseAmt = $amt;
+                $amt               = $amt + $serviceCreditPay; // merge here
+                $serviceCreditPay  = 0; // already merged, don't add again
+            }
+
             $insA->execute([$payrollId, $type['allowance_type_id'], $amt]);
             $totalAllowances += $amt;
+        }
+
+        // If no Additional Assignment allowance type exists yet, add service credit pay separately
+        // (edge case: allowance type not configured)
+        if ($serviceCreditPay > 0) {
+            // Try to find Additional Assignment allowance type
+            $addlType = $pdo->prepare("
+                SELECT allowance_type_id FROM allowance_types
+                WHERE is_active = 1
+                  AND (allowance_name LIKE '%Additional Assignment%'
+                    OR allowance_name LIKE '%Add%l%Assign%')
+                LIMIT 1
+            ");
+            $addlType->execute();
+            $addlTypeRow = $addlType->fetch();
+
+            if ($addlTypeRow) {
+                // Update the existing payroll_allowance row for this type
+                $pdo->prepare("
+                    UPDATE payroll_allowances
+                    SET amount = amount + ?
+                    WHERE payroll_id = ? AND allowance_type_id = ?
+                ")->execute([$serviceCreditPay, $payrollId, $addlTypeRow['allowance_type_id']]);
+            } else {
+                // No matching allowance type — insert as a generic SC allowance row
+                // This should not normally happen if Payroll Settings are configured correctly
+                $pdo->prepare("
+                    INSERT INTO payroll_allowances (payroll_id, allowance_type_id, amount)
+                    SELECT ?, allowance_type_id, ?
+                    FROM allowance_types WHERE allowance_name LIKE '%Additional%' LIMIT 1
+                ")->execute([$payrollId, $serviceCreditPay]);
+            }
+            $totalAllowances += $serviceCreditPay;
+        }
+
+        // Mark all merged service credits as APPLIED
+        if (!empty($scIds)) {
+            $ph = implode(',', array_fill(0, count($scIds), '?'));
+            $pdo->prepare("
+                UPDATE service_credits
+                SET status='APPLIED', payroll_id=?, applied_to_payroll_at=NOW()
+                WHERE service_credit_id IN ($ph)
+            ")->execute(array_merge([$payrollId], $scIds));
         }
 
         // Deductions — use government bracket tables where applicable
@@ -213,13 +291,36 @@ try {
             $amt  = 0;
             $name = strtolower($type['deduction_name']);
 
-            if ($type['is_government']) {
-                // PERAA — permanent (FULL_TIME) employees only
-                if (strpos($name, 'peraa') !== false && $type['is_government']) {
+            // ── LOAN CHECK: runs FIRST, regardless of is_government flag ─────────
+            // A deduction is a loan if:
+            //   (a) is_loan = 1, OR
+            //   (b) the name contains 'loan' (catches cases where is_government is
+            //       set incorrectly on loan deduction types)
+            $isLoanDeduction = $type['is_loan'] || strpos($name, 'loan') !== false;
+
+            if ($isLoanDeduction) {
+                // PERAA loan — FULL_TIME only
+                if (strpos($name, 'peraa') !== false) {
+                    if (($emp['employment_type'] ?? 'FULL_TIME') !== 'FULL_TIME') continue;
+                    $amt = $loanAmounts['peraa'];
+                } elseif (strpos($name, 'sss') !== false) {
+                    $amt = $loanAmounts['sss'];
+                } elseif (strpos($name, 'hdmf') !== false || strpos($name, 'pag-ibig') !== false
+                          || strpos($name, 'pagibig') !== false) {
+                    $amt = $loanAmounts['hdmf'];
+                } elseif (strpos($name, 'rural') !== false) {
+                    $amt = $loanAmounts['rural'];
+                }
+                // amt stays 0 if employee has no active loan of this type — correct
+
+            } elseif ($type['is_government']) {
+                // Government CONTRIBUTIONS (non-loan) ─────────────────────────────
+                // PERAA premium — FULL_TIME only
+                if (strpos($name, 'peraa') !== false) {
                     if (($emp['employment_type'] ?? 'FULL_TIME') !== 'FULL_TIME') continue;
                 }
 
-                if (strpos($name, 'sss') !== false && strpos($name, 'loan') === false) {
+                if (strpos($name, 'sss') !== false) {
                     $row = $pdo->prepare("
                         SELECT employee_share FROM sss_contribution_table
                         WHERE min_salary <= ? AND max_salary >= ? AND is_active = 1
@@ -239,43 +340,27 @@ try {
                     $r = $row->fetch();
                     $amt = $r ? (float)$r['employee_share'] : round($basic * 0.025, 2);
 
-                } elseif (strpos($name, 'pag-ibig') !== false || strpos($name, 'hdmf') !== false) {
-                    if (strpos($name, 'loan') !== false) {
-                        // Pag-IBIG/HDMF loan deduction — use from employee_loans
-                        $amt = $loanAmounts['hdmf'];
-                    } else {
-                        $row = $pdo->prepare("
-                            SELECT employee_share FROM pagibig_contribution_table
-                            WHERE min_salary <= ? AND max_salary >= ? AND is_active = 1
-                            ORDER BY effective_date DESC LIMIT 1
-                        ");
-                        $row->execute([$basic, $basic]);
-                        $r = $row->fetch();
-                        $amt = $r ? (float)$r['employee_share'] : 200;
-                    }
-                } elseif (strpos($name, 'peraa') !== false) {
-                    if (strpos($name, 'loan') !== false) {
-                        // PERAA loan — full_time only (already checked above)
-                        $amt = $loanAmounts['peraa'];
-                    }
-                    // PERAA premium handled below in non-government OR stays 0
-                }
+                } elseif (strpos($name, 'pag-ibig') !== false || strpos($name, 'hdmf') !== false
+                          || strpos($name, 'pagibig') !== false) {
+                    $row = $pdo->prepare("
+                        SELECT employee_share FROM pagibig_contribution_table
+                        WHERE min_salary <= ? AND max_salary >= ? AND is_active = 1
+                        ORDER BY effective_date DESC LIMIT 1
+                    ");
+                    $row->execute([$basic, $basic]);
+                    $r = $row->fetch();
+                    $amt = $r ? (float)$r['employee_share'] : 200;
 
-            } elseif ($type['is_loan']) {
-                // Non-government loan deductions — read from employee_loans
-                if      (strpos($name, 'sss')   !== false) $amt = $loanAmounts['sss'];
-                elseif  (strpos($name, 'hdmf')  !== false || strpos($name, 'pag-ibig') !== false) $amt = $loanAmounts['hdmf'];
-                elseif  (strpos($name, 'peraa') !== false) {
-                    // PERAA loan — permanent employees only
-                    if (($emp['employment_type'] ?? 'FULL_TIME') !== 'FULL_TIME') continue;
-                    $amt = $loanAmounts['peraa'];
+                } elseif (strpos($name, 'peraa') !== false) {
+                    // PERAA premium (FIXED amount from deduction_types)
+                    $amt = (float)$type['deduction_amount'];
                 }
-                elseif  (strpos($name, 'rural') !== false) $amt = $loanAmounts['rural'];
 
             } elseif ($type['deduction_value_type'] === 'PERCENTAGE') {
                 $amt = round($basic * ($type['deduction_rate'] / 100), 2);
+
             } elseif ($type['deduction_value_type'] === 'FIXED') {
-                // PERAA premium — full_time only
+                // PERAA premium — FULL_TIME only
                 if (strpos($name, 'peraa') !== false) {
                     if (($emp['employment_type'] ?? 'FULL_TIME') !== 'FULL_TIME') continue;
                 }

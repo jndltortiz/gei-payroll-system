@@ -11,6 +11,10 @@ $stmt = $pdo->prepare("
         s.shift_name,
 
         ec.monthly_salary,
+        COALESCE(
+            NULLIF(ec.daily_rate, 0),
+            ROUND(ec.monthly_salary / 22, 2)
+        ) AS daily_rate,
 
         u.username,
         r.role_name

@@ -4,7 +4,7 @@
  * Sidebar navigation for the Principal Portal.
  * Active state auto-detected from REQUEST_URI.
  */
-function principalSidebarActive(string $path): string {
+function principalActive(string $path): string {
     $uri = $_SERVER['REQUEST_URI'] ?? '';
     return str_contains($uri, $path) ? 'active' : '';
 }
@@ -30,38 +30,38 @@ function principalSidebarActive(string $path): string {
   <div class="sidebar-nav">
 
     <div class="nav-section-label">OVERVIEW</div>
-    <a class="nav-item <?= principalSidebarActive('principal/dashboard') ?>"
+    <a class="nav-item <?= principalActive('principal/dashboard') ?>"
        href="<?= BASE_URL ?>modules/principal/dashboard/index.php">
       <i class="fa fa-house"></i>
       <span>Dashboard</span>
     </a>
 
         <div class="nav-section-label">ATTENDANCE</div>
-    <a class="nav-item <?= principalSidebarActive('principal/attendance') ?>"
+    <a class="nav-item <?= principalActive('principal/attendance') ?>"
        href="<?= BASE_URL ?>modules/principal/attendance/index.php">
       <i class="fa fa-user-check"></i>
       <span>Attendance</span>
     </a>
 
     <div class="nav-section-label">PAYROLL</div>
-    <a class="nav-item <?= principalSidebarActive('principal/payroll-approval') ?>"
+    <a class="nav-item <?= principalActive('principal/payroll-approval') ?>"
        href="<?= BASE_URL ?>modules/principal/payroll-approval/index.php">
       <i class="fa fa-wallet"></i>
       <span>Payroll Approvals</span>
     </a>
-    <a class="nav-item <?= principalSidebarActive('principal/loan-approval') ?>"
+    <a class="nav-item <?= principalActive('principal/loan-approval') ?>"
        href="<?= BASE_URL ?>modules/principal/loan-approval/index.php">
       <i class="fa fa-hand-holding-dollar"></i>
       <span>Loan Approval</span>
     </a>
-    <a class="nav-item <?= principalSidebarActive('principal/service-credit-approval') ?>"
+    <a class="nav-item <?= principalActive('principal/service-credit-approval') ?>"
        href="<?= BASE_URL ?>modules/principal/service-credit-approval/index.php">
       <i class="fa fa-hands-helping"></i>
       <span>Service Credit Approval</span>
     </a>
 
     <div class="nav-section-label">LEAVE</div>
-    <a class="nav-item <?= principalSidebarActive('principal/leave-approval') ?>"
+    <a class="nav-item <?= principalActive('principal/leave-approval') ?>"
        href="<?= BASE_URL ?>modules/principal/leave-approval/index.php">
       <i class="fa fa-calendar-check"></i>
       <span>Leave Requests</span>
@@ -69,19 +69,19 @@ function principalSidebarActive(string $path): string {
 
 
     <div class="nav-section-label">REPORTS &amp; ANALYTICS</div>
-    <a class="nav-item <?= principalSidebarActive('principal/analytics') ?>"
+    <a class="nav-item <?= principalActive('principal/analytics') ?>"
        href="<?= BASE_URL ?>modules/principal/analytics/index.php">
       <i class="fa fa-chart-bar"></i>
       <span>Analytics</span>
     </a>
-    <a class="nav-item <?= principalSidebarActive('principal/reports') ?>"
+    <a class="nav-item <?= principalActive('principal/reports') ?>"
        href="<?= BASE_URL ?>modules/principal/reports/index.php">
       <i class="fa fa-file-lines"></i>
       <span>Reports Center</span>
     </a>
 
     <div class="nav-section-label">SYSTEM</div>
-    <a class="nav-item <?= principalSidebarActive('modules/settings') ?>"
+    <a class="nav-item <?= principalActive('modules/settings') ?>"
        href="<?= BASE_URL ?>modules/settings/index.php">
       <i class="fa fa-gear"></i>
       <span>Settings</span>

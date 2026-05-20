@@ -1,109 +1,105 @@
 <?php
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/auth.php';
-
 requireLogin();
 
-$pageTitle = 'Service Credits';
+// ── Active tab ─────────────────────────────────────────────────────────────
+$tab    = $_GET['tab']    ?? 'all';
+$search = trim($_GET['search'] ?? '');
+$period = trim($_GET['period'] ?? '');
+$validTabs = ['all','draft','pending','approved','applied','rejected'];
+if (!in_array($tab, $validTabs)) $tab = 'all';
 
-// ── Summary stats ─────────────────────────────────────────────────────────────
-$stmtEarned = $pdo->query("SELECT COALESCE(SUM(days), 0) FROM service_credits WHERE is_approved = 1");
-$totalCreditsEarned = (float)$stmtEarned->fetchColumn();
-$totalCreditsUsed   = 0; // Extend with leave_transactions if tracked
-$totalCreditsAvail  = $totalCreditsEarned - $totalCreditsUsed;
+// ── Tab counts ─────────────────────────────────────────────────────────────
+$counts = $pdo->query("
+    SELECT status, COUNT(*) AS cnt
+    FROM service_credits GROUP BY status
+")->fetchAll(PDO::FETCH_KEY_PAIR);
+$allCount      = array_sum($counts);
+$draftCount    = $counts['DRAFT']    ?? 0;
+$pendingCount  = $counts['PENDING']  ?? 0;
+$approvedCount = $counts['APPROVED'] ?? 0;
+$appliedCount  = ($counts['APPLIED'] ?? 0) + ($counts['RELEASED'] ?? 0);
+$rejectedCount = $counts['REJECTED'] ?? 0;
 
-// ── Filters ───────────────────────────────────────────────────────────────────
-$search      = trim($_GET['search'] ?? '');
-$monthFilter = trim($_GET['month']  ?? '');
+// ── Stats ──────────────────────────────────────────────────────────────────
+$pendingPay  = (float)$pdo->query("SELECT COALESCE(SUM(equivalent_pay),0) FROM service_credits WHERE status='PENDING'")->fetchColumn();
+$approvedPay = (float)$pdo->query("SELECT COALESCE(SUM(equivalent_pay),0) FROM service_credits WHERE status='APPROVED'")->fetchColumn();
+$appliedPay  = (float)$pdo->query("SELECT COALESCE(SUM(equivalent_pay),0) FROM service_credits WHERE status IN('APPLIED','RELEASED')")->fetchColumn();
 
-// ── Pagination ────────────────────────────────────────────────────────────────
-$perPage     = 20;
-$currentPage = max(1, (int)($_GET['page'] ?? 1));
-$offset      = ($currentPage - 1) * $perPage;
-
-// ── WHERE clause ──────────────────────────────────────────────────────────────
+// ── WHERE clause ───────────────────────────────────────────────────────────
 $where  = "WHERE 1=1";
 $params = [];
 
+if ($tab !== 'all') {
+    if ($tab === 'applied') {
+        $where .= " AND sc.status IN ('APPLIED','RELEASED')";
+    } else {
+        $where .= " AND sc.status = :tab";
+        $params[':tab'] = strtoupper($tab);
+    }
+}
 if ($search !== '') {
-    $where .= " AND (e.first_name LIKE :search OR e.last_name LIKE :search OR e.employee_no LIKE :search)";
-    $params[':search'] = "%$search%";
+    $where .= " AND (e.first_name LIKE :s OR e.last_name LIKE :s OR e.employee_no LIKE :s)";
+    $params[':s'] = "%$search%";
+}
+if ($period !== '') {
+    $where .= " AND sc.work_date LIKE :period";
+    $params[':period'] = $period . '%';
 }
 
-if ($monthFilter !== '' && $monthFilter !== 'all') {
-    [$filterYear, $filterMonth] = explode('-', $monthFilter);
-    $where .= " AND YEAR(sc.work_date) = :fyear AND MONTH(sc.work_date) = :fmonth";
-    $params[':fyear']  = $filterYear;
-    $params[':fmonth'] = $filterMonth;
-}
+// ── Pagination ─────────────────────────────────────────────────────────────
+$perPage = 15;
+$page    = max(1, (int)($_GET['page'] ?? 1));
+$offset  = ($page - 1) * $perPage;
 
-// ── Total count ───────────────────────────────────────────────────────────────
-$stmtCount = $pdo->prepare("
-    SELECT COUNT(*)
-    FROM service_credits sc
-    JOIN employees e ON e.employee_id = sc.employee_id
-    $where
-");
-$stmtCount->execute($params);
-$totalRecords = (int)$stmtCount->fetchColumn();
-$totalPages   = max(1, (int)ceil($totalRecords / $perPage));
+$cntStmt = $pdo->prepare("SELECT COUNT(*) FROM service_credits sc
+    JOIN employees e ON e.employee_id=sc.employee_id $where");
+$cntStmt->execute($params);
+$total    = (int)$cntStmt->fetchColumn();
+$pages    = max(1, (int)ceil($total / $perPage));
 
-// ── History rows ──────────────────────────────────────────────────────────────
+// ── Records ────────────────────────────────────────────────────────────────
 $stmt = $pdo->prepare("
-    SELECT
-        sc.service_credit_id,
-        sc.work_date,
-        sc.days,
-        sc.remarks,
-        e.employee_id,
-        e.first_name,
-        e.last_name,
-        e.photo_path,
-        p.position_name
+    SELECT sc.*,
+           CONCAT(e.first_name,' ',e.last_name) AS employee_name, e.employee_no,
+           p.position_name, d.department_name,
+           CONCAT(u.first_name,' ',u.last_name) AS approved_by_name
     FROM service_credits sc
-    JOIN employees   e ON e.employee_id = sc.employee_id
-    JOIN positions   p ON p.position_id = e.position_id
+    JOIN employees e   ON e.employee_id = sc.employee_id
+    JOIN positions p   ON p.position_id = e.position_id
+    JOIN departments d ON d.department_id = e.department_id
+    LEFT JOIN employees u ON u.employee_id = (
+        SELECT employee_id FROM users WHERE user_id = sc.approved_by LIMIT 1
+    )
     $where
-    ORDER BY sc.work_date DESC, sc.service_credit_id DESC
-    LIMIT :limit OFFSET :offset
+    ORDER BY sc.updated_at DESC, sc.created_at DESC
+    LIMIT :lim OFFSET :off
 ");
 foreach ($params as $k => $v) $stmt->bindValue($k, $v);
-$stmt->bindValue(':limit',  $perPage, PDO::PARAM_INT);
-$stmt->bindValue(':offset', $offset,  PDO::PARAM_INT);
+$stmt->bindValue(':lim',  $perPage, PDO::PARAM_INT);
+$stmt->bindValue(':off',  $offset,  PDO::PARAM_INT);
 $stmt->execute();
-$credits = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$records = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// ── Employee summary sidebar ──────────────────────────────────────────────────
-$employeeSummary = $pdo->query("
-    SELECT
-        e.employee_id,
-        e.first_name,
-        e.last_name,
-        p.position_name,
-        SUM(sc.days) AS earned
-    FROM service_credits sc
-    JOIN employees e ON e.employee_id = sc.employee_id
-    JOIN positions p ON p.position_id = e.position_id
-    WHERE sc.is_approved = 1
-    GROUP BY e.employee_id, e.first_name, e.last_name, p.position_name
-    ORDER BY earned DESC
-    LIMIT 10
-")->fetchAll(PDO::FETCH_ASSOC);
-
-// ── Dropdowns ─────────────────────────────────────────────────────────────────
-$allEmployees = $pdo->query("
-    SELECT e.employee_id, e.first_name, e.last_name, p.position_name
+// ── Dropdowns ──────────────────────────────────────────────────────────────
+$employees = $pdo->query("
+    SELECT e.employee_id, CONCAT(e.first_name,' ',e.last_name) AS full_name, p.position_name,
+           COALESCE(NULLIF(ec.daily_rate,0), ROUND(ec.monthly_salary/22,2)) AS daily_rate
     FROM employees e
-    JOIN positions p ON p.position_id = e.position_id
-    WHERE e.employee_status = 'ACTIVE'
+    JOIN positions p ON p.position_id=e.position_id
+    LEFT JOIN employee_compensations ec ON ec.employee_id=e.employee_id AND ec.is_active=1
+    WHERE e.employee_status='ACTIVE'
     ORDER BY e.last_name, e.first_name
 ")->fetchAll(PDO::FETCH_ASSOC);
 
-$approverOptions = ['Principal', 'Assistant Principal', 'HR Manager'];
+// ── Payroll periods for filter ──────────────────────────────────────────────
+$periods = $pdo->query("SELECT period_id, period_name, pay_period_start, pay_period_end
+    FROM payroll_periods ORDER BY pay_period_start DESC LIMIT 12")->fetchAll();
 
-// ── Flash messages ────────────────────────────────────────────────────────────
-$successMsg = $_SESSION['sc_success'] ?? '';
-$errorMsg   = $_SESSION['sc_error']   ?? '';
+// ── Flash ──────────────────────────────────────────────────────────────────
+$flashOk  = $_SESSION['sc_success'] ?? '';
+$flashErr = $_SESSION['sc_error']   ?? '';
 unset($_SESSION['sc_success'], $_SESSION['sc_error']);
 
 $pageTitle = 'Service Credits';
@@ -113,323 +109,256 @@ require_once __DIR__ . '/../../includes/head.php';
 <body>
 <div class="layout">
 <?php include __DIR__ . '/../../includes/sidebar.php'; ?>
-
 <div class="main">
-    <?php include __DIR__ . '/../../includes/header.php'; ?>
-  <div class="main-content">
-  <!-- Page Header -->
-  <div class="page-header">
-    <div class="page-header-icon">
-      <i class="fa fa-medal"></i>
+<?php include __DIR__ . '/../../includes/header.php'; ?>
+<div class="main-content">
+
+  <!-- Page header -->
+  <div class="sc-page-header">
+    <div class="sc-page-header-left">
+      <div class="sc-page-icon"><i class="fa fa-medal"></i></div>
+      <div>
+        <h1>Service Credits</h1>
+        <p>Track extra work rendered beyond school days — approved credits become Additional Assignment Payment.</p>
+      </div>
     </div>
-    <div>
-      <h1 class="page-title">Service Credits Management</h1>
-      <p class="page-subtitle">Track extra work and accrued leave days earned by employees</p>
-    </div>
+    <button class="sc-btn-primary" id="btnCreate">
+      <i class="fa fa-plus"></i> Create Service Credit
+    </button>
   </div>
 
   <!-- Alerts -->
-  <?php if ($successMsg): ?>
-  <div class="alert alert-success">
-    <i class="fa fa-circle-check"></i> <?= htmlspecialchars($successMsg) ?>
-    <button class="alert-close" onclick="this.parentElement.remove()">×</button>
-  </div>
+  <?php if ($flashOk): ?>
+    <div class="sc-alert sc-alert--ok"><i class="fa fa-circle-check"></i><?= htmlspecialchars($flashOk) ?>
+      <button onclick="this.parentElement.remove()">×</button></div>
   <?php endif; ?>
-  <?php if ($errorMsg): ?>
-  <div class="alert alert-error">
-    <i class="fa fa-triangle-exclamation"></i> <?= htmlspecialchars($errorMsg) ?>
-    <button class="alert-close" onclick="this.parentElement.remove()">×</button>
-  </div>
+  <?php if ($flashErr): ?>
+    <div class="sc-alert sc-alert--err"><i class="fa fa-triangle-exclamation"></i><?= htmlspecialchars($flashErr) ?>
+      <button onclick="this.parentElement.remove()">×</button></div>
   <?php endif; ?>
 
-  <!-- Stat Cards -->
-  <div class="stats-row">
-    <div class="stat-card">
-      <div class="stat-card-body">
-        <div>
-          <p class="stat-label">Total Credits Earned</p>
-          <p class="stat-value"><?= number_format($totalCreditsEarned, 1) ?></p>
-        </div>
-        <div class="stat-icon stat-icon--teal"><i class="fa fa-arrow-trend-up"></i></div>
+  <!-- Stat cards -->
+  <div class="sc-stats">
+    <div class="sc-stat-card">
+      <div class="sc-stat-icon sc-stat-icon--amber"><i class="fa fa-clock"></i></div>
+      <div>
+        <div class="sc-stat-num"><?= $pendingCount ?></div>
+        <div class="sc-stat-label">Pending Approval</div>
+        <div class="sc-stat-sub">₱<?= number_format($pendingPay, 2) ?> total</div>
       </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-card-body">
-        <div>
-          <p class="stat-label">Credits Used</p>
-          <p class="stat-value"><?= number_format($totalCreditsUsed, 1) ?></p>
-        </div>
-        <div class="stat-icon stat-icon--blue"><i class="fa fa-calendar-check"></i></div>
+    <div class="sc-stat-card">
+      <div class="sc-stat-icon sc-stat-icon--green"><i class="fa fa-circle-check"></i></div>
+      <div>
+        <div class="sc-stat-num">₱<?= number_format($approvedPay, 2) ?></div>
+        <div class="sc-stat-label">Approved — Awaiting Payroll</div>
+        <div class="sc-stat-sub"><?= $approvedCount ?> credit<?= $approvedCount!==1?'s':'' ?></div>
       </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-card-body">
-        <div>
-          <p class="stat-label">Credits Available</p>
-          <p class="stat-value"><?= number_format($totalCreditsAvail, 1) ?></p>
-        </div>
-        <div class="stat-icon stat-icon--amber"><i class="fa fa-medal"></i></div>
+    <div class="sc-stat-card">
+      <div class="sc-stat-icon sc-stat-icon--blue"><i class="fa fa-file-invoice-dollar"></i></div>
+      <div>
+        <div class="sc-stat-num">₱<?= number_format($appliedPay, 2) ?></div>
+        <div class="sc-stat-label">Applied to Payroll</div>
+        <div class="sc-stat-sub"><?= $appliedCount ?> credit<?= $appliedCount!==1?'s':'' ?></div>
       </div>
     </div>
   </div>
 
-  <!-- Filter Bar -->
-  <div class="filter-bar">
-    <form method="GET" class="filter-bar-form" id="filterForm">
-      <div class="filter-bar-left">
-        <div class="search-wrap">
-          <i class="fa fa-magnifying-glass search-icon"></i>
-          <input
-            type="text"
-            name="search"
-            id="searchInput"
-            class="form-control search-input"
-            placeholder="Search employees..."
-            value="<?= htmlspecialchars($search) ?>"
-          >
-        </div>
-        <i class="fa fa-filter filter-icon"></i>
-        <select name="month" class="form-select month-select" onchange="this.form.submit()">
-          <option value="all" <?= ($monthFilter === '' || $monthFilter === 'all') ? 'selected' : '' ?>>All Months</option>
-          <?php for ($i = 0; $i < 12; $i++):
-            $ts  = strtotime("-$i months");
-            $val = date('Y-m', $ts);
-            $lbl = date('F Y', $ts);
-          ?>
-          <option value="<?= $val ?>" <?= $monthFilter === $val ? 'selected' : '' ?>><?= $lbl ?></option>
-          <?php endfor; ?>
-        </select>
-      </div>
-      <button type="button" class="btn btn-primary" id="btnAddCredit">
-        <i class="fa fa-plus"></i> Add Service Credit
-      </button>
-    </form>
+  <!-- Tabs -->
+  <div class="sc-tabs-bar">
+    <?php
+    $tabs = [
+      'all'      => ['All', $allCount,      ''],
+      'draft'    => ['Draft', $draftCount,  'gray'],
+      'pending'  => ['Pending', $pendingCount, 'amber'],
+      'approved' => ['Approved', $approvedCount, 'green'],
+      'applied'  => ['In Payroll', $appliedCount, 'blue'],
+      'rejected' => ['Rejected', $rejectedCount, 'red'],
+    ];
+    foreach ($tabs as $key => [$label, $cnt, $color]):
+      $active = $tab === $key ? 'active' : '';
+      $url = '?' . http_build_query(['tab'=>$key,'search'=>$search,'period'=>$period]);
+    ?>
+    <a href="<?= $url ?>" class="sc-tab <?= $active ?>">
+      <?= $label ?>
+      <?php if ($cnt > 0): ?>
+        <span class="sc-tab-badge sc-tab-badge--<?= $color ?>"><?= $cnt ?></span>
+      <?php endif; ?>
+    </a>
+    <?php endforeach; ?>
   </div>
 
-  <!-- Main Layout -->
-  <div class="sc-layout">
-
-    <!-- History Card -->
-    <div class="card sc-history-card">
-      <h2 class="card-title">Service Credit History</h2>
-
-      <?php if (empty($credits)): ?>
-      <div class="empty-state">
-        <i class="fa fa-medal empty-icon"></i>
-        <p class="empty-title">No service credits found</p>
-        <p class="empty-sub">Click "Add Service Credit" to get started</p>
-        <button class="btn btn-primary" id="btnAddCreditEmpty">
-          <i class="fa fa-plus"></i> Add Your First Credit
-        </button>
+  <!-- Filter / search bar -->
+  <form method="GET" class="sc-filter-bar" id="filterForm">
+    <input type="hidden" name="tab" value="<?= htmlspecialchars($tab) ?>">
+    <div class="sc-filter-bar-left">
+      <div class="sc-search-wrap">
+        <i class="fa fa-magnifying-glass"></i>
+        <input type="text" name="search" placeholder="Search employee…"
+               value="<?= htmlspecialchars($search) ?>" class="sc-search-input" id="scSearch">
       </div>
-      <?php else: ?>
-      <div class="table-responsive">
-        <table class="sc-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Employee</th>
-              <th>Reason</th>
-              <th>Earned</th>
-              <th>Used</th>
-              <th>Available</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php foreach ($credits as $cr):
-              $earned    = (float)$cr['days'];
-              $used      = 0;
-              $available = $earned - $used;
-            ?>
-            <tr>
-              <td class="sc-date"><?= date('M j, Y', strtotime($cr['work_date'])) ?></td>
-              <td>
-                <div class="employee-cell">
-                  <?php if (!empty($cr['photo_path']) && file_exists('../../' . $cr['photo_path'])): ?>
-                    <img src="../../<?= htmlspecialchars($cr['photo_path']) ?>" class="emp-avatar" alt="">
-                  <?php else: ?>
-                    <div class="emp-avatar-placeholder">
-                      <?= strtoupper(substr($cr['first_name'], 0, 1) . substr($cr['last_name'], 0, 1)) ?>
-                    </div>
-                  <?php endif; ?>
-                  <div>
-                    <span class="emp-name"><?= htmlspecialchars($cr['first_name'] . ' ' . $cr['last_name']) ?></span>
-                    <span class="emp-pos"><?= htmlspecialchars($cr['position_name']) ?></span>
-                  </div>
-                </div>
-              </td>
-              <td><?= htmlspecialchars($cr['remarks'] ?? '—') ?></td>
-              <td><span class="badge-earned">+<?= number_format($earned, 1) ?></span></td>
-              <td><?= number_format($used, 1) ?></td>
-              <td class="<?= $available > 0 ? 'text-teal' : 'text-gray' ?>"><?= number_format($available, 1) ?></td>
-              <td class="sc-actions">
-                <button class="icon-btn icon-btn--edit" title="Edit"
-                  onclick="openEditModal(<?= htmlspecialchars(json_encode($cr)) ?>)">
-                  <i class="fa fa-pen"></i>
-                </button>
-                <button class="icon-btn icon-btn--delete" title="Delete"
-                  onclick="openDeleteModal(<?= (int)$cr['service_credit_id'] ?>, '<?= htmlspecialchars($cr['first_name'] . ' ' . $cr['last_name']) ?>', <?= $earned ?>)">
-                  <i class="fa fa-trash"></i>
-                </button>
-              </td>
-            </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-      </div>
-
-      <?php if ($totalPages > 1): ?>
-      <div class="pagination-bar">
-        <span class="pagination-info">
-          Showing <?= $offset + 1 ?>–<?= min($offset + $perPage, $totalRecords) ?> of <?= $totalRecords ?> records
-        </span>
-        <div class="pagination-controls">
-          <?php if ($currentPage > 1): ?>
-          <a href="?page=<?= $currentPage - 1 ?>&search=<?= urlencode($search) ?>&month=<?= urlencode($monthFilter) ?>" class="page-btn"><i class="fa fa-chevron-left"></i></a>
-          <?php endif; ?>
-          <?php for ($p = max(1, $currentPage - 2); $p <= min($totalPages, $currentPage + 2); $p++): ?>
-          <a href="?page=<?= $p ?>&search=<?= urlencode($search) ?>&month=<?= urlencode($monthFilter) ?>"
-             class="page-btn <?= $p === $currentPage ? 'active' : '' ?>"><?= $p ?></a>
-          <?php endfor; ?>
-          <?php if ($currentPage < $totalPages): ?>
-          <a href="?page=<?= $currentPage + 1 ?>&search=<?= urlencode($search) ?>&month=<?= urlencode($monthFilter) ?>" class="page-btn"><i class="fa fa-chevron-right"></i></a>
-          <?php endif; ?>
-        </div>
-      </div>
-      <?php endif; ?>
-      <?php endif; ?>
+      <select name="period" class="sc-select" onchange="this.form.submit()">
+        <option value="">All Periods</option>
+        <?php foreach ($periods as $pp): ?>
+        <option value="<?= substr($pp['pay_period_start'],0,7) ?>"
+                <?= $period===substr($pp['pay_period_start'],0,7)?'selected':'' ?>>
+          <?= htmlspecialchars($pp['period_name']) ?>
+        </option>
+        <?php endforeach; ?>
+      </select>
     </div>
+  </form>
 
-    <!-- Employee Summary Sidebar -->
-    <div class="card sc-summary-card">
-      <h2 class="card-title">Employee Summary</h2>
-      <div class="summary-list">
-        <?php if (empty($employeeSummary)): ?>
-          <p class="no-summary">No credits awarded yet.</p>
-        <?php else: ?>
-          <?php foreach ($employeeSummary as $emp):
-            $empEarned    = (float)$emp['earned'];
-            $empUsed      = 0;
-            $empAvailable = $empEarned - $empUsed;
-          ?>
-          <div class="summary-item">
-            <div>
-              <span class="summary-emp-name"><?= htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name']) ?></span>
-              <span class="summary-emp-pos"><?= htmlspecialchars($emp['position_name']) ?></span>
-              <div class="summary-meta">
-                <span class="meta-earned"><i class="fa fa-arrow-up"></i> <?= number_format($empEarned, 1) ?> earned</span>
-                <span class="meta-dot">·</span>
-                <span class="meta-used"><i class="fa fa-arrow-down"></i> <?= number_format($empUsed, 1) ?> used</span>
+  <!-- Table -->
+  <div class="sc-card">
+    <?php if (empty($records)): ?>
+    <div class="sc-empty">
+      <i class="fa fa-medal"></i>
+      <p>No service credits found</p>
+      <small><?= $tab==='all' ? 'Click "Create Service Credit" to get started.' : "No $tab records." ?></small>
+    </div>
+    <?php else: ?>
+    <div class="sc-table-wrap">
+      <table class="sc-table">
+        <thead>
+          <tr>
+            <th>Employee</th>
+            <th>Work Date</th>
+            <th>Days</th>
+            <th>Equiv. Pay</th>
+            <th>Status</th>
+            <th>Payroll</th>
+            <th>Approved By</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($records as $r):
+          $badges = [
+            'DRAFT'    => ['sc-badge--draft',    'Draft'],
+            'PENDING'  => ['sc-badge--pending',  'Pending'],
+            'APPROVED' => ['sc-badge--approved', 'Approved'],
+            'APPLIED'  => ['sc-badge--applied',  'In Payroll'],
+            'RELEASED' => ['sc-badge--released', 'Released'],
+            'REJECTED' => ['sc-badge--rejected', 'Rejected'],
+          ];
+          [$bdgClass, $bdgLabel] = $badges[$r['status']] ?? ['sc-badge--draft', $r['status']];
+          $canEdit     = in_array($r['status'], ['DRAFT','REJECTED']);
+          $canDelete   = $r['status'] === 'DRAFT';
+          $canResubmit = in_array($r['status'], ['DRAFT','REJECTED']);
+          $canApprove  = $r['status'] === 'PENDING';
+        ?>
+        <tr>
+          <td>
+            <div class="sc-emp-cell">
+              <div class="sc-emp-avatar"><?= strtoupper(substr($r['employee_name'],0,1).substr(strrchr($r['employee_name'],' ')??'',1,1)) ?></div>
+              <div>
+                <span class="sc-emp-name"><?= htmlspecialchars($r['employee_name']) ?></span>
+                <span class="sc-emp-pos"><?= htmlspecialchars($r['position_name']) ?></span>
               </div>
             </div>
-            <span class="summary-credits"><?= number_format($empAvailable, 1) ?> credits</span>
-          </div>
-          <?php endforeach; ?>
+          </td>
+          <td><?= date('M j, Y', strtotime($r['work_date'])) ?></td>
+          <td><?= number_format((float)$r['days'],1) ?> day<?= $r['days']!=1?'s':'' ?></td>
+          <td class="sc-pay-cell">₱<?= number_format((float)$r['equivalent_pay'],2) ?></td>
+          <td><span class="sc-badge <?= $bdgClass ?>"><?= $bdgLabel ?></span></td>
+          <td>
+            <?php if ($r['payroll_id']): ?>
+              <span class="sc-payroll-link">#<?= $r['payroll_id'] ?></span>
+            <?php else: ?>
+              <span class="sc-na">—</span>
+            <?php endif; ?>
+          </td>
+          <td><?= $r['approved_by_name'] ? htmlspecialchars($r['approved_by_name']) : '<span class="sc-na">—</span>' ?></td>
+          <td><?= date('M j', strtotime($r['created_at'] ?? $r['work_date'])) ?></td>
+          <td>
+            <div class="sc-action-group">
+              <!-- View details -->
+              <button class="sc-icon-btn sc-icon-btn--view" title="View details"
+                onclick="openViewModal(<?= htmlspecialchars(json_encode($r)) ?>)">
+                <i class="fa fa-eye"></i>
+              </button>
+              <?php if ($canApprove): ?>
+              <!-- Approve inline -->
+              <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php"
+                    style="display:inline"
+                    onsubmit="return confirm('Approve this service credit for ₱<?= number_format((float)$r['equivalent_pay'],2) ?>?\nIt will be included in the next payroll as Additional Assignment Payment.')">
+                <input type="hidden" name="action" value="approve">
+                <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
+                <button type="submit" class="sc-icon-btn sc-icon-btn--approve" title="Approve">
+                  <i class="fa fa-circle-check"></i>
+                </button>
+              </form>
+              <!-- Reject -->
+              <button class="sc-icon-btn sc-icon-btn--reject" title="Reject"
+                onclick="openRejectModal(<?= $r['service_credit_id'] ?>,'<?= htmlspecialchars($r['employee_name']) ?>')">
+                <i class="fa fa-circle-xmark"></i>
+              </button>
+              <?php endif; ?>
+              <?php if ($canEdit): ?>
+              <button class="sc-icon-btn sc-icon-btn--edit" title="Edit"
+                onclick="openEditModal(<?= htmlspecialchars(json_encode($r)) ?>)">
+                <i class="fa fa-pen"></i>
+              </button>
+              <?php endif; ?>
+              <?php if ($canResubmit && $r['status']==='REJECTED'): ?>
+              <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php"
+                    style="display:inline"
+                    onsubmit="return confirm('Resubmit this for approval?')">
+                <input type="hidden" name="action" value="resubmit">
+                <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
+                <button type="submit" class="sc-icon-btn sc-icon-btn--resubmit" title="Resubmit">
+                  <i class="fa fa-rotate-right"></i>
+                </button>
+              </form>
+              <?php endif; ?>
+              <?php if ($canDelete): ?>
+              <button class="sc-icon-btn sc-icon-btn--delete" title="Delete"
+                onclick="openDeleteModal(<?= $r['service_credit_id'] ?>,'<?= htmlspecialchars($r['employee_name']) ?>')">
+                <i class="fa fa-trash"></i>
+              </button>
+              <?php endif; ?>
+            </div>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <?php if ($pages > 1): ?>
+    <div class="sc-pagination">
+      <span>Showing <?= $offset+1 ?>–<?= min($offset+$perPage,$total) ?> of <?= $total ?></span>
+      <div class="sc-pagination-btns">
+        <?php if ($page>1): ?>
+        <a href="?<?= http_build_query(['tab'=>$tab,'search'=>$search,'period'=>$period,'page'=>$page-1]) ?>" class="sc-page-btn"><i class="fa fa-chevron-left"></i></a>
+        <?php endif; ?>
+        <?php for ($pg=max(1,$page-2);$pg<=min($pages,$page+2);$pg++): ?>
+        <a href="?<?= http_build_query(['tab'=>$tab,'search'=>$search,'period'=>$period,'page'=>$pg]) ?>"
+           class="sc-page-btn <?= $pg===$page?'active':'' ?>"><?= $pg ?></a>
+        <?php endfor; ?>
+        <?php if ($page<$pages): ?>
+        <a href="?<?= http_build_query(['tab'=>$tab,'search'=>$search,'period'=>$period,'page'=>$page+1]) ?>" class="sc-page-btn"><i class="fa fa-chevron-right"></i></a>
         <?php endif; ?>
       </div>
-      <div class="info-box">
-        <span class="info-box-label">Service Credits:</span>
-        1 credit = 1 additional leave day. Credits are accrued and added to the employee's leave balance.
-        Employees can use them as vacation or sick leave.
-      </div>
     </div>
-
-  </div><!-- /.sc-layout -->
-</div><!-- /.main-content -->
-
-
-<!-- Modal: Add / Edit -->
-<div class="modal-overlay" id="creditModal" style="display:none;">
-  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-    <div class="modal-header">
-      <h3 class="modal-title" id="modalTitle">Add Service Credit</h3>
-      <button class="modal-close" onclick="closeModal('creditModal')">×</button>
-    </div>
-    <form id="creditForm" method="POST" action="../../actions/service-credits-action.php">
-      <input type="hidden" name="action"            id="formAction"   value="add">
-      <input type="hidden" name="service_credit_id" id="formCreditId" value="">
-      <div class="modal-body">
-
-        <div class="form-group">
-          <label class="form-label" for="formEmployee">Employee</label>
-          <select name="employee_id" id="formEmployee" class="form-select" required>
-            <option value="">Select employee...</option>
-            <?php foreach ($allEmployees as $emp): ?>
-            <option value="<?= $emp['employee_id'] ?>">
-              <?= htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name'] . ' — ' . $emp['position_name']) ?>
-            </option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-
-        <div class="form-row-2">
-          <div class="form-group">
-            <label class="form-label" for="formDays">Credits Earned</label>
-            <input type="number" name="days" id="formDays" class="form-control"
-                   value="1.0" step="0.5" min="0.5" max="30" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="formWorkDate">Date Earned</label>
-            <input type="date" name="work_date" id="formWorkDate" class="form-control"
-                   value="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d') ?>" required>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="formRemarks">Reason / Description</label>
-          <textarea name="remarks" id="formRemarks" class="form-control" rows="3"
-                    placeholder="e.g., Saturday tutorial session, weekend seminar..." maxlength="255"></textarea>
-          <span class="char-count" id="charCount">0/255</span>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="formApprover">Approved By</label>
-          <select name="approved_by_role" id="formApprover" class="form-select">
-            <?php foreach ($approverOptions as $opt): ?>
-            <option value="<?= htmlspecialchars($opt) ?>"><?= htmlspecialchars($opt) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-
-        <div class="note-box">
-          <strong>Note:</strong> Service credits are accrued as additional leave days.
-          1 credit = 1 extra day of leave that can be used throughout the year.
-        </div>
-
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('creditModal')">Cancel</button>
-        <button type="submit" class="btn btn-primary" id="submitBtn">Add Credit</button>
-      </div>
-    </form>
+    <?php endif; ?>
+    <?php endif; ?>
   </div>
-</div>
 
+</div><!-- .main-content -->
+</div><!-- .main -->
+</div><!-- .layout -->
 
-<!-- Modal: Delete Confirmation -->
-<div class="modal-overlay" id="deleteModal" style="display:none;">
-  <div class="modal-box modal-box--sm" role="dialog" aria-modal="true">
-    <div class="modal-header">
-      <h3 class="modal-title">Delete Service Credit?</h3>
-      <button class="modal-close" onclick="closeModal('deleteModal')">×</button>
-    </div>
-    <div class="modal-body modal-body--center">
-      <div class="delete-warning-icon"><i class="fa fa-triangle-exclamation"></i></div>
-      <p class="modal-desc" id="deleteDesc"></p>
-    </div>
-    <form method="POST" action="../../actions/service-credits-action.php">
-      <input type="hidden" name="action"            value="delete">
-      <input type="hidden" name="service_credit_id" id="deleteCreditId" value="">
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="closeModal('deleteModal')">Cancel</button>
-        <button type="submit" class="btn btn-danger">Delete</button>
-      </div>
-    </form>
-  </div>
-</div><!-- end .main-content -->
-</div><!-- end .main -->
-</div><!-- end .layout -->
+<!-- ══ Modals ══ -->
+<?php include __DIR__ . '/modals/modal-create.php'; ?>
+<?php include __DIR__ . '/modals/modal-reject.php'; ?>
+<?php include __DIR__ . '/modals/modal-view.php'; ?>
+<?php include __DIR__ . '/modals/modal-delete.php'; ?>
 
+<script>const BASE_URL='<?= BASE_URL ?>';</script>
 <script src="<?= BASE_URL ?>assets/js/service-credits.js"></script>
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
