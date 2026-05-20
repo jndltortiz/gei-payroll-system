@@ -18,7 +18,11 @@ function requireLogin(): void
 function guestOnly(): void
 {
     if (isLoggedIn()) {
-        header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
+        if (userRole() === 'Principal') {
+            header('Location: ' . BASE_URL . 'modules/principal/payroll-approval/index.php');
+        } else {
+            header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
+        }
         exit;
     }
 }
@@ -35,7 +39,7 @@ function userFullName(): string
     }
 
     $firstName = $_SESSION['user']['first_name'] ?? '';
-    $lastName = $_SESSION['user']['last_name'] ?? '';
+    $lastName  = $_SESSION['user']['last_name']  ?? '';
 
     return trim($firstName . ' ' . $lastName);
 }
@@ -65,8 +69,8 @@ function redirectIfNoRole(array $roles): void
 function setFlash(string $type, string $message): void
 {
     $_SESSION['flash'] = [
-        'type' => $type,
-        'message' => $message
+        'type'    => $type,
+        'message' => $message,
     ];
 }
 
@@ -80,4 +84,32 @@ function getFlash(): ?array
     unset($_SESSION['flash']);
 
     return $flash;
+}
+
+// ── Role-specific guards ──────────────────────────────────────────────────────
+
+/**
+ * Principal-only pages.
+ * Non-principals → HR dashboard. Guests → login.
+ */
+function requirePrincipal(): void
+{
+    requireLogin();
+    if (userRole() !== 'Principal') {
+        header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
+        exit;
+    }
+}
+
+/**
+ * HR/Admin pages.
+ * Principals → their portal. Guests → login.
+ */
+function requireHR(): void
+{
+    requireLogin();
+    if (userRole() === 'Principal') {
+        header('Location: ' . BASE_URL . 'modules/principal/payroll-approval/index.php');
+        exit;
+    }
 }

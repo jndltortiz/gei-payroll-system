@@ -68,5 +68,14 @@ $updateLogin = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE user_id 
 $updateLogin->execute(['user_id' => $user['user_id']]);
 
 setFlash('success', 'Login successful.');
-header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
+
+// ── Role-based redirect ───────────────────────────────────────────────────────
+switch ($user['role_name']) {
+    case 'Principal':
+        header('Location: ' . BASE_URL . 'modules/principal/payroll-approval/index.php');
+        break;
+    default:
+        header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
+        break;
+}
 exit;

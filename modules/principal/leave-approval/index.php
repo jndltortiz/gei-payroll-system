@@ -1,14 +1,11 @@
 <?php
 // modules/principal/leave-approval/index.php
-session_start();
-require_once '../../../config/db.php';
-require_once '../../../config/auth.php';
+require_once __DIR__ . '/../../../config/config.php';
+require_once __DIR__ . '/../../../includes/auth.php';
+requirePrincipal();
 
-// Auth guard - principal only
-//requireRole('principal');
-
-$principal_id = $_SESSION['employee_id'];
-$user_id = $_SESSION['user_id'];
+$principal_id = $_SESSION['user']['employee_id'];
+$user_id      = $_SESSION['user']['user_id'];
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
 
@@ -402,7 +399,7 @@ $display_date = date('M d, Y');
 <!-- Toast -->
 <div class="toast-container" id="toastContainer"></div>
 
-<script src="../../../assets/js/principal-leave.js"></script>
+<script src="../../../assets/js/principal-leave-approval.js"></script>
 <script>lucide.createIcons();</script>
 </body>
 </html>

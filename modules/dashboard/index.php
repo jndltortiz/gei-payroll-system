@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../config/database.php';
 
-requireLogin();
+requireHR();
 
 // TODAY'S DATE — defined once at top so all queries below can use it
 $today = date('Y-m-d');
