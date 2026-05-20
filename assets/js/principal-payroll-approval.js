@@ -7,6 +7,31 @@ let _activePeriod      = null;
 let _activePeriodLabel = '';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TOAST  (mirrors global.css .toast / #toast-container styles)
+// ─────────────────────────────────────────────────────────────────────────────
+function showToast(message, type = 'success') {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+    const icons = { success: 'fa-circle-check', error: 'fa-circle-xmark',
+                    warning: 'fa-triangle-exclamation', info: 'fa-circle-info' };
+    const toast = document.createElement('div');
+    toast.className = `toast toast--${type}`;
+    toast.innerHTML = `<i class="fa ${icons[type] || icons.success}"></i>
+                       <span>${message}</span>
+                       <button class="toast-close" onclick="this.parentElement.remove()">&#x2715;</button>`;
+    container.appendChild(toast);
+    requestAnimationFrame(() => requestAnimationFrame(() => toast.classList.add('toast--show')));
+    setTimeout(() => {
+        toast.classList.remove('toast--show');
+        setTimeout(() => toast.remove(), 280);
+    }, 4500);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 function fmtNum(v) {
@@ -198,7 +223,14 @@ async function openRegisterModal(periodId) {
 
 function closeRegister() { closeOverlay('registerOverlay'); }
 
-function exportRegisterPDF() {
+function exportRegisterPDF(periodId) {
+    // Can be called directly with a periodId (from history buttons)
+    // or with no args after the register modal is already open
+    if (periodId) {
+        // Open register modal first, then user can print from the modal
+        openRegisterModal(periodId);
+        return;
+    }
     const title = document.getElementById('registerTitle').textContent;
     const body  = document.getElementById('registerBody').innerHTML;
     const win   = window.open('', '_blank');
@@ -231,11 +263,15 @@ function exportRegisterPDF() {
 // APPROVE
 // ─────────────────────────────────────────────────────────────────────────────
 function openApproveConfirm(periodId, label) {
+    closeReject();   // ensure reject modal is closed before opening approve
     _activePeriod      = periodId;
     _activePeriodLabel = label;
     document.getElementById('approveDesc').textContent =
-        `Are you sure you want to approve and authorize the disbursement of payroll for ${label}? ` +
+        `You are about to approve and authorize disbursement of payroll for "${label}". ` +
         `This action will lock the payroll and cannot be undone.`;
+    // Reset button state in case it was left in a disabled state
+    const btn = document.getElementById('approveConfirmBtn');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-circle-check"></i> Yes, Approve &amp; Authorize'; }
     showOverlay('approveOverlay');
 }
 
@@ -271,11 +307,16 @@ async function submitApprove() {
 // REJECT / RETURN
 // ─────────────────────────────────────────────────────────────────────────────
 function openRejectModal(periodId, label) {
+    closeApprove();  // ensure approve modal is closed before opening reject
     _activePeriod      = periodId;
     _activePeriodLabel = label;
     document.getElementById('rejectRemarks').value = '';
     document.getElementById('rejectError').style.display = 'none';
+    // Reset button state
+    const btn = document.getElementById('rejectSubmitBtn');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-circle-xmark"></i> Submit Rejection'; }
     showOverlay('rejectOverlay');
+    setTimeout(() => document.getElementById('rejectRemarks')?.focus(), 80);
 }
 
 function closeReject() { closeOverlay('rejectOverlay'); }

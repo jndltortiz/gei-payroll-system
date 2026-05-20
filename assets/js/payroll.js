@@ -147,8 +147,9 @@ document.addEventListener("input", function(e) {
     }
 });
 
-  // Sidebar collapse
-  const sidebar = document.getElementById('sidebar');
-  document.getElementById('collapseBtn').addEventListener('click', () => {
-    sidebar.classList.toggle('collapsed');
-  });
+  // Sidebar collapse — guarded so it doesn't throw on pages where collapseBtn is absent
+  const sidebar     = document.getElementById('sidebar');
+  const collapseBtn = document.getElementById('collapseBtn');
+  if (sidebar && collapseBtn) {
+      collapseBtn.addEventListener('click', () => sidebar.classList.toggle('collapsed'));
+  }

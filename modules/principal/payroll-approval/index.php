@@ -128,11 +128,19 @@ require_once __DIR__ . '/../../../includes/head.php';
         </div>
         <div class="pr-view-links">
           <button class="pr-link" onclick="openSummaryModal(<?= $p['period_id'] ?>)">
-            <i class="fa fa-eye"></i> View Payroll
+            <i class="fa fa-eye"></i> View Summary
           </button>
           <button class="pr-link" onclick="openRegisterModal(<?= $p['period_id'] ?>)">
-            <i class="fa fa-table-list"></i> View Detailed Register
+            <i class="fa fa-table-list"></i> Detailed Register
           </button>
+          <button class="pr-link" onclick="exportRegisterPDF(<?= $p['period_id'] ?>)">
+            <i class="fa fa-download"></i> Download
+          </button>
+          <a class="pr-link"
+             href="<?= BASE_URL ?>modules/payroll/batch-detail.php?period_id=<?= $p['period_id'] ?>"
+             style="text-decoration:none;">
+            <i class="fa fa-layer-group"></i> Full Details
+          </a>
         </div>
       </div>
     </div>
@@ -176,11 +184,16 @@ require_once __DIR__ . '/../../../includes/head.php';
             <td>
               <div style="display:flex;gap:12px;align-items:center;">
                 <button class="pr-link" onclick="openSummaryModal(<?= $h['period_id'] ?>)">
-                  <i class="fa fa-eye"></i> View
+                  <i class="fa fa-eye"></i> Summary
                 </button>
-                <button class="pr-link" onclick="openRegisterModal(<?= $h['period_id'] ?>)">
-                  <i class="fa fa-file-pdf"></i> PDF
+                <button class="pr-link" onclick="exportRegisterPDF(<?= $h['period_id'] ?>)">
+                  <i class="fa fa-download"></i> Export
                 </button>
+                <a class="pr-link"
+                   href="<?= BASE_URL ?>modules/payroll/batch-detail.php?period_id=<?= $h['period_id'] ?>"
+                   style="text-decoration:none;">
+                  <i class="fa fa-layer-group"></i> Details
+                </a>
               </div>
             </td>
           </tr>

@@ -27,14 +27,7 @@ $validStatus = ['DRAFT','APPROVED','RELEASED'];
 $statFilter  = in_array($_GET['status'] ?? '', $validStatus) ? $_GET['status'] : '';
 
 // ── Filter data ──────────────────────────────────────────────────────────────
-$departments     = $pdo->query("SELECT department_id, department_name FROM departments ORDER BY department_name")->fetchAll();
-$activeEmployees = $pdo->query("
-    SELECT e.employee_id, CONCAT(e.first_name,' ',e.last_name) AS full_name, d.department_name
-    FROM employees e
-    LEFT JOIN departments d ON e.department_id = d.department_id
-    WHERE e.employee_status = 'ACTIVE'
-    ORDER BY e.last_name, e.first_name
-")->fetchAll();
+$departments = $pdo->query("SELECT department_id, department_name FROM departments ORDER BY department_name")->fetchAll();
 
 // ── Payroll records with filters ─────────────────────────────────────────────
 $records = [];
@@ -64,25 +57,21 @@ if ($selectedId) {
                CONCAT(e.first_name,' ',e.last_name) AS employee_name,
                p.position_name, d.department_name,
 
-               -- Additional Assignment (client calls this separately)
                (SELECT COALESCE(SUM(pa.amount),0) FROM payroll_allowances pa
                 JOIN allowance_types at2 ON pa.allowance_type_id=at2.allowance_type_id
                 WHERE pa.payroll_id=pr.payroll_id
                   AND at2.allowance_name LIKE '%Additional Assignment%') AS addl_assign,
 
-               -- Rice Subsidy (added AFTER deductions in client format)
                (SELECT COALESCE(SUM(pa.amount),0) FROM payroll_allowances pa
                 JOIN allowance_types at2 ON pa.allowance_type_id=at2.allowance_type_id
                 WHERE pa.payroll_id=pr.payroll_id
                   AND at2.allowance_name LIKE '%Rice%') AS rice_subsidy,
 
-               -- Laundry (added AFTER deductions in client format)
                (SELECT COALESCE(SUM(pa.amount),0) FROM payroll_allowances pa
                 JOIN allowance_types at2 ON pa.allowance_type_id=at2.allowance_type_id
                 WHERE pa.payroll_id=pr.payroll_id
                   AND at2.allowance_name LIKE '%Laundry%') AS laundry,
 
-               -- Individual deduction columns
                (SELECT COALESCE(SUM(pd.amount),0) FROM payroll_deductions pd
                 JOIN deduction_types dt ON pd.deduction_type_id=dt.deduction_type_id
                 WHERE pd.payroll_id=pr.payroll_id AND dt.deduction_name LIKE '%PERAA%Premium%') AS peraa_premium,
@@ -123,6 +112,9 @@ if ($selectedId) {
     }
 }
 
+// FIX: define $recordCount properly so it's available in PHP conditionals
+$recordCount = count($records);
+
 $pageTitle = 'Payroll Management';
 $extraCSS  = [BASE_URL . 'assets/css/payroll.css'];
 require_once __DIR__ . '/../../includes/head.php';
@@ -145,6 +137,12 @@ require_once __DIR__ . '/../../includes/head.php';
             <button class="btn-outline" id="btnExport" onclick="window.print()">
                 <i class="fa fa-file-export"></i> Export
             </button>
+            <?php if ($selectedId): ?>
+            <a href="<?= BASE_URL ?>modules/payroll/batch-detail.php?period_id=<?= $selectedId ?>"
+               class="btn-outline" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;">
+                <i class="fa fa-layer-group"></i> Batch Details
+            </a>
+            <?php endif; ?>
             <?php if ($periodIsEditable): ?>
             <button class="btn-primary" onclick="openGenerateModal()">
                 <i class="fa fa-play"></i> Generate Payroll
@@ -180,13 +178,11 @@ require_once __DIR__ . '/../../includes/head.php';
     <!-- FILTER BAR -->
     <form class="filter-bar" method="GET" action="">
         <input type="hidden" name="period_id" value="<?= $selectedId ?>">
-
         <div class="filter-search">
             <i class="fa fa-search filter-search-icon"></i>
             <input type="text" name="search" placeholder="Search employee…"
                    value="<?= htmlspecialchars($search) ?>">
         </div>
-
         <select name="dept_id">
             <option value="">All Departments</option>
             <?php foreach ($departments as $dept): ?>
@@ -196,7 +192,6 @@ require_once __DIR__ . '/../../includes/head.php';
             </option>
             <?php endforeach; ?>
         </select>
-
         <select name="status">
             <option value="">All Statuses</option>
             <?php foreach (['DRAFT','APPROVED','RELEASED'] as $s): ?>
@@ -205,7 +200,6 @@ require_once __DIR__ . '/../../includes/head.php';
             </option>
             <?php endforeach; ?>
         </select>
-
         <button type="submit" class="btn-primary btn-filter">
             <i class="fa fa-filter"></i> Filter
         </button>
@@ -218,6 +212,53 @@ require_once __DIR__ . '/../../includes/head.php';
 
     <!-- FLASH -->
     <div id="payrollFlash" style="display:none;margin-bottom:12px;"></div>
+
+    <!-- REJECTION BANNER — shown to Admin when period was returned by Principal -->
+    <?php
+    $latestReturn = null;
+    if ($selectedPeriod && $selectedPeriod['status'] === 'OPEN') {
+        $retStmt = $pdo->prepare("
+            SELECT wl.remarks, wl.created_at, wl.performer_name
+            FROM payroll_workflow_log wl
+            WHERE wl.period_id = ? AND wl.event_type = 'RETURNED'
+            ORDER BY wl.created_at DESC LIMIT 1
+        ");
+        $retStmt->execute([$selectedId]);
+        $latestReturn = $retStmt->fetch();
+    }
+    ?>
+    <?php if ($latestReturn): ?>
+    <div style="display:flex;gap:14px;background:#fffbeb;border:1.5px solid #fcd34d;border-left:4px solid #d97706;
+                border-radius:12px;padding:16px 20px;margin-bottom:16px;align-items:flex-start;">
+        <i class="fa fa-triangle-exclamation" style="color:#d97706;font-size:20px;flex-shrink:0;margin-top:2px;"></i>
+        <div style="flex:1;">
+            <div style="font-size:14px;font-weight:700;color:#92400e;margin-bottom:4px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                Returned for Revision
+                <span style="font-size:12px;font-weight:400;color:#b45309;">
+                    by <?= htmlspecialchars($latestReturn['performer_name'] ?? 'Principal') ?>
+                    on <?= date('M j, Y g:i A', strtotime($latestReturn['created_at'])) ?>
+                </span>
+            </div>
+            <?php if ($latestReturn['remarks']): ?>
+            <div style="font-size:14px;font-style:italic;color:#78350f;background:rgba(251,191,36,.15);
+                        border-radius:8px;padding:10px 14px;margin:8px 0;line-height:1.5;">
+                "<?= htmlspecialchars($latestReturn['remarks']) ?>"
+            </div>
+            <?php else: ?>
+            <div style="font-size:13px;color:#9ca3af;margin:6px 0;">No remarks were provided.</div>
+            <?php endif; ?>
+            <div style="font-size:12px;color:#92400e;margin-top:6px;">
+                <i class="fa fa-circle-info"></i>
+                Edit the payroll below to address the remarks, then click
+                <strong>Submit for Principal Approval</strong> when ready.
+                <a href="<?= BASE_URL ?>modules/payroll/batch-detail.php?period_id=<?= $selectedId ?>&tab=revisions"
+                   style="color:#0f766e;margin-left:8px;font-weight:600;text-decoration:none;">
+                   <i class="fa fa-clock-rotate-left"></i> View full revision history
+                </a>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- TABLE -->
     <div class="table-wrapper">
@@ -238,7 +279,7 @@ require_once __DIR__ . '/../../includes/head.php';
             <tbody>
             <?php if (empty($records)): ?>
                 <tr>
-                    <td colspan="<?= $periodIsEditable ? 19 : 18 ?>"
+                    <td colspan="<?= $periodIsEditable ? 9 : 8 ?>"
                         style="text-align:center;padding:48px;color:#9ca3af;">
                         <?php if (!$selectedId): ?>
                             No pay period selected.
@@ -274,6 +315,7 @@ require_once __DIR__ . '/../../includes/head.php';
                     </td>
                     <?php if ($periodIsEditable): ?>
                     <td class="row-actions">
+                        <!-- data-period-label added so view-modal.php ps-period-label gets populated -->
                         <button class="btn-icon" title="View Payslip"
                             onclick="openPayslip(this)"
                             data-payroll-id="<?= $row['payroll_id'] ?>"
@@ -281,11 +323,38 @@ require_once __DIR__ . '/../../includes/head.php';
                             data-position="<?= htmlspecialchars($row['position_name'] ?? '') ?>"
                             data-dept="<?= htmlspecialchars($row['department_name'] ?? '') ?>"
                             data-empid="<?= $row['employee_id'] ?>"
-                            data-period="<?= $periodName ?>">
+                            data-basic="<?= $row['basic_pay'] ?>"
+                            data-assign="<?= $row['addl_assign'] ?>"
+                            data-rice="<?= $row['rice_subsidy'] ?>"
+                            data-laundry="<?= $row['laundry'] ?>"
+                            data-peraa-premium="<?= $row['peraa_premium'] ?>"
+                            data-peraa-loan="<?= $row['peraa_loan'] ?>"
+                            data-hdmf-premium="<?= $row['hdmf_premium'] ?>"
+                            data-hdmf-loan="<?= $row['hdmf_loan'] ?>"
+                            data-philhealth="<?= $row['philhealth'] ?>"
+                            data-sss-premium="<?= $row['sss_premium'] ?>"
+                            data-sss-loan="<?= $row['sss_loan'] ?>"
+                            data-period-label="<?= $periodName ?>">
                             <i class="fa fa-eye"></i>
                         </button>
                         <button class="btn-icon btn-icon--edit" title="Edit (this period only)"
-                            onclick="openEdit(<?= $row['payroll_id'] ?>)">
+                            onclick="openEdit(this)"
+                            data-payroll-id="<?= $row['payroll_id'] ?>"
+                            data-name="<?= htmlspecialchars($row['employee_name']) ?>"
+                            data-position="<?= htmlspecialchars($row['position_name'] ?? '') ?>"
+                            data-dept="<?= htmlspecialchars($row['department_name'] ?? '') ?>"
+                            data-empid="<?= $row['employee_id'] ?>"
+                            data-basic="<?= $row['basic_pay'] ?>"
+                            data-assign="<?= $row['addl_assign'] ?>"
+                            data-rice="<?= $row['rice_subsidy'] ?>"
+                            data-laundry="<?= $row['laundry'] ?>"
+                            data-peraa-premium="<?= $row['peraa_premium'] ?>"
+                            data-peraa-loan="<?= $row['peraa_loan'] ?>"
+                            data-hdmf-premium="<?= $row['hdmf_premium'] ?>"
+                            data-hdmf-loan="<?= $row['hdmf_loan'] ?>"
+                            data-philhealth="<?= $row['philhealth'] ?>"
+                            data-sss-premium="<?= $row['sss_premium'] ?>"
+                            data-sss-loan="<?= $row['sss_loan'] ?>">
                             <i class="fa fa-pen"></i>
                         </button>
                     </td>
@@ -297,7 +366,7 @@ require_once __DIR__ . '/../../includes/head.php';
         </table>
     </div>
 
-    <!-- TOTALS + SUBMIT -->
+    <!-- TOTALS + WORKFLOW ACTIONS -->
     <div class="totals-bar">
         <div class="total-item">
             <span>Total Gross</span>
@@ -314,35 +383,29 @@ require_once __DIR__ . '/../../includes/head.php';
 
         <div class="payroll-flow-actions">
         <?php if ($selectedPeriod): ?>
-          <?php if ($selectedPeriod['status'] === 'OPEN' && !empty($records)): ?>
-            <!-- STEP 1: Accounting submits to Principal -->
-            <button class="btn-primary" onclick="confirmPayrollAction('submit',<?= $selectedId ?>)">
+
+          <?php if ($selectedPeriod['status'] === 'OPEN' && $recordCount > 0): ?>
+            <!-- STEP 1: Admin submits to Principal -->
+            <button class="btn-primary"
+                    onclick="confirmPayrollAction('submit', <?= $selectedId ?>)">
               <i class="fa fa-paper-plane"></i> Submit for Principal Approval
             </button>
 
           <?php elseif ($selectedPeriod['status'] === 'PROCESSING'): ?>
-            <!-- STEP 2: Principal reviews (Approve or Return) -->
+            <!-- Awaiting Principal — show status only, no action for admin here -->
             <div class="processing-notice">
               <i class="fa fa-clock"></i> Awaiting Principal Approval
             </div>
-            <button class="btn-outline" onclick="confirmPayrollAction('return',<?= $selectedId ?>)"
-                    style="border-color:#d97706;color:#b45309;">
-              <i class="fa fa-rotate-left"></i> Return for Revision
-            </button>
-            <button class="btn-primary" onclick="confirmPayrollAction('approve',<?= $selectedId ?>)"
-                    style="background:#059669;">
-              <i class="fa fa-circle-check"></i> Approve Payroll
-            </button>
 
           <?php elseif ($selectedPeriod['status'] === 'APPROVED'): ?>
-            <!-- STEP 3: Accounting releases and prints payslips -->
+            <!-- STEP 3: Admin releases and prints payslips -->
             <div class="approved-notice">
               <i class="fa fa-circle-check" style="color:#059669"></i> Approved — ready to release
             </div>
             <button class="btn-outline" onclick="window.print()">
               <i class="fa fa-print"></i> Print Payslips
             </button>
-            <button class="btn-primary" onclick="confirmPayrollAction('release',<?= $selectedId ?>)"
+            <button class="btn-primary" onclick="confirmPayrollAction('release', <?= $selectedId ?>)"
                     style="background:#7c3aed;">
               <i class="fa fa-money-bill-wave"></i> Release Payroll
             </button>
@@ -356,23 +419,25 @@ require_once __DIR__ . '/../../includes/head.php';
               <i class="fa fa-print"></i> Print Payslips
             </button>
           <?php endif; ?>
+
         <?php endif; ?>
         </div>
     </div>
 
-    <!-- Payroll action confirmation modal -->
+    <!-- Payroll action confirmation modal (inline, no class dependency) -->
     <div id="payrollConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);
          z-index:1000;align-items:center;justify-content:center;">
       <div style="background:#fff;border-radius:14px;padding:24px;width:420px;max-width:95%;
                   box-shadow:0 16px 48px rgba(0,0,0,0.12);">
         <h3 id="pcm-title" style="font-size:16px;font-weight:700;margin:0 0 8px;"></h3>
-        <p id="pcm-desc" style="font-size:13px;color:#64748b;margin:0 0 14px;"></p>
+        <p id="pcm-desc" style="font-size:13px;color:#64748b;margin:0 0 14px;line-height:1.6;"></p>
         <div id="pcm-notes-wrap" style="display:none;margin-bottom:14px;">
           <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px;">
-            Notes / Reason <span style="color:#9ca3af;font-weight:400;">(optional)</span>
+            Notes <span style="color:#9ca3af;font-weight:400;">(optional)</span>
           </label>
-          <textarea id="pcm-notes" rows="2" placeholder="Add a note for the accounting team…"
-                    style="width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;"></textarea>
+          <textarea id="pcm-notes" rows="2" placeholder="Add a note…"
+                    style="width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:8px;
+                           font-size:13px;resize:vertical;font-family:inherit;"></textarea>
         </div>
         <div style="display:flex;justify-content:flex-end;gap:10px;">
           <button class="btn-outline" style="padding:9px 16px;font-size:13px;"
@@ -393,15 +458,14 @@ require_once __DIR__ . '/../../includes/head.php';
 <?php include __DIR__ . '/modals/generate-modal.php'; ?>
 
 <script>
-const BASE_URL         = '<?= BASE_URL ?>';
-const PERIOD_ID        = <?= $selectedId ?: 0 ?>;
-const PERIOD_IS_OPEN   = <?= $periodIsEditable ? 'true' : 'false' ?>;
+const BASE_URL       = '<?= BASE_URL ?>';
+const PERIOD_ID      = <?= $selectedId ?: 0 ?>;
+const PERIOD_IS_OPEN = <?= $periodIsEditable ? 'true' : 'false' ?>;
 
 function changePeriod(id) {
     if (!id) return;
     const url = new URL(window.location.href);
     url.searchParams.set('period_id', id);
-    // Preserve other filters
     window.location.href = url.toString();
 }
 
@@ -412,7 +476,7 @@ function recalcFooterTotals() {
         ded   += parsePeso(tr.querySelector('[data-col="deductions"]')?.textContent);
         net   += parsePeso(tr.querySelector('[data-col="net"]')?.textContent);
     });
-    const fmt = v => '₱' + v.toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+    const fmt = v => '₱' + v.toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
     const g = document.getElementById('total-gross');
     const d = document.getElementById('total-ded');
     const n = document.getElementById('total-net');
@@ -428,7 +492,6 @@ function parsePeso(str) {
 function showFlash(msg, ok) {
     const el = document.getElementById('payrollFlash');
     if (!el) return;
-    el.style.display = 'block';
     el.style.cssText = `display:block;padding:12px 16px;border-radius:8px;margin-bottom:12px;font-size:14px;
         ${ok ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7'
               : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5'};`;
@@ -436,33 +499,22 @@ function showFlash(msg, ok) {
     if (ok) setTimeout(() => el.style.display = 'none', 5000);
 }
 
-// ── Submit for approval ───────────────────────────────────────────────────────
 // ── Payroll workflow confirmation ─────────────────────────────────────────────
 let _pcmAction = null, _pcmPeriodId = null;
 
 const _pcmConfig = {
-    submit:  {
+    // FIX: was incorrectly pointing to payroll-submit-approval.php (file doesn't exist)
+    submit: {
         title: 'Submit for Principal Approval',
-        desc:  'This will lock the payroll for editing and send it to the Principal/Treasurer for review. Continue?',
+        desc:  'This will lock the payroll from further edits and send it to the Principal for review. Continue?',
         notes: false, btnLabel: 'Submit', btnColor: '#0f766e',
-        url: BASE_URL + 'actions/payroll-submit-approval.php',
+        url: BASE_URL + 'actions/payroll-save.php',
         field: 'period_id'
     },
-    approve: {
-        title: 'Approve Payroll',
-        desc:  'Approve this payroll period? All records will be marked APPROVED and accounting can proceed to release.',
-        notes: true, btnLabel: 'Approve', btnColor: '#059669',
-        url: BASE_URL + 'actions/payroll-approve.php', field: 'period_id'
-    },
-    return:  {
-        title: 'Return for Revision',
-        desc:  'Return this payroll to accounting for corrections. The period will reopen for editing.',
-        notes: true, btnLabel: 'Return', btnColor: '#d97706',
-        url: BASE_URL + 'actions/payroll-approve.php', field: 'period_id'
-    },
+    // approve and return intentionally omitted — Principal role only, not available to Admin
     release: {
         title: 'Release Payroll',
-        desc:  'Mark this payroll as released? This confirms that salaries have been distributed to employees.',
+        desc:  'Mark this payroll as released? This confirms salaries have been distributed to employees.',
         notes: false, btnLabel: 'Release', btnColor: '#7c3aed',
         url: BASE_URL + 'actions/payroll-approve.php', field: 'period_id'
     }
@@ -471,62 +523,74 @@ const _pcmConfig = {
 function confirmPayrollAction(action, periodId) {
     const cfg = _pcmConfig[action];
     if (!cfg) return;
-    _pcmAction = action; _pcmPeriodId = periodId;
-    document.getElementById('pcm-title').textContent     = cfg.title;
-    document.getElementById('pcm-desc').textContent      = cfg.desc;
-    document.getElementById('pcm-notes-wrap').style.display = cfg.notes ? 'block' : 'none';
-    document.getElementById('pcm-notes').value           = '';
+    _pcmAction = action;
+    _pcmPeriodId = periodId;
+    document.getElementById('pcm-title').textContent          = cfg.title;
+    document.getElementById('pcm-desc').textContent           = cfg.desc;
+    document.getElementById('pcm-notes-wrap').style.display   = cfg.notes ? 'block' : 'none';
+    document.getElementById('pcm-notes').value                = '';
     const btn = document.getElementById('pcm-confirm-btn');
-    btn.textContent = cfg.btnLabel;
+    btn.textContent      = cfg.btnLabel;
     btn.style.background = cfg.btnColor;
+    btn.disabled         = false;
     document.getElementById('payrollConfirmModal').style.display = 'flex';
 }
 
 function closePayrollConfirm() {
     document.getElementById('payrollConfirmModal').style.display = 'none';
-    _pcmAction = null; _pcmPeriodId = null;
+    _pcmAction = null;
+    _pcmPeriodId = null;
 }
 
 async function executePayrollAction() {
     const cfg = _pcmConfig[_pcmAction];
     if (!cfg || !_pcmPeriodId) return;
+
     const btn = document.getElementById('pcm-confirm-btn');
-    btn.disabled = true; btn.textContent = 'Processing…';
+    btn.disabled    = true;
+    btn.textContent = 'Processing…';
+
     const fd = new FormData();
     fd.append(cfg.field, _pcmPeriodId);
+    // payroll-approve.php needs an 'action' param; payroll-save.php does not
     if (_pcmAction !== 'submit') fd.append('action', _pcmAction);
     const notes = document.getElementById('pcm-notes').value.trim();
     if (notes) fd.append('notes', notes);
+
     try {
         const res  = await fetch(cfg.url, { method: 'POST', body: fd });
         const data = await res.json();
         closePayrollConfirm();
         showFlash(data.message, data.success);
         if (data.success) setTimeout(() => location.reload(), 1400);
-        else { btn.disabled = false; btn.textContent = cfg.btnLabel; }
+        else {
+            btn.disabled    = false;
+            btn.textContent = cfg.btnLabel;
+        }
     } catch {
         showFlash('Network error. Please try again.', false);
-        btn.disabled = false; btn.textContent = cfg.btnLabel;
+        btn.disabled    = false;
+        btn.textContent = cfg.btnLabel;
     }
 }
 
-// Keep old name as alias for any remaining references
-async function submitForApproval(periodId) { confirmPayrollAction('submit', periodId); }
-
 // ── Generate modal ────────────────────────────────────────────────────────────
-window.openGenerateModal = () => document.getElementById('generateModal').style.display = 'flex';
+window.openGenerateModal  = () => document.getElementById('generateModal').style.display = 'flex';
 window.closeGenerateModal = () => document.getElementById('generateModal').style.display = 'none';
 
 document.addEventListener('DOMContentLoaded', () => {
     const genForm = document.querySelector('#generateModal form');
     if (!genForm) return;
+
     genForm.addEventListener('submit', async e => {
         e.preventDefault();
         const btn = genForm.querySelector('[type="submit"]');
         btn.disabled = true;
         btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Generating…';
         try {
-            const res = await fetch(`${BASE_URL}actions/generate-payroll.php`, { method:'POST', body: new FormData(genForm) });
+            const res  = await fetch(`${BASE_URL}actions/generate-payroll.php`, {
+                method: 'POST', body: new FormData(genForm)
+            });
             const data = await res.json();
             closeGenerateModal();
             showFlash(data.message, data.success);
@@ -537,14 +601,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showFlash('Network error. Please try again.', false);
             btn.disabled = false;
         }
-    });
-
-    // Toggle individual employee dropdown
-    document.querySelectorAll('input[name="mode"]').forEach(r => {
-        r.addEventListener('change', () => {
-            const indiv = document.getElementById('individualEmployeeGroup');
-            if (indiv) indiv.style.display = r.value === 'individual' ? 'block' : 'none';
-        });
     });
 });
 </script>

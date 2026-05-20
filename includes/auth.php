@@ -2,6 +2,10 @@
 
 require_once __DIR__ . '/../config/config.php';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// BASIC AUTH HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
 function isLoggedIn(): bool
 {
     return isset($_SESSION['user']);
@@ -18,11 +22,17 @@ function requireLogin(): void
 function guestOnly(): void
 {
     if (isLoggedIn()) {
-        if (userRole() === 'Principal') {
+
+        // Principal / Special Assistant
+        if (isPrincipalRole()) {
             header('Location: ' . BASE_URL . 'modules/principal/payroll-approval/index.php');
-        } else {
+        }
+
+        // Admin / Accounting
+        else {
             header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
         }
+
         exit;
     }
 }
@@ -39,7 +49,7 @@ function userFullName(): string
     }
 
     $firstName = $_SESSION['user']['first_name'] ?? '';
-    $lastName  = $_SESSION['user']['last_name']  ?? '';
+    $lastName  = $_SESSION['user']['last_name'] ?? '';
 
     return trim($firstName . ' ' . $lastName);
 }
@@ -47,6 +57,14 @@ function userFullName(): string
 function userRole(): string
 {
     return $_SESSION['user']['role_name'] ?? '';
+}
+
+/**
+ * Returns lowercase role name.
+ */
+function currentRole(): string
+{
+    return strtolower($_SESSION['user']['role_name'] ?? '');
 }
 
 function hasRole(array $roles): bool
@@ -65,6 +83,10 @@ function redirectIfNoRole(array $roles): void
         exit;
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FLASH MESSAGES
+// ─────────────────────────────────────────────────────────────────────────────
 
 function setFlash(string $type, string $message): void
 {
@@ -86,30 +108,117 @@ function getFlash(): ?array
     return $flash;
 }
 
-// ── Role-specific guards ──────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// ROLE HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Admin / Accounting roles
+ * (Payroll Officer, Treasurer, Bookkeeper, etc.)
+ */
+function isAdmin(): bool
+{
+    return currentRole() === 'admin';
+}
+
+/**
+ * Principal-side approval roles
+ * (Principal, Special Assistant)
+ */
+function isPrincipalRole(): bool
+{
+    return in_array(currentRole(), [
+        'principal',
+        'special assistant'
+    ], true);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAGE GUARDS
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Principal-only pages.
- * Non-principals → HR dashboard. Guests → login.
+ * Non-principals → dashboard
  */
 function requirePrincipal(): void
 {
     requireLogin();
-    if (userRole() !== 'Principal') {
+
+    if (!isPrincipalRole()) {
         header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
         exit;
     }
 }
 
 /**
- * HR/Admin pages.
- * Principals → their portal. Guests → login.
+ * Admin-only pages.
+ * Principals → principal portal
+ */
+function requireAdminPage(): void
+{
+    requireLogin();
+
+    if (!isAdmin()) {
+
+        // Redirect principal-side users back to their portal
+        if (isPrincipalRole()) {
+            header('Location: ' . BASE_URL . 'modules/principal/payroll-approval/index.php');
+        } else {
+            header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
+        }
+
+        exit;
+    }
+}
+
+/**
+ * HR/Admin pages alias.
+ * Keeps backward compatibility with older code.
  */
 function requireHR(): void
 {
+    requireAdminPage();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AJAX / JSON ACTION GUARDS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Admin-only AJAX actions.
+ */
+function requireAdminAction(): void
+{
     requireLogin();
-    if (userRole() === 'Principal') {
-        header('Location: ' . BASE_URL . 'modules/principal/payroll-approval/index.php');
+
+    if (!isAdmin()) {
+        http_response_code(403);
+
+        echo json_encode([
+            'success' => false,
+            'message' => 'Access denied. Admin access required.',
+        ]);
+
+        exit;
+    }
+}
+
+/**
+ * Principal-only AJAX actions.
+ */
+function requirePrincipalAction(): void
+{
+    requireLogin();
+
+    if (!isPrincipalRole()) {
+        http_response_code(403);
+
+        echo json_encode([
+            'success' => false,
+            'message' => 'Access denied. Principal access required.',
+        ]);
+
         exit;
     }
 }

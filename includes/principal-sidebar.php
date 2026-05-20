@@ -36,21 +36,48 @@ function principalSidebarActive(string $path): string {
       <span>Dashboard</span>
     </a>
 
-    <div class="nav-section-label">APPROVALS</div>
+        <div class="nav-section-label">ATTENDANCE</div>
+    <a class="nav-item <?= principalSidebarActive('principal/attendance') ?>"
+       href="<?= BASE_URL ?>modules/principal/attendance/index.php">
+      <i class="fa fa-user-check"></i>
+      <span>Attendance</span>
+    </a>
+
+    <div class="nav-section-label">PAYROLL</div>
     <a class="nav-item <?= principalSidebarActive('principal/payroll-approval') ?>"
        href="<?= BASE_URL ?>modules/principal/payroll-approval/index.php">
       <i class="fa fa-wallet"></i>
-      <span>Payroll Approval</span>
-    </a>
-    <a class="nav-item <?= principalSidebarActive('principal/leave-approval') ?>"
-       href="<?= BASE_URL ?>modules/principal/leave-approval/index.php">
-      <i class="fa fa-calendar-check"></i>
-      <span>Leave Approval</span>
+      <span>Payroll Approvals</span>
     </a>
     <a class="nav-item <?= principalSidebarActive('principal/loan-approval') ?>"
        href="<?= BASE_URL ?>modules/principal/loan-approval/index.php">
       <i class="fa fa-hand-holding-dollar"></i>
       <span>Loan Approval</span>
+    </a>
+    <a class="nav-item <?= principalSidebarActive('principal/service-credit-approval') ?>"
+       href="<?= BASE_URL ?>modules/principal/service-credit-approval/index.php">
+      <i class="fa fa-hands-helping"></i>
+      <span>Service Credit Approval</span>
+    </a>
+
+    <div class="nav-section-label">LEAVE</div>
+    <a class="nav-item <?= principalSidebarActive('principal/leave-approval') ?>"
+       href="<?= BASE_URL ?>modules/principal/leave-approval/index.php">
+      <i class="fa fa-calendar-check"></i>
+      <span>Leave Requests</span>
+    </a>
+
+
+    <div class="nav-section-label">REPORTS &amp; ANALYTICS</div>
+    <a class="nav-item <?= principalSidebarActive('principal/analytics') ?>"
+       href="<?= BASE_URL ?>modules/principal/analytics/index.php">
+      <i class="fa fa-chart-bar"></i>
+      <span>Analytics</span>
+    </a>
+    <a class="nav-item <?= principalSidebarActive('principal/reports') ?>"
+       href="<?= BASE_URL ?>modules/principal/reports/index.php">
+      <i class="fa fa-file-lines"></i>
+      <span>Reports Center</span>
     </a>
 
     <div class="nav-section-label">SYSTEM</div>

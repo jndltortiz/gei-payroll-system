@@ -1,19 +1,16 @@
-<?php // modules/principal/leave-approval/modals/confirm-action-modal.php ?>
-<div class="modal-overlay" id="confirmModal" role="dialog" aria-modal="true">
-    <div class="modal-box modal-sm">
-        <div class="modal-header">
-            <h3 class="modal-title" id="confirmTitle">Confirm Action</h3>
-            <button class="modal-close" data-close="confirmModal"><i data-lucide="x"></i></button>
-        </div>
-        <div class="modal-body">
-            <div class="confirm-icon confirm-approve-icon">
-                <i data-lucide="check-circle-2"></i>
-            </div>
-            <p class="confirm-msg" id="confirmMsg">Are you sure you want to approve this?</p>
-        </div>
-        <div class="modal-footer">
-            <button class="btn-secondary" data-close="confirmModal">Cancel</button>
-            <button class="btn-confirm-ok btn-primary" id="confirmOkBtn">Confirm</button>
-        </div>
+<!-- ── Confirm Approve Modal ───────────────────────────────────────────────── -->
+<div class="pr-modal-overlay" id="confirmModal">
+  <div class="pr-modal-box pr-modal-box--sm">
+    <div class="lv-confirm-icon lv-confirm-icon--approve">
+      <i class="fa fa-circle-check"></i>
     </div>
+    <h3 class="pr-confirm-title" id="confirmTitle">Confirm Approval</h3>
+    <p class="pr-confirm-desc" id="confirmMsg">Are you sure you want to approve this?</p>
+    <div class="pr-confirm-actions">
+      <button class="pr-btn-cancel" onclick="closeModal('confirmModal')">Cancel</button>
+      <button class="pr-btn-approve-confirm" id="confirmOkBtn">
+        <i class="fa fa-circle-check"></i> Confirm
+      </button>
+    </div>
+  </div>
 </div>

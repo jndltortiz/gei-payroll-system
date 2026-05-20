@@ -10,7 +10,6 @@
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
-
 header('Content-Type: application/json');
 requireLogin();
 
@@ -32,29 +31,31 @@ if (!$period) {
     exit;
 }
 
-// ── Totals ────────────────────────────────────────────────────────────────────
+// ── Aggregate totals ──────────────────────────────────────────────────────────
 $totStmt = $pdo->prepare("
     SELECT
-        COUNT(*)            AS emp_count,
-        SUM(gross_pay)      AS total_gross,
+        COUNT(*)              AS emp_count,
+        SUM(gross_pay)        AS total_gross,
         SUM(total_deductions) AS total_deductions,
-        SUM(net_pay)        AS total_net
+        SUM(net_pay)          AS total_net
     FROM payroll_records
     WHERE period_id = ?
 ");
 $totStmt->execute([$periodId]);
 $totals = $totStmt->fetch();
 
-// ── Summary mode ──────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// SUMMARY MODE
+// ════════════════════════════════════════════════════════════════════════════
 if ($type === 'summary') {
-    // Department breakdown – sum gross by department
+
     $deptStmt = $pdo->prepare("
         SELECT d.department_name,
-               COUNT(pr.payroll_id)   AS emp_count,
-               SUM(pr.gross_pay)      AS gross_total
+               COUNT(pr.payroll_id) AS emp_count,
+               SUM(pr.gross_pay)    AS gross_total
         FROM payroll_records pr
-        JOIN employees e   ON pr.employee_id   = e.employee_id
-        JOIN departments d ON e.department_id  = d.department_id
+        JOIN employees   e ON pr.employee_id  = e.employee_id
+        JOIN departments d ON e.department_id = d.department_id
         WHERE pr.period_id = ?
         GROUP BY d.department_id, d.department_name
         ORDER BY d.department_name
@@ -71,29 +72,70 @@ if ($type === 'summary') {
     exit;
 }
 
-// ── Register mode ─────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// REGISTER MODE
+// FIX #4 — original query referenced non-existent columns on payroll_records
+// (pr.additional_assignment, pr.rice_subsidy, pr.peraa_employee, etc.)
+// These are stored in payroll_allowances / payroll_deductions and must be
+// pivoted via conditional MAX() aggregation.
+// ════════════════════════════════════════════════════════════════════════════
 $recStmt = $pdo->prepare("
     SELECT
-        CONCAT(e.first_name, ' ', e.last_name) AS employee_name,
+        pr.payroll_id,
+        CONCAT(e.first_name, ' ', COALESCE(e.middle_name, ''), ' ', e.last_name) AS employee_name,
+        e.employee_no,
         p.position_name,
+        d.department_name,
         pr.basic_pay,
-        COALESCE(pr.additional_assignment, 0) AS addl_assign,
-        COALESCE(pr.rice_subsidy, 0)          AS rice_sub,
-        COALESCE(pr.laundry_allowance, 0)     AS laundry,
         pr.gross_pay,
-        COALESCE(pr.peraa_employee, 0)        AS peraa_p,
-        COALESCE(pr.peraa_employer, 0)        AS peraa_l,
-        COALESCE(pr.hdmf_employee, 0)         AS hdmf_p,
-        COALESCE(pr.hdmf_employer, 0)         AS hdmf_l,
-        COALESCE(pr.philhealth_employee, 0)   AS philhealth,
-        COALESCE(pr.sss_employee, 0)          AS sss_p,
-        COALESCE(pr.sss_employer, 0)          AS sss_l,
         pr.total_deductions,
-        pr.net_pay
+        pr.net_pay,
+
+        /* ── Allowances pivot ── */
+        COALESCE(MAX(CASE WHEN atype.allowance_name = 'Additional Assignment Pay'
+                          THEN pa.amount END), 0) AS addl_assign,
+        COALESCE(MAX(CASE WHEN atype.allowance_name = 'Rice Subsidy'
+                          THEN pa.amount END), 0) AS rice_sub,
+        COALESCE(MAX(CASE WHEN atype.allowance_name = 'Laundry Allowance'
+                          THEN pa.amount END), 0) AS laundry,
+
+        /* ── Deductions pivot ── */
+        COALESCE(MAX(CASE WHEN dtype.deduction_name = 'PERAA Premium'
+                          THEN pd.amount END), 0) AS peraa_p,
+        COALESCE(MAX(CASE WHEN dtype.deduction_name = 'PERAA Loan'
+                          THEN pd.amount END), 0) AS peraa_l,
+        COALESCE(MAX(CASE WHEN dtype.deduction_name = 'HDMF Premium'
+                          THEN pd.amount END), 0) AS hdmf_p,
+        COALESCE(MAX(CASE WHEN dtype.deduction_name = 'HDMF Loan'
+                          THEN pd.amount END), 0) AS hdmf_l,
+        COALESCE(MAX(CASE WHEN dtype.deduction_name = 'PhilHealth'
+                          THEN pd.amount END), 0) AS philhealth,
+        COALESCE(MAX(CASE WHEN dtype.deduction_name = 'SSS Premium'
+                          THEN pd.amount END), 0) AS sss_p,
+        COALESCE(MAX(CASE WHEN dtype.deduction_name = 'SSS Loan'
+                          THEN pd.amount END), 0) AS sss_l
+
     FROM payroll_records pr
-    JOIN employees  e ON pr.employee_id = e.employee_id
-    LEFT JOIN positions p ON e.position_id = p.position_id
+    JOIN employees   e ON pr.employee_id  = e.employee_id
+    LEFT JOIN positions   p     ON e.position_id   = p.position_id
+    LEFT JOIN departments d     ON e.department_id = d.department_id
+
+    /* Allowance pivot joins */
+    LEFT JOIN payroll_allowances pa    ON pr.payroll_id = pa.payroll_id
+    LEFT JOIN allowance_types    atype ON pa.allowance_type_id = atype.allowance_type_id
+
+    /* Deduction pivot joins */
+    LEFT JOIN payroll_deductions pd    ON pr.payroll_id = pd.payroll_id
+    LEFT JOIN deduction_types    dtype ON pd.deduction_type_id = dtype.deduction_type_id
+
     WHERE pr.period_id = ?
+
+    GROUP BY
+        pr.payroll_id,
+        e.employee_no, e.first_name, e.middle_name, e.last_name,
+        p.position_name, d.department_name,
+        pr.basic_pay, pr.gross_pay, pr.total_deductions, pr.net_pay
+
     ORDER BY e.last_name, e.first_name
 ");
 $recStmt->execute([$periodId]);
