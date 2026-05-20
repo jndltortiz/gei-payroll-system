@@ -222,3 +222,23 @@ function requirePrincipalAction(): void
         exit;
     }
 }
+
+/**
+ * Allow both Admin and Principal roles
+ * (shared approvals, reports, review pages, etc.)
+ */
+function requireAdminOrPrincipalAction(): void
+{
+    requireLogin();
+
+    if (!isAdmin() && !isPrincipalRole()) {
+        http_response_code(403);
+
+        echo json_encode([
+            'success' => false,
+            'message' => 'Access denied.'
+        ]);
+
+        exit;
+    }
+}

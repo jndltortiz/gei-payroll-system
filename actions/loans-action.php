@@ -4,6 +4,11 @@
  * Handles all loan CRUD operations.
  * POST: action (add|approve|deny|get_review|get_details|record_payment|adjust|complete)
  * Returns JSON.
+ *
+ * Role guards:
+ *   add / record_payment / adjust / complete  → Admin only
+ *   approve / deny                            → Admin OR Principal
+ *   get_review / get_details                  → Admin OR Principal (read)
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
@@ -15,6 +20,8 @@ $uid    = $_SESSION['user']['user_id'] ?? null;
 
 // ── GET helpers ───────────────────────────────────────────────────────────────
 if ($action === 'get_review' || $action === 'get_details') {
+    requireAdminOrPrincipalAction();
+
     $loanId = (int)($_GET['loan_id'] ?? $_POST['loan_id'] ?? 0);
     if (!$loanId) { echo json_encode(['success'=>false,'message'=>'Invalid ID.']); exit; }
 
@@ -37,7 +44,6 @@ if ($action === 'get_review' || $action === 'get_details') {
     $loan = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$loan) { echo json_encode(['success'=>false,'message'=>'Loan not found.']); exit; }
 
-    // Active loans for the employee (to show alongside review)
     $active = $pdo->prepare("
         SELECT el2.*, lt2.loan_name
         FROM employee_loans el2
@@ -47,18 +53,17 @@ if ($action === 'get_review' || $action === 'get_details') {
     $active->execute([$loan['employee_id'], $loanId]);
     $activeLoansList = $active->fetchAll(PDO::FETCH_ASSOC);
 
-    // Generate payment schedule dynamically
     $schedule = [];
     $start    = new DateTime($loan['start_date'] ?: date('Y-m-d'));
     $monthly  = (float)$loan['monthly_deduction'];
     $total    = (float)($loan['total_payable'] ?: $loan['total_amount']);
     $terms    = $monthly > 0 ? (int)ceil($total / $monthly) : 0;
-    $paid     = $loan['total_amount'] > 0 
+    $paid     = $loan['total_amount'] > 0
         ? (float)($loan['total_amount'] - $loan['balance_amount']) : 0;
     $paysMade = $monthly > 0 ? (int)floor($paid / $monthly) : 0;
     $today    = new DateTime();
 
-    for ($i = 1; $i <= min($terms, 60); $i++) { // cap at 60 for safety
+    for ($i = 1; $i <= min($terms, 60); $i++) {
         $pd = clone $start;
         $pd->modify('+' . ($i-1) . ' months');
         if ($i <= $paysMade) $st = 'paid';
@@ -78,12 +83,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // ── ADD ───────────────────────────────────────────────────────────────────────
 if ($action === 'add') {
+    requireAdminAction(); // Admin only
+
     $empId    = (int)($_POST['employee_id']  ?? 0);
     $typeId   = (int)($_POST['loan_type_id'] ?? 0);
-    $amount   = max(0, (float)($_POST['total_amount']     ?? 0));
-    $monthly  = max(0, (float)($_POST['monthly_deduction']?? 0));
-    $interest = max(0, (float)($_POST['interest_rate']    ?? 0));
-    $payable  = max(0, (float)($_POST['total_payable']    ?? $amount));
+    $amount   = max(0, (float)($_POST['total_amount']      ?? 0));
+    $monthly  = max(0, (float)($_POST['monthly_deduction'] ?? 0));
+    $interest = max(0, (float)($_POST['interest_rate']     ?? 0));
+    $payable  = max(0, (float)($_POST['total_payable']     ?? $amount));
     $startDt  = trim($_POST['start_date']    ?? date('Y-m-d'));
     $ref      = trim($_POST['account_reference'] ?? '');
     $reason   = trim($_POST['reason']        ?? '');
@@ -91,11 +98,8 @@ if ($action === 'add') {
     $approvedBy = $status === 'ACTIVE' ? $uid : null;
     $approvedAt = $status === 'ACTIVE' ? date('Y-m-d H:i:s') : null;
 
-    // Current balance — may be less than total if payments were already made before
-    // the loan was entered into the system. Defaults to total_amount (0 prior payments).
     $currentBalanceRaw = trim($_POST['current_balance'] ?? '');
     $currentBalance    = $currentBalanceRaw !== '' ? max(0, (float)$currentBalanceRaw) : $amount;
-    // Validate: balance cannot exceed total amount
     if ($currentBalance > $amount) $currentBalance = $amount;
 
     if (!$empId || !$typeId || !$amount || !$monthly || !$startDt) {
@@ -103,7 +107,6 @@ if ($action === 'add') {
     }
     if (!$payable) $payable = $amount;
 
-    // Calculate end_date from term
     $term    = $monthly > 0 ? (int)ceil($payable / $monthly) : 0;
     $endDate = $term > 0 ? date('Y-m-d', strtotime($startDt . " +{$term} months")) : null;
 
@@ -125,7 +128,7 @@ if ($action === 'add') {
 
         $msg = $status === 'ACTIVE'
             ? 'Loan added and is now active. Deduction will apply from next payroll.'
-            : 'Loan submitted and awaiting approval.';
+            : 'Loan submitted and awaiting principal approval.';
         echo json_encode(['success'=>true,'message'=>$msg,'loan_id'=>$lid]);
     } catch (PDOException $e) {
         echo json_encode(['success'=>false,'message'=>'DB error: '.$e->getMessage()]);
@@ -134,21 +137,32 @@ if ($action === 'add') {
 }
 
 // ── APPROVE ───────────────────────────────────────────────────────────────────
+// Admin OR Principal can approve
 if ($action === 'approve') {
+    requireAdminOrPrincipalAction();
+
     $loanId = (int)($_POST['loan_id'] ?? 0);
     $notes  = trim($_POST['notes'] ?? '');
     if (!$loanId) { echo json_encode(['success'=>false,'message'=>'Invalid loan ID.']); exit; }
 
     try {
+        $stmt = $pdo->prepare("SELECT status FROM employee_loans WHERE loan_id=?");
+        $stmt->execute([$loanId]);
+        $row = $stmt->fetch();
+        if (!$row || $row['status'] !== 'PENDING') {
+            echo json_encode(['success'=>false,'message'=>'Loan is no longer pending.']); exit;
+        }
+
         $pdo->prepare("
             UPDATE employee_loans SET status='ACTIVE', approved_by=?, approved_at=NOW()
             WHERE loan_id=? AND status='PENDING'
         ")->execute([$uid, $loanId]);
 
+        $roleName = isPrincipalRole() ? 'Principal' : 'Admin';
         if ($uid) $pdo->prepare("INSERT INTO audit_logs(user_id,action,table_name,record_id,description) VALUES(?,?,?,?,?)")
-            ->execute([$uid,'APPROVE','employee_loans',$loanId,"Approved loan #{$loanId}".($notes?" — {$notes}":'')]);
+            ->execute([$uid,'APPROVE','employee_loans',$loanId,"{$roleName} approved loan #{$loanId}".($notes?" — {$notes}":'')]);
 
-        echo json_encode(['success'=>true,'message'=>'Loan approved and is now active.']);
+        echo json_encode(['success'=>true,'message'=>'Loan approved and is now active. Deductions will begin on the next payroll.']);
     } catch (PDOException $e) {
         echo json_encode(['success'=>false,'message'=>'DB error: '.$e->getMessage()]);
     }
@@ -156,19 +170,23 @@ if ($action === 'approve') {
 }
 
 // ── DENY ─────────────────────────────────────────────────────────────────────
+// Admin OR Principal can deny
 if ($action === 'deny') {
+    requireAdminOrPrincipalAction();
+
     $loanId = (int)($_POST['loan_id'] ?? 0);
     $reason = trim($_POST['denied_reason'] ?? '');
     if (!$loanId) { echo json_encode(['success'=>false,'message'=>'Invalid loan ID.']); exit; }
 
     try {
         $pdo->prepare("
-            UPDATE employee_loans SET status='DENIED', denied_reason=?
+            UPDATE employee_loans SET status='DENIED', denied_reason=?, approved_by=?, approved_at=NOW()
             WHERE loan_id=? AND status='PENDING'
-        ")->execute([$reason, $loanId]);
+        ")->execute([$reason, $uid, $loanId]);
 
+        $roleName = isPrincipalRole() ? 'Principal' : 'Admin';
         if ($uid) $pdo->prepare("INSERT INTO audit_logs(user_id,action,table_name,record_id,description) VALUES(?,?,?,?,?)")
-            ->execute([$uid,'DENY','employee_loans',$loanId,"Denied loan #{$loanId}".($reason?" — {$reason}":'')]);
+            ->execute([$uid,'DENY','employee_loans',$loanId,"{$roleName} denied loan #{$loanId}".($reason?" — {$reason}":'')]);
 
         echo json_encode(['success'=>true,'message'=>'Loan application denied.']);
     } catch (PDOException $e) {
@@ -179,6 +197,8 @@ if ($action === 'deny') {
 
 // ── RECORD PAYMENT ────────────────────────────────────────────────────────────
 if ($action === 'record_payment') {
+    requireAdminAction(); // Admin only
+
     $loanId = (int)($_POST['loan_id'] ?? 0);
     $amount = max(0, (float)($_POST['amount'] ?? 0));
     if (!$loanId || !$amount) { echo json_encode(['success'=>false,'message'=>'Invalid data.']); exit; }
@@ -204,6 +224,8 @@ if ($action === 'record_payment') {
 
 // ── MARK FULLY PAID ───────────────────────────────────────────────────────────
 if ($action === 'complete') {
+    requireAdminAction(); // Admin only
+
     $loanId = (int)($_POST['loan_id'] ?? 0);
     if (!$loanId) { echo json_encode(['success'=>false,'message'=>'Invalid ID.']); exit; }
 
@@ -219,6 +241,8 @@ if ($action === 'complete') {
 
 // ── ADJUST TERMS ─────────────────────────────────────────────────────────────
 if ($action === 'adjust') {
+    requireAdminAction(); // Admin only
+
     $loanId  = (int)($_POST['loan_id']          ?? 0);
     $monthly = max(0, (float)($_POST['monthly_deduction'] ?? 0));
     $endDate = trim($_POST['end_date'] ?? '');
