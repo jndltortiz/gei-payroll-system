@@ -21,7 +21,7 @@
     <form id="addAttForm" onsubmit="submitAddAttendance(event)">
       <div class="att-modal-body">
 
-        <!-- STEP 1: Employee search — must be selected first -->
+        <!-- STEP 1: Employee search -->
         <div class="att-field">
           <label>Employee Name <span class="req">*</span></label>
           <select name="employee_id" id="add_employee_id" required
@@ -117,9 +117,9 @@
 let _currentShift = null;
 
 async function onAddAttendanceEmployeeChange(sel) {
-    const empId  = sel.value;
-    const hint   = document.getElementById('add-shift-hint');
-    const hintTxt= document.getElementById('add-shift-hint-text');
+    const empId   = sel.value;
+    const hint    = document.getElementById('add-shift-hint');
+    const hintTxt = document.getElementById('add-shift-hint-text');
     _currentShift = null;
 
     if (!empId) { hint.style.display = 'none'; return; }
@@ -127,71 +127,101 @@ async function onAddAttendanceEmployeeChange(sel) {
     try {
         const res  = await fetch(`<?= BASE_URL ?>actions/get-employee-shift.php?employee_id=${empId}`);
         const data = await res.json();
+
         if (!data.success || !data.start_time) {
             hint.style.display = 'none'; return;
         }
         _currentShift = data;
 
-        // Format shift info for display
-        const start = formatTime12h(data.start_time);
-        const end   = data.end_time ? formatTime12h(data.end_time) : '—';
-        const grace = data.grace_period_minutes > 0
-            ? ` · ${data.grace_period_minutes}-min grace period` : '';
+        const start      = formatTime12h(data.start_time);
+        const end        = data.end_time ? formatTime12h(data.end_time) : '—';
+        const empType    = data.employment_type === 'PART_TIME' ? ' · Part-Time' : ' · Full-Time';
+        const graceNote  = (data.employment_type !== 'PART_TIME' && data.grace_period_minutes > 0)
+            ? ` · ${data.grace_period_minutes}-min grace` : '';
 
-        hintTxt.textContent = `Shift: ${data.shift_name || 'Regular'} · ${start} – ${end}${grace}`;
+        hintTxt.textContent = `Shift: ${data.shift_name || 'Regular'} · ${start} – ${end}${graceNote}${empType}`;
         hint.style.display  = 'block';
 
         // Re-evaluate status if time_in already filled
         const timeIn = document.getElementById('add_time_in').value;
         if (timeIn) onAddTimeInChange(timeIn);
 
-    } catch { hint.style.display = 'none'; }
+    } catch (e) {
+        hint.style.display = 'none';
+    }
 }
 
+/**
+ * Computes the suggested attendance status based on:
+ *  - The employee's employment_type (FULL_TIME / PART_TIME)
+ *  - The shift's start_time and half_day_time
+ *
+ * FULL_TIME rules:
+ *   time_in <= start_time            → PRESENT
+ *   time_in  > start_time AND < 9:00 → LATE
+ *   time_in >= 9:00                  → HALF_DAY
+ *
+ * PART_TIME rules:
+ *   time_in <= start_time            → PRESENT
+ *   time_in  > start_time            → LATE   (no half-day rule)
+ */
 function onAddTimeInChange(timeInVal) {
     if (!timeInVal || !_currentShift?.start_time) return;
 
-    const [sh, sm] = _currentShift.start_time.split(':').map(Number);
-    const grace    = _currentShift.grace_period_minutes || 0;
-    const [th, tm] = timeInVal.split(':').map(Number);
+    const toMins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 
-    // Deadline = shift start + grace period (in minutes)
-    const shiftStartMins  = sh * 60 + sm;
-    const deadlineMins    = shiftStartMins + grace;
-    const timeInMins      = th * 60 + tm;
+    const shiftStartMins = toMins(_currentShift.start_time);
+    const timeInMins     = toMins(timeInVal);
+    const isPartTime     = _currentShift.employment_type === 'PART_TIME';
 
-    // Half-day threshold (client: if after 9 AM = half day)
-    const halfDayMins = _currentShift.half_day_time
-        ? (() => { const [hh,mm] = _currentShift.half_day_time.split(':').map(Number); return hh*60+mm; })()
-        : 9 * 60; // default 9:00 AM
+    const statusSel   = document.getElementById('add_status');
+    const autoBadge   = document.getElementById('add-status-auto-badge');
+    const statusHint  = document.getElementById('add-status-hint');
 
-    const statusSel  = document.getElementById('add_status');
-    const autoBadge  = document.getElementById('add-status-auto-badge');
-    const statusHint = document.getElementById('add-status-hint');
+    let suggestedStatus, hintMsg, hintColor;
 
-    let suggestedStatus, hintMsg;
-
-    if (timeInMins <= deadlineMins) {
-        suggestedStatus = 'PRESENT';
-        hintMsg = `On time (before ${formatTime12h(_currentShift.start_time)}` +
-                  (grace > 0 ? ` + ${grace}-min grace)` : ')');
-    } else if (timeInMins >= halfDayMins) {
-        suggestedStatus = 'HALF_DAY';
-        hintMsg = `After ${formatTime12h(_currentShift.half_day_time || '09:00')} — suggested Half Day`;
+    if (isPartTime) {
+        // ── PART-TIME: only PRESENT / LATE, no half-day ──────────────────────
+        if (timeInMins <= shiftStartMins) {
+            suggestedStatus = 'PRESENT';
+            hintMsg  = `On time (shift starts ${formatTime12h(_currentShift.start_time)})`;
+            hintColor = '#059669';
+        } else {
+            const minsLate  = timeInMins - shiftStartMins;
+            suggestedStatus = 'LATE';
+            hintMsg  = `${minsLate} min${minsLate > 1 ? 's' : ''} late`;
+            hintColor = '#d97706';
+        }
     } else {
-        suggestedStatus = 'LATE';
-        const minsLate = timeInMins - deadlineMins;
-        hintMsg = `${minsLate} min${minsLate > 1 ? 's' : ''} late (deadline was ${formatTime12h(
-            String(Math.floor(deadlineMins/60)).padStart(2,'0') + ':' +
-            String(deadlineMins%60).padStart(2,'0'))})`;
+        // ── FULL-TIME: PRESENT / LATE / HALF_DAY ─────────────────────────────
+        // Half-day threshold: use shift's half_day_time if set, otherwise 9:00 AM
+        const halfDayMins = _currentShift.half_day_time
+            ? toMins(_currentShift.half_day_time)
+            : 9 * 60; // default 9:00 AM
+
+        if (timeInMins <= shiftStartMins) {
+            suggestedStatus = 'PRESENT';
+            hintMsg   = `On time (shift starts ${formatTime12h(_currentShift.start_time)})`;
+            hintColor = '#059669';
+        } else if (timeInMins < halfDayMins) {
+            // After shift start but before half-day threshold → LATE
+            const minsLate  = timeInMins - shiftStartMins;
+            suggestedStatus = 'LATE';
+            hintMsg   = `${minsLate} min${minsLate > 1 ? 's' : ''} late (before ${formatTime12h(_currentShift.half_day_time || '09:00')})`;
+            hintColor = '#d97706';
+        } else {
+            // At or after half-day threshold → HALF_DAY
+            suggestedStatus = 'HALF_DAY';
+            hintMsg   = `At or after ${formatTime12h(_currentShift.half_day_time || '09:00')} — Half Day`;
+            hintColor = '#dc2626';
+        }
     }
 
-    statusSel.value        = suggestedStatus;
-    autoBadge.style.display = 'inline-block';
-    statusHint.style.display= 'block';
-    statusHint.textContent  = '⚡ Auto-suggested: ' + hintMsg;
-    statusHint.style.color  = suggestedStatus === 'PRESENT' ? '#059669'
-                             : suggestedStatus === 'LATE'    ? '#d97706' : '#2563eb';
+    statusSel.value             = suggestedStatus;
+    autoBadge.style.display     = 'inline-block';
+    statusHint.style.display    = 'block';
+    statusHint.textContent      = '⚡ Auto-suggested: ' + hintMsg;
+    statusHint.style.color      = hintColor;
 }
 
 function formatTime12h(time24) {
@@ -199,7 +229,7 @@ function formatTime12h(time24) {
     const [h, m] = time24.split(':').map(Number);
     const ampm = h >= 12 ? 'PM' : 'AM';
     const h12  = h > 12 ? h - 12 : (h === 0 ? 12 : h);
-    return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
 // ── Form submit ───────────────────────────────────────────────────────────────
@@ -210,15 +240,15 @@ async function submitAddAttendance(e) {
     const errBox = document.getElementById('addAttError');
 
     errBox.style.display = 'none';
-    btn.disabled = true;
+    btn.disabled  = true;
     btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Saving…';
 
     const fd = new FormData(form);
 
     try {
-        const res  = await fetch('<?= BASE_URL ?>actions/add-attendance.php',
-                                 { method: 'POST', body: fd });
-        const ct   = res.headers.get('content-type') || '';
+        const res = await fetch('<?= BASE_URL ?>actions/add-attendance.php',
+                                { method: 'POST', body: fd });
+        const ct  = res.headers.get('content-type') || '';
         if (!ct.includes('application/json')) {
             throw new Error('Server returned unexpected response. Check PHP logs.');
         }
@@ -244,10 +274,10 @@ async function submitAddAttendance(e) {
 function closeAddModal() {
     document.getElementById('addAttendanceModal').style.display = 'none';
     document.getElementById('addAttForm').reset();
-    document.getElementById('add-shift-hint').style.display  = 'none';
+    document.getElementById('add-shift-hint').style.display     = 'none';
     document.getElementById('add-status-auto-badge').style.display = 'none';
-    document.getElementById('add-status-hint').style.display = 'none';
-    document.getElementById('addAttError').style.display = 'none';
+    document.getElementById('add-status-hint').style.display    = 'none';
+    document.getElementById('addAttError').style.display         = 'none';
     _currentShift = null;
 }
 </script>

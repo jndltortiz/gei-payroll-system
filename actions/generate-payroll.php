@@ -14,6 +14,38 @@
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
+
+// ── Inline helper: re-derive payroll totals from child rows ───────────────────
+// Defined here (not in a separate include) so static analysis tools can resolve it.
+function recalculatePayrollTotals(PDO $pdo, int $payrollId): void
+{
+    $pdo->prepare("
+        UPDATE payroll_records pr
+        SET
+            total_allowances = (
+                SELECT COALESCE(SUM(pa.amount), 0)
+                FROM payroll_allowances pa
+                WHERE pa.payroll_id = pr.payroll_id
+            ),
+            total_deductions = (
+                SELECT COALESCE(SUM(pd.amount), 0)
+                FROM payroll_deductions pd
+                WHERE pd.payroll_id = pr.payroll_id
+            ),
+            gross_pay = pr.basic_pay + (
+                SELECT COALESCE(SUM(pa.amount), 0)
+                FROM payroll_allowances pa
+                WHERE pa.payroll_id = pr.payroll_id
+            ),
+            net_pay = (
+                pr.basic_pay
+                + (SELECT COALESCE(SUM(pa.amount), 0) FROM payroll_allowances pa WHERE pa.payroll_id = pr.payroll_id)
+                - (SELECT COALESCE(SUM(pd.amount), 0) FROM payroll_deductions pd WHERE pd.payroll_id = pr.payroll_id)
+            ),
+            updated_at = NOW()
+        WHERE pr.payroll_id = ?
+    ")->execute([$payrollId]);
+}
 header('Content-Type: application/json');
 requireLogin();
 
@@ -100,8 +132,16 @@ if (empty($employees)) {
     exit;
 }
 
-// ── Pre-fetch deduction types (same for all employees) ────────────────────────
-$dtypes = $pdo->query("SELECT * FROM deduction_types WHERE is_active = 1")->fetchAll();
+// ── Payroll automation settings ───────────────────────────────────────────────
+$settings = $pdo->query("SELECT * FROM payroll_settings LIMIT 1")->fetch() ?: [];
+$autoApplyAllowances = (int)($settings['auto_apply_allowances'] ?? 1) === 1;
+$autoApplyDeductions = (int)($settings['auto_apply_deductions'] ?? 1) === 1;
+$governmentCalcMode = $settings['government_calc_mode'] ?? 'STANDARD';
+
+// ── Pre-fetch deduction types (assignment rules are checked per employee) ─────
+$dtypes = $autoApplyDeductions
+    ? $pdo->query("SELECT * FROM deduction_types WHERE is_active = 1")->fetchAll()
+    : [];
 
 // ── Generate records ──────────────────────────────────────────────────────────
 try {
@@ -126,6 +166,13 @@ try {
             if ($forceRegenerate) {
                 $pdo->prepare("DELETE FROM payroll_allowances WHERE payroll_id=?")->execute([$existingId]);
                 $pdo->prepare("DELETE FROM payroll_deductions WHERE payroll_id=?")->execute([$existingId]);
+                // Reset any service credits that were linked to this payroll back to APPROVED
+                // so the re-generation loop can pick them up again.
+                $pdo->prepare("
+                    UPDATE service_credits
+                    SET payroll_id = NULL, status = 'APPROVED', applied_to_payroll_at = NULL
+                    WHERE payroll_id = ?
+                ")->execute([$existingId]);
                 $pdo->prepare("DELETE FROM payroll_records WHERE payroll_id=?")->execute([$existingId]);
                 $replaced++;
             } else {
@@ -143,24 +190,29 @@ try {
         ")->execute([$periodId, $employeeId, $basic]);
         $payrollId = (int)$pdo->lastInsertId();
 
-        // Allowances — based on assignment rules
-        $atypes = $pdo->prepare("
-            SELECT DISTINCT at2.allowance_type_id, at2.allowance_name, at2.default_amount
-            FROM allowance_types at2
-            JOIN allowance_assignments aa ON at2.allowance_type_id = aa.allowance_type_id
-            WHERE at2.is_active = 1 AND aa.is_active = 1
-              AND (
-                    aa.applies_to = 'ALL'
-                 OR (aa.applies_to = 'EMPLOYEE'   AND aa.target_id = :eid)
-                 OR (aa.applies_to = 'DEPARTMENT' AND aa.target_id = :dept)
-                 OR (aa.applies_to = 'POSITION'   AND aa.target_id = :pos)
-              )
-        ");
-        $atypes->execute([
-            ':eid'  => $employeeId,
-            ':dept' => $emp['department_id'],
-            ':pos'  => $emp['position_id'],
-        ]);
+        // Allowances — based on assignment rules. Service credits are still
+        // applied below because approved credits are payroll-ready earnings.
+        $assignedAllowanceTypes = [];
+        if ($autoApplyAllowances) {
+            $atypes = $pdo->prepare("
+                SELECT DISTINCT at2.allowance_type_id, at2.allowance_name, at2.default_amount
+                FROM allowance_types at2
+                JOIN allowance_assignments aa ON at2.allowance_type_id = aa.allowance_type_id
+                WHERE at2.is_active = 1 AND aa.is_active = 1
+                  AND (
+                        aa.applies_to = 'ALL'
+                     OR (aa.applies_to = 'EMPLOYEE'   AND aa.target_id = :eid)
+                     OR (aa.applies_to = 'DEPARTMENT' AND aa.target_id = :dept)
+                     OR (aa.applies_to = 'POSITION'   AND aa.target_id = :pos)
+                  )
+            ");
+            $atypes->execute([
+                ':eid'  => $employeeId,
+                ':dept' => $emp['department_id'],
+                ':pos'  => $emp['position_id'],
+            ]);
+            $assignedAllowanceTypes = $atypes->fetchAll();
+        }
 
         // ── Fetch APPROVED service credits for this employee in this payroll period ──
         // Approved credits are merged into Additional Assignment Payment
@@ -191,7 +243,7 @@ try {
         $addlAssignTypeId  = null;
         $addlAssignBaseAmt = 0;
 
-        foreach ($atypes->fetchAll() as $type) {
+        foreach ($assignedAllowanceTypes as $type) {
             $amt  = (float)$type['default_amount'];
             $name = strtolower($type['allowance_name'] ?? '');
 
@@ -223,20 +275,22 @@ try {
             $addlTypeRow = $addlType->fetch();
 
             if ($addlTypeRow) {
-                // Update the existing payroll_allowance row for this type
-                $pdo->prepare("
+                // Update an existing row, or insert one when the base allowance
+                // was not assigned to this employee. Approved service credits
+                // must not vanish because an allowance assignment is narrow.
+                $updScAllowance = $pdo->prepare("
                     UPDATE payroll_allowances
                     SET amount = amount + ?
                     WHERE payroll_id = ? AND allowance_type_id = ?
-                ")->execute([$serviceCreditPay, $payrollId, $addlTypeRow['allowance_type_id']]);
+                ");
+                $updScAllowance->execute([$serviceCreditPay, $payrollId, $addlTypeRow['allowance_type_id']]);
+                if ($updScAllowance->rowCount() === 0) {
+                    $insA->execute([$payrollId, $addlTypeRow['allowance_type_id'], $serviceCreditPay]);
+                }
             } else {
-                // No matching allowance type — insert as a generic SC allowance row
-                // This should not normally happen if Payroll Settings are configured correctly
-                $pdo->prepare("
-                    INSERT INTO payroll_allowances (payroll_id, allowance_type_id, amount)
-                    SELECT ?, allowance_type_id, ?
-                    FROM allowance_types WHERE allowance_name LIKE '%Additional%' LIMIT 1
-                ")->execute([$payrollId, $serviceCreditPay]);
+                throw new RuntimeException(
+                    'Approved service credit exists, but no active Additional Assignment allowance type is configured.'
+                );
             }
             $totalAllowances += $serviceCreditPay;
         }
@@ -258,18 +312,42 @@ try {
             VALUES (?,?,?)
         ");
 
-        // Fetch this employee's ACTIVE loans upfront for use in loan deductions
+        // Fetch this employee's ACTIVE loans upfront for use in loan deductions.
+        // loan_types.is_active is the Payroll Settings auto-deduct toggle.
         $empLoanStmt = $pdo->prepare("
             SELECT el.loan_id, el.monthly_deduction, el.balance_amount, lt.loan_name
             FROM employee_loans el
             JOIN loan_types lt ON el.loan_type_id = lt.loan_type_id
             WHERE el.employee_id = :eid
+              AND lt.is_active = 1
               AND el.status = 'ACTIVE'
               AND el.start_date <= CURDATE()
               AND (el.end_date IS NULL OR el.end_date >= CURDATE())
               AND el.balance_amount > 0
+              AND (
+                    NOT EXISTS (
+                        SELECT 1 FROM loan_type_assignments lta0
+                        WHERE lta0.loan_type_id = lt.loan_type_id AND lta0.is_active = 1
+                    )
+                 OR EXISTS (
+                        SELECT 1 FROM loan_type_assignments lta
+                        WHERE lta.loan_type_id = lt.loan_type_id
+                          AND lta.is_active = 1
+                          AND (
+                                lta.applies_to = 'ALL'
+                             OR (lta.applies_to = 'EMPLOYEE'   AND lta.target_id = :eid_assign)
+                             OR (lta.applies_to = 'DEPARTMENT' AND lta.target_id = :dept)
+                             OR (lta.applies_to = 'POSITION'   AND lta.target_id = :pos)
+                          )
+                    )
+              )
         ");
-        $empLoanStmt->execute([':eid' => $employeeId]);
+        $empLoanStmt->execute([
+            ':eid'        => $employeeId,
+            ':eid_assign' => $employeeId,
+            ':dept'       => $emp['department_id'],
+            ':pos'        => $emp['position_id'],
+        ]);
         $empActiveLoansList = $empLoanStmt->fetchAll();
 
         // Build lookup: keyword → total monthly deduction + loan IDs to update balance
@@ -288,6 +366,39 @@ try {
         }
 
         foreach ($dtypes as $type) {
+            // Respect deduction assignment rules. Older installs may not have
+            // assignment rows for built-in deductions, so "no rows" means all.
+            $assignCheck = $pdo->prepare("
+                SELECT COUNT(*)
+                FROM deduction_assignments da
+                WHERE da.deduction_type_id = ?
+                  AND da.is_active = 1
+            ");
+            $assignCheck->execute([$type['deduction_type_id']]);
+            if ((int)$assignCheck->fetchColumn() > 0) {
+                $appliesStmt = $pdo->prepare("
+                    SELECT COUNT(*)
+                    FROM deduction_assignments da
+                    WHERE da.deduction_type_id = :did
+                      AND da.is_active = 1
+                      AND (
+                            da.applies_to = 'ALL'
+                         OR (da.applies_to = 'EMPLOYEE'   AND da.target_id = :eid)
+                         OR (da.applies_to = 'DEPARTMENT' AND da.target_id = :dept)
+                         OR (da.applies_to = 'POSITION'   AND da.target_id = :pos)
+                      )
+                ");
+                $appliesStmt->execute([
+                    ':did'  => $type['deduction_type_id'],
+                    ':eid'  => $employeeId,
+                    ':dept' => $emp['department_id'],
+                    ':pos'  => $emp['position_id'],
+                ]);
+                if ((int)$appliesStmt->fetchColumn() === 0) {
+                    continue;
+                }
+            }
+
             $amt  = 0;
             $name = strtolower($type['deduction_name']);
 
@@ -320,7 +431,13 @@ try {
                     if (($emp['employment_type'] ?? 'FULL_TIME') !== 'FULL_TIME') continue;
                 }
 
-                if (strpos($name, 'sss') !== false) {
+                if ($governmentCalcMode === 'MANUAL') {
+                    if ($type['deduction_value_type'] === 'PERCENTAGE') {
+                        $amt = round($basic * ($type['deduction_rate'] / 100), 2);
+                    } else {
+                        $amt = (float)$type['deduction_amount'];
+                    }
+                } elseif (strpos($name, 'sss') !== false) {
                     $row = $pdo->prepare("
                         SELECT employee_share FROM sss_contribution_table
                         WHERE min_salary <= ? AND max_salary >= ? AND is_active = 1
@@ -373,28 +490,8 @@ try {
             }
         }
 
-        // Auto-reduce loan balances for the amounts deducted in this payroll
-        $updBalance = $pdo->prepare("
-            UPDATE employee_loans
-            SET balance_amount = GREATEST(0, balance_amount - ?),
-                status = IF(GREATEST(0, balance_amount - ?) <= 0, 'COMPLETED', status)
-            WHERE loan_id = ?
-        ");
-        foreach (['sss','hdmf','peraa','rural'] as $key) {
-            foreach ($loanIds[$key] as [$lid, $deducted]) {
-                if ($deducted > 0) $updBalance->execute([$deducted, $deducted, $lid]);
-            }
-        }
-
-        // Final totals
-        $gross = $basic + $totalAllowances;
-        $net   = $gross - $totalDeductions;
-
-        $pdo->prepare("
-            UPDATE payroll_records
-            SET gross_pay=?, total_allowances=?, total_deductions=?, net_pay=?
-            WHERE payroll_id=?
-        ")->execute([$gross, $totalAllowances, $totalDeductions, $net, $payrollId]);
+        // Final totals — derived from child rows to ensure accuracy
+        recalculatePayrollTotals($pdo, $payrollId);
 
         $generated++;
     }
@@ -424,7 +521,7 @@ try {
         'skipped'   => $skipped,
     ]);
 
-} catch (PDOException $e) {
+} catch (Throwable $e) {
     $pdo->rollBack();
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => 'Payroll generation error: ' . $e->getMessage()]);
 }

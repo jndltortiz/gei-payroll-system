@@ -71,6 +71,9 @@ $loadBootstrap = isset($loadBootstrap) ? $loadBootstrap : false;
 <link rel="stylesheet" href="<?= htmlspecialchars($href) ?>">
 <?php endforeach; ?>
 
+  <!-- Global JS variables -->
+  <script>window.BASE_URL = '<?= BASE_URL ?>';</script>
+
   <!-- Global Toast Notification System -->
   <script>
   window.showToast = function(message, type, duration) {

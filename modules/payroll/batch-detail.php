@@ -60,6 +60,42 @@ $recStmt = $pdo->prepare("
 $recStmt->execute([$periodId]);
 $records = $recStmt->fetchAll();
 
+$allowanceDetails = [];
+$deductionDetails = [];
+if (!empty($records)) {
+    $detailStmt = $pdo->prepare("
+        SELECT pr.payroll_id, at2.allowance_name AS name, pa.amount
+        FROM payroll_records pr
+        JOIN payroll_allowances pa ON pr.payroll_id = pa.payroll_id
+        JOIN allowance_types at2 ON pa.allowance_type_id = at2.allowance_type_id
+        WHERE pr.period_id = ?
+        ORDER BY at2.allowance_name
+    ");
+    $detailStmt->execute([$periodId]);
+    foreach ($detailStmt->fetchAll() as $d) {
+        $allowanceDetails[$d['payroll_id']][] = [
+            'name' => $d['name'],
+            'amount' => (float)$d['amount'],
+        ];
+    }
+
+    $detailStmt = $pdo->prepare("
+        SELECT pr.payroll_id, dt.deduction_name AS name, pd.amount
+        FROM payroll_records pr
+        JOIN payroll_deductions pd ON pr.payroll_id = pd.payroll_id
+        JOIN deduction_types dt ON pd.deduction_type_id = dt.deduction_type_id
+        WHERE pr.period_id = ?
+        ORDER BY dt.deduction_name
+    ");
+    $detailStmt->execute([$periodId]);
+    foreach ($detailStmt->fetchAll() as $d) {
+        $deductionDetails[$d['payroll_id']][] = [
+            'name' => $d['name'],
+            'amount' => (float)$d['amount'],
+        ];
+    }
+}
+
 // ── Workflow log ──────────────────────────────────────────────────────────────
 $wlStmt = $pdo->prepare("
     SELECT wl.*, r.role_name AS performer_role
@@ -324,6 +360,10 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
             <tr><td colspan="18" style="text-align:center;padding:40px;color:#9ca3af;">No payroll records.</td></tr>
         <?php else: ?>
         <?php foreach ($records as $r): ?>
+        <?php
+            $allowanceJson = htmlspecialchars(json_encode($allowanceDetails[$r['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
+            $deductionJson = htmlspecialchars(json_encode($deductionDetails[$r['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
+        ?>
         <tr data-payroll-id="<?= $r['payroll_id'] ?>">
             <td>
                 <strong><?= htmlspecialchars(trim($r['employee_name'])) ?></strong><br>
@@ -358,7 +398,12 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
                     data-hdmf-premium="<?= $r['hdmf_p'] ?>" data-hdmf-loan="<?= $r['hdmf_l'] ?>"
                     data-philhealth="<?= $r['philhealth'] ?>"
                     data-sss-premium="<?= $r['sss_p'] ?>" data-sss-loan="<?= $r['sss_l'] ?>"
-                    data-period-label="<?= htmlspecialchars($period['period_name']) ?>">
+                    data-period-label="<?= htmlspecialchars($period['period_name']) ?>"
+                    data-allowances="<?= $allowanceJson ?>"
+                    data-deductions="<?= $deductionJson ?>"
+                    data-gross="<?= $r['gross_pay'] ?>"
+                    data-total-deductions="<?= $r['total_deductions'] ?>"
+                    data-net="<?= $r['net_pay'] ?>">
                     <i class="fa fa-eye"></i>
                 </button>
                 <button class="btn-icon btn-icon--edit" title="Edit" onclick="openEdit(this)"
@@ -511,6 +556,10 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
     <?php else: ?>
     <div class="bd-payslip-grid">
         <?php foreach ($records as $r): ?>
+        <?php
+            $allowanceJson = htmlspecialchars(json_encode($allowanceDetails[$r['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
+            $deductionJson = htmlspecialchars(json_encode($deductionDetails[$r['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
+        ?>
         <div class="bd-payslip-card">
             <div class="bd-ps-avatar"><?= strtoupper(substr(trim($r['employee_name']), 0, 2)) ?></div>
             <div class="bd-ps-info">
@@ -532,7 +581,12 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
                 data-hdmf-premium="<?= $r['hdmf_p'] ?>" data-hdmf-loan="<?= $r['hdmf_l'] ?>"
                 data-philhealth="<?= $r['philhealth'] ?>"
                 data-sss-premium="<?= $r['sss_p'] ?>" data-sss-loan="<?= $r['sss_l'] ?>"
-                data-period-label="<?= htmlspecialchars($period['period_name']) ?>">
+                data-period-label="<?= htmlspecialchars($period['period_name']) ?>"
+                data-allowances="<?= $allowanceJson ?>"
+                data-deductions="<?= $deductionJson ?>"
+                data-gross="<?= $r['gross_pay'] ?>"
+                data-total-deductions="<?= $r['total_deductions'] ?>"
+                data-net="<?= $r['net_pay'] ?>">
                 <i class="fa fa-eye"></i>
             </button>
         </div>

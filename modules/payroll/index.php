@@ -112,6 +112,42 @@ if ($selectedId) {
     }
 }
 
+$allowanceDetails = [];
+$deductionDetails = [];
+if ($selectedId && !empty($records)) {
+    $detailStmt = $pdo->prepare("
+        SELECT pr.payroll_id, at2.allowance_name AS name, pa.amount
+        FROM payroll_records pr
+        JOIN payroll_allowances pa ON pr.payroll_id = pa.payroll_id
+        JOIN allowance_types at2 ON pa.allowance_type_id = at2.allowance_type_id
+        WHERE pr.period_id = ?
+        ORDER BY at2.allowance_name
+    ");
+    $detailStmt->execute([$selectedId]);
+    foreach ($detailStmt->fetchAll() as $d) {
+        $allowanceDetails[$d['payroll_id']][] = [
+            'name' => $d['name'],
+            'amount' => (float)$d['amount'],
+        ];
+    }
+
+    $detailStmt = $pdo->prepare("
+        SELECT pr.payroll_id, dt.deduction_name AS name, pd.amount
+        FROM payroll_records pr
+        JOIN payroll_deductions pd ON pr.payroll_id = pd.payroll_id
+        JOIN deduction_types dt ON pd.deduction_type_id = dt.deduction_type_id
+        WHERE pr.period_id = ?
+        ORDER BY dt.deduction_name
+    ");
+    $detailStmt->execute([$selectedId]);
+    foreach ($detailStmt->fetchAll() as $d) {
+        $deductionDetails[$d['payroll_id']][] = [
+            'name' => $d['name'],
+            'amount' => (float)$d['amount'],
+        ];
+    }
+}
+
 // FIX: define $recordCount properly so it's available in PHP conditionals
 $recordCount = count($records);
 
@@ -297,6 +333,10 @@ require_once __DIR__ . '/../../includes/head.php';
             <?php else: ?>
             <?php $periodName = htmlspecialchars($selectedPeriod['period_name'] ?? ''); ?>
             <?php foreach ($records as $row): ?>
+                <?php
+                $allowanceJson = htmlspecialchars(json_encode($allowanceDetails[$row['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
+                $deductionJson = htmlspecialchars(json_encode($deductionDetails[$row['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
+                ?>
                 <tr data-payroll-id="<?= $row['payroll_id'] ?>">
                     <td>
                         <strong><?= htmlspecialchars($row['employee_name']) ?></strong><br>
@@ -334,7 +374,12 @@ require_once __DIR__ . '/../../includes/head.php';
                             data-philhealth="<?= $row['philhealth'] ?>"
                             data-sss-premium="<?= $row['sss_premium'] ?>"
                             data-sss-loan="<?= $row['sss_loan'] ?>"
-                            data-period-label="<?= $periodName ?>">
+                            data-period-label="<?= $periodName ?>"
+                            data-allowances="<?= $allowanceJson ?>"
+                            data-deductions="<?= $deductionJson ?>"
+                            data-gross="<?= $row['gross_pay'] ?>"
+                            data-total-deductions="<?= $row['total_deductions'] ?>"
+                            data-net="<?= $row['net_pay'] ?>">
                             <i class="fa fa-eye"></i>
                         </button>
                         <button class="btn-icon btn-icon--edit" title="Edit (this period only)"
@@ -578,28 +623,54 @@ async function executePayrollAction() {
 window.openGenerateModal  = () => document.getElementById('generateModal').style.display = 'flex';
 window.closeGenerateModal = () => document.getElementById('generateModal').style.display = 'none';
 
+// Single consolidated listener — handles validation AND AJAX in one place.
+// Must be registered after DOMContentLoaded so the modal HTML is in the DOM.
 document.addEventListener('DOMContentLoaded', () => {
-    const genForm = document.querySelector('#generateModal form');
+    const genForm = document.getElementById('generateForm');
     if (!genForm) return;
 
-    genForm.addEventListener('submit', async e => {
+    genForm.addEventListener('submit', async function (e) {
+        // Always stop the form from doing a real page navigation
         e.preventDefault();
+        e.stopImmediatePropagation();
+
+        // ── Client-side validation ────────────────────────────────────────
+        const scope = document.querySelector('input[name="scope"]:checked')?.value;
+        if (scope === 'department' && !document.getElementById('deptSelect')?.value) {
+            alert('Please select a department.'); return;
+        }
+        if (scope === 'position' && !document.getElementById('posSelect')?.value) {
+            alert('Please select a position.'); return;
+        }
+        if (scope === 'specific') {
+            const checked = document.querySelectorAll('#empChecklist input[type="checkbox"]:checked').length;
+            if (!checked) { alert('Please select at least one employee.'); return; }
+        }
+
+        // ── AJAX submit ───────────────────────────────────────────────────
         const btn = genForm.querySelector('[type="submit"]');
         btn.disabled = true;
         btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Generating…';
+
         try {
             const res  = await fetch(`${BASE_URL}actions/generate-payroll.php`, {
-                method: 'POST', body: new FormData(genForm)
+                method: 'POST',
+                body: new FormData(genForm)
             });
             const data = await res.json();
             closeGenerateModal();
             showFlash(data.message, data.success);
-            if (data.success) setTimeout(() => location.reload(), 1400);
-            else { btn.disabled = false; btn.innerHTML = '<i class="fa fa-play"></i> Generate'; }
-        } catch {
+            if (data.success) {
+                setTimeout(() => location.reload(), 1400);
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa fa-play"></i> Generate';
+            }
+        } catch (err) {
             closeGenerateModal();
-            showFlash('Network error. Please try again.', false);
+            showFlash('Network error — please try again.', false);
             btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-play"></i> Generate';
         }
     });
 });

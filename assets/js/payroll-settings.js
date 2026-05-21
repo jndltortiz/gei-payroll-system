@@ -5,8 +5,18 @@
 
 'use strict';
 
+const PS_BASE_URL = window.BASE_URL || '';
+const PS_SETTINGS = window.PAYROLL_SETTINGS || {};
+const PS_SSS_RATES = window.SSS_RATES || [];
+const PS_SSS_TOTAL = Number(window.SSS_TOTAL || 0);
+const PS_PHIL_RATES = window.PHIL_RATES || [];
+const PS_PAGIBIG_RATES = window.PAGIBIG_RATES || [];
+
 // ─── Bootstrap modals ───────────────────────────────────────
-const _modal = id => new bootstrap.Modal(document.getElementById(id));
+const _modal = id => {
+    const el = document.getElementById(id);
+    return el && window.bootstrap ? new bootstrap.Modal(el) : null;
+};
 
 let modalAddDed    = null;
 let modalEditDed   = null;
@@ -18,6 +28,8 @@ let modalSave      = null;
 let modalRateTbls  = null;
 
 document.addEventListener('DOMContentLoaded', () => {
+    if (!document.querySelector('.ps-content')) return;
+
     modalAddDed   = _modal('modalAddDeduction');
     modalEditDed  = _modal('modalEditDeduction');
     modalAddAl    = _modal('modalAddAllowance');
@@ -275,8 +287,8 @@ function initGovManualToggles() {
 function initRateTables() {
     // SSS
     const sssBody = document.getElementById('sssRateRows');
-    if (sssBody && SSS_RATES.length) {
-        sssBody.innerHTML = SSS_RATES.map(r => `
+    if (sssBody && PS_SSS_RATES.length) {
+        sssBody.innerHTML = PS_SSS_RATES.map(r => `
             <tr>
                 <td>₱${fmt(r.min_salary)} – ₱${fmt(r.max_salary)}</td>
                 <td>₱${fmt(r.monthly_salary_credit)}</td>
@@ -285,13 +297,13 @@ function initRateTables() {
             </tr>
         `).join('');
         document.getElementById('sssTotalNote').innerHTML =
-            `<strong>Note:</strong> Full table has ${SSS_TOTAL} salary brackets. Employee share: 4.5%, Employer share: 10%`;
+            `<strong>Note:</strong> Full table has ${PS_SSS_TOTAL} salary brackets. Employee share: 4.5%, Employer share: 10%`;
     }
 
     // PhilHealth
     const philBody = document.getElementById('philRateRows');
-    if (philBody && PHIL_RATES.length) {
-        philBody.innerHTML = PHIL_RATES.map(r => {
+    if (philBody && PS_PHIL_RATES.length) {
+        philBody.innerHTML = PS_PHIL_RATES.map(r => {
             const empVal = parseFloat(r.employee_share) > 0
                 ? `₱${fmt(r.employee_share)}`
                 : `Salary × ${pct(r.employee_share_rate)}`;
@@ -312,8 +324,8 @@ function initRateTables() {
 
     // Pag-IBIG
     const pagBody = document.getElementById('pagibigRateRows');
-    if (pagBody && PAGIBIG_RATES.length) {
-        pagBody.innerHTML = PAGIBIG_RATES.map(r => `
+    if (pagBody && PS_PAGIBIG_RATES.length) {
+        pagBody.innerHTML = PS_PAGIBIG_RATES.map(r => `
             <tr>
                 <td>₱${fmt(r.min_salary)} – ₱${fmt(r.max_salary)}</td>
                 <td class="text-amber">${pct(r.employee_rate)}</td>
@@ -406,8 +418,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnConfirmDelete')?.addEventListener('click', () => {
         if (!_deleteId) return;
         const action = _deleteType === 'deduction'
-            ? `${BASE_URL}actions/delete-deduction.php`
-            : `${BASE_URL}actions/delete-allowance.php`;
+            ? `${PS_BASE_URL}actions/delete-deduction.php`
+            : `${PS_BASE_URL}actions/delete-allowance.php`;
         fetchAction(action, { id: _deleteId }, data => {
             if (data.success) {
                 const row = document.querySelector(`tr[data-${_deleteType === 'deduction' ? 'ded' : 'al'}-id="${_deleteId}"]`);
@@ -431,7 +443,7 @@ function openSaveConfirmModal() {
 function submitAddDeduction(e) {
     e.preventDefault();
     const fd = new FormData(e.target);
-    fetchAction(`${BASE_URL}actions/save-deduction.php`, Object.fromEntries(fd), data => {
+    fetchAction(`${PS_BASE_URL}actions/save-deduction.php`, Object.fromEntries(fd), data => {
         if (data.success) {
             location.reload(); // simplest for now; can do DOM insert
         } else {
@@ -443,7 +455,7 @@ function submitAddDeduction(e) {
 function submitEditDeduction(e) {
     e.preventDefault();
     const fd = new FormData(e.target);
-    fetchAction(`${BASE_URL}actions/save-deduction.php`, Object.fromEntries(fd), data => {
+    fetchAction(`${PS_BASE_URL}actions/save-deduction.php`, Object.fromEntries(fd), data => {
         if (data.success) {
             location.reload();
         } else {
@@ -455,7 +467,7 @@ function submitEditDeduction(e) {
 function submitAddAllowance(e) {
     e.preventDefault();
     const fd = new FormData(e.target);
-    fetchAction(`${BASE_URL}actions/save-allowance.php`, Object.fromEntries(fd), data => {
+    fetchAction(`${PS_BASE_URL}actions/save-allowance.php`, Object.fromEntries(fd), data => {
         if (data.success) {
             location.reload();
         } else {
@@ -467,7 +479,7 @@ function submitAddAllowance(e) {
 function submitEditAllowance(e) {
     e.preventDefault();
     const fd = new FormData(e.target);
-    fetchAction(`${BASE_URL}actions/save-allowance.php`, Object.fromEntries(fd), data => {
+    fetchAction(`${PS_BASE_URL}actions/save-allowance.php`, Object.fromEntries(fd), data => {
         if (data.success) {
             location.reload();
         } else {
@@ -490,7 +502,7 @@ function submitAssignment(e) {
         applies_to: scope,
         target_id:  targetId,
     };
-    fetchAction(`${BASE_URL}actions/save-assignment.php`, payload, data => {
+    fetchAction(`${PS_BASE_URL}actions/save-assignment.php`, payload, data => {
         if (data.success) {
             modalAssign.hide();
             showToast('Assignment saved.', 'success');
@@ -530,7 +542,7 @@ function submitPayrollSettings() {
     });
     payload.loans = JSON.stringify(loans);
 
-    fetchAction(`${BASE_URL}actions/save-payroll-settings.php`, payload, data => {
+    fetchAction(`${PS_BASE_URL}actions/save-payroll-settings.php`, payload, data => {
         if (data.success) {
             document.getElementById('modalSaveConfirm') && modalSave.hide();
             markClean();
@@ -636,7 +648,7 @@ async function submitCreatePeriods() {
     fd.append('year',  year  || '');
 
     try {
-        const res  = await fetch(`${BASE_URL}actions/create-payroll-periods.php`, { method: 'POST', body: fd });
+        const res  = await fetch(`${PS_BASE_URL}actions/create-payroll-periods.php`, { method: 'POST', body: fd });
         const data = await res.json();
 
         flash.style.cssText = `display:block; padding:10px 14px; border-radius:8px;
@@ -667,7 +679,7 @@ async function deletePeriod(id, name) {
         const fd = new FormData();
         fd.append('action', 'delete');
         fd.append('period_id', id);
-        const res  = await fetch(`${BASE_URL}actions/create-payroll-periods.php`, { method: 'POST', body: fd });
+        const res  = await fetch(`${PS_BASE_URL}actions/create-payroll-periods.php`, { method: 'POST', body: fd });
         const data = await res.json();
         if (data.success) {
             location.reload();

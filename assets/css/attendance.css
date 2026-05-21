@@ -627,3 +627,59 @@
   background: #fff;
   border-top: 1px solid #e5e7eb;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   ATTENDANCE CSS ADDITIONS
+   Add these rules to your existing assets/css/attendance.css
+   ───────────────────────────────────────────────────────────── */
+
+/* ── HALF DAY badge ───────────────────────────────────────── */
+.att-badge.half_day {
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fed7aa;
+}
+
+/* ── HALF DAY time-in cell colour (orange, like late is yellow) */
+.att-time.half_day {
+    color: #ea580c;
+    font-weight: 600;
+}
+
+/* ── Orange summary card (HALF DAY stat card at top) ─────── */
+.att-sum-card.orange {
+    border-left: 4px solid #f97316;
+}
+.att-sum-card.orange .att-sum-label {
+    color: #ea580c;
+}
+.att-sum-card.orange .att-sum-val {
+    color: #c2410c;
+}
+.att-sum-card.orange .att-sum-icon {
+    color: #f97316;
+    background: #fff7ed;
+}
+
+/* ── Orange cutoff mini-stat card ────────────────────────── */
+.co-stat.orange .co-label {
+    color: #ea580c;
+}
+.co-stat.orange .co-val {
+    color: #c2410c;
+}
+
+/* ── Orange co-num (cutoff table cell) ───────────────────── */
+.co-num.orange {
+    color: #c2410c;
+    background: #fff7ed;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+/* ── Half Day table column header ────────────────────────── */
+.th-half-day {
+    color: #ea580c;
+}

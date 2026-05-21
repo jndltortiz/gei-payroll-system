@@ -22,7 +22,7 @@ document.addEventListener('click', function(e) {
 // VIEW EMPLOYEE
 // ================================
 window.viewEmployee = function(id) {
-    fetch('../../actions/get-employee.php?id=' + id)
+    fetch(BASE_URL + 'actions/get-employee.php?id=' + id)
         .then(res => res.json())
         .then(d => {
             // Avatar initials
@@ -78,7 +78,7 @@ window.openEditFromView = function() {
 // EDIT EMPLOYEE
 // ================================
 window.editEmployee = function(id) {
-    fetch('../../actions/get-employee.php?id=' + id)
+    fetch(BASE_URL + 'actions/get-employee.php?id=' + id)
         .then(res => res.json())
         .then(d => {
             // Helper: set value on element by id

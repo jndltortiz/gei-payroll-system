@@ -126,9 +126,69 @@ try {
             if ($period['status'] !== 'APPROVED') {
                 echo json_encode(['success'=>false,'message'=>'Only APPROVED periods can be released.']); exit;
             }
+            $pdo->beginTransaction();
             $pdo->prepare("UPDATE payroll_periods SET status='RELEASED', updated_at=NOW() WHERE period_id=?")->execute([$periodId]);
             $pdo->prepare("UPDATE payroll_records SET payroll_status='RELEASED', released_by=?, released_at=NOW()
                            WHERE period_id=? AND payroll_status='APPROVED'")->execute([$uid, $periodId]);
+
+            // Apply loan deductions only on release. Generation creates draft
+            // payroll rows; release is the point where loan balances should move.
+            $loanDeductions = $pdo->prepare("
+                SELECT pr.employee_id, dt.deduction_name, pd.amount
+                FROM payroll_records pr
+                JOIN payroll_deductions pd ON pr.payroll_id = pd.payroll_id
+                JOIN deduction_types dt ON pd.deduction_type_id = dt.deduction_type_id
+                WHERE pr.period_id = ?
+                  AND pd.amount > 0
+                  AND (dt.is_loan = 1 OR dt.deduction_name LIKE '%Loan%')
+            ");
+            $loanDeductions->execute([$periodId]);
+
+            $loanLookup = $pdo->prepare("
+                SELECT el.loan_id, el.balance_amount
+                FROM employee_loans el
+                JOIN loan_types lt ON el.loan_type_id = lt.loan_type_id
+                WHERE el.employee_id = ?
+                  AND el.status = 'ACTIVE'
+                  AND el.balance_amount > 0
+                  AND (
+                        LOWER(lt.loan_name) LIKE ?
+                     OR LOWER(lt.loan_name) LIKE ?
+                  )
+                ORDER BY el.start_date, el.loan_id
+            ");
+            $updateLoan = $pdo->prepare("
+                UPDATE employee_loans
+                SET balance_amount = GREATEST(0, balance_amount - ?),
+                    status = IF(GREATEST(0, balance_amount - ?) <= 0, 'COMPLETED', status)
+                WHERE loan_id = ?
+            ");
+
+            foreach ($loanDeductions->fetchAll() as $ded) {
+                $name = strtolower($ded['deduction_name']);
+                $patterns = null;
+                if (strpos($name, 'sss') !== false) {
+                    $patterns = ['%sss%', '%sss%'];
+                } elseif (strpos($name, 'hdmf') !== false || strpos($name, 'pag-ibig') !== false || strpos($name, 'pagibig') !== false) {
+                    $patterns = ['%hdmf%', '%pag-ibig%'];
+                } elseif (strpos($name, 'peraa') !== false) {
+                    $patterns = ['%peraa%', '%peraa%'];
+                } elseif (strpos($name, 'rural') !== false) {
+                    $patterns = ['%rural%', '%rural%'];
+                }
+                if (!$patterns) continue;
+
+                $remaining = (float)$ded['amount'];
+                $loanLookup->execute([(int)$ded['employee_id'], $patterns[0], $patterns[1]]);
+                foreach ($loanLookup->fetchAll() as $loan) {
+                    if ($remaining <= 0) break;
+                    $deductNow = min($remaining, (float)$loan['balance_amount']);
+                    if ($deductNow > 0) {
+                        $updateLoan->execute([$deductNow, $deductNow, $loan['loan_id']]);
+                        $remaining -= $deductNow;
+                    }
+                }
+            }
 
             // ── Release linked service credits ───────────────────────────
             $pdo->prepare("
@@ -148,10 +208,14 @@ try {
                 ->execute([$uid,'RELEASE','payroll_periods',$periodId,
                     "Admin released \"{$period['period_name']}\""]);
 
+            $pdo->commit();
             echo json_encode(['success'=>true,
                 'message'=>"\"{$period['period_name']}\" released. Payslips can now be printed."]);
             break;
     }
 } catch (PDOException $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     echo json_encode(['success'=>false,'message'=>'DB error: '.$e->getMessage()]);
 }

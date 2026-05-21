@@ -42,7 +42,7 @@ $activeEmployees = $pdo->query("
       </div>
     <?php endif; ?>
 
-    <form method="POST" action="<?= BASE_URL ?>actions/generate-payroll.php" id="generateForm">
+    <form method="POST" action="#" id="generateForm">
 
       <!-- Pay Period -->
       <div class="gen-field">
@@ -236,27 +236,5 @@ function updateSelectedCount() {
 }
 
 document.getElementById('empChecklist')?.addEventListener('change', updateSelectedCount);
-
-// ── Prevent submit when scope requires sub-selection ─────────────────────────
-document.getElementById('generateForm')?.addEventListener('submit', function (e) {
-    const scope = document.querySelector('input[name="scope"]:checked')?.value;
-    if (scope === 'department' && !document.getElementById('deptSelect')?.value) {
-        e.preventDefault();
-        alert('Please select a department.');
-        return;
-    }
-    if (scope === 'position' && !document.getElementById('posSelect')?.value) {
-        e.preventDefault();
-        alert('Please select a position.');
-        return;
-    }
-    if (scope === 'specific') {
-        const checked = document.querySelectorAll('#empChecklist input[type="checkbox"]:checked').length;
-        if (!checked) {
-            e.preventDefault();
-            alert('Please select at least one employee.');
-            return;
-        }
-    }
-});
+// NOTE: form submit is handled by the single consolidated AJAX listener in index.php
 </script>

@@ -431,6 +431,7 @@ $shifts = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, grace_
               <option value="Admin">Admin</option>
               <option value="Accounting">Accounting</option>
               <option value="Employee" selected>Employee</option>
+              <option value="Principal">Principal</option>
             </select>
           </div>
           <div class="form-group">

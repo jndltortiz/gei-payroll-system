@@ -11,9 +11,40 @@
  * Redirects back to admin payroll index on success.
  */
 
-// FIX #6a — was '../config/database.php' which does not exist; use config.php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
+
+// ── Inline helper: re-derive payroll totals from child rows ───────────────────
+function recalculatePayrollTotals(PDO $pdo, int $payrollId): void
+{
+    $pdo->prepare("
+        UPDATE payroll_records pr
+        SET
+            total_allowances = (
+                SELECT COALESCE(SUM(pa.amount), 0)
+                FROM payroll_allowances pa
+                WHERE pa.payroll_id = pr.payroll_id
+            ),
+            total_deductions = (
+                SELECT COALESCE(SUM(pd.amount), 0)
+                FROM payroll_deductions pd
+                WHERE pd.payroll_id = pr.payroll_id
+            ),
+            gross_pay = pr.basic_pay + (
+                SELECT COALESCE(SUM(pa.amount), 0)
+                FROM payroll_allowances pa
+                WHERE pa.payroll_id = pr.payroll_id
+            ),
+            net_pay = (
+                pr.basic_pay
+                + (SELECT COALESCE(SUM(pa.amount), 0) FROM payroll_allowances pa WHERE pa.payroll_id = pr.payroll_id)
+                - (SELECT COALESCE(SUM(pd.amount), 0) FROM payroll_deductions pd WHERE pd.payroll_id = pr.payroll_id)
+            ),
+            updated_at = NOW()
+        WHERE pr.payroll_id = ?
+    ")->execute([$payrollId]);
+}
+
 requireAdminAction(); // Admin only — principals cannot edit payroll
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -98,27 +129,23 @@ $pdo->prepare("
     $payrollId
 ]);
 
-// ── Recompute totals ──────────────────────────────────────────────────────────
-$total_allowances = $assign + $rice + $laundry;
-$gross            = $basic + $total_allowances;
-$total_ded        = $peraa_premium + $peraa_loan
-                  + $hdmf_premium  + $hdmf_loan
-                  + $philhealth
-                  + $sss_premium   + $sss_loan;
-$net              = $gross - $total_ded;
-
+// ── Update basic pay ──────────────────────────────────────────────────────────
 $pdo->prepare("
-    UPDATE payroll_records
-    SET basic_pay         = ?,
-        gross_pay         = ?,
-        total_allowances  = ?,
-        total_deductions  = ?,
-        net_pay           = ?,
-        updated_at        = NOW()
-    WHERE payroll_id = ?
-")->execute([$basic, $gross, $total_allowances, $total_ded, $net, $payrollId]);
+    UPDATE payroll_records SET basic_pay = ? WHERE payroll_id = ?
+")->execute([$basic, $payrollId]);
+
+// ── Recompute totals from DB rows (not from POST values) ─────────────────────
+// This is more reliable than summing POST fields — it reads the actual
+// rows in payroll_allowances / payroll_deductions, so any allowance type
+// not explicitly handled above still gets counted correctly.
+recalculatePayrollTotals($pdo, $payrollId);
 
 // ── Audit ─────────────────────────────────────────────────────────────────────
+// Fetch the recalculated net_pay straight from DB for the log message
+$netStmt = $pdo->prepare("SELECT net_pay FROM payroll_records WHERE payroll_id = ?");
+$netStmt->execute([$payrollId]);
+$netPay  = (float)($netStmt->fetchColumn() ?? 0);
+
 $uid = $_SESSION['user']['user_id'] ?? null;
 if ($uid) {
     $pdo->prepare("
@@ -127,7 +154,7 @@ if ($uid) {
     ")->execute([
         $uid,
         $payrollId,
-        "Manually updated payroll record #{$payrollId} — net pay: ₱" . number_format($net, 2)
+        "Manually updated payroll record #{$payrollId} — net pay: ₱" . number_format($netPay, 2)
     ]);
 }
 

@@ -136,8 +136,12 @@ try {
     ")->execute([$empId, $monthly, $daily]);
 
     // ── User account ──────────────────────────────────────────────────────────
-    $roleMap = ['Admin' => 1, 'Accounting' => 2, 'Employee' => 3];
-    $roleId  = $roleMap[$_POST['role'] ?? 'Employee'] ?? 3;
+    // Look up role_id dynamically so any role (Admin, Accounting, Employee, Principal) works
+    $roleName = trim($_POST['role'] ?? 'Employee');
+    $roleStmt = $pdo->prepare("SELECT role_id FROM roles WHERE role_name = ? LIMIT 1");
+    $roleStmt->execute([$roleName]);
+    $roleRow  = $roleStmt->fetch();
+    $roleId   = $roleRow ? (int)$roleRow['role_id'] : 3; // fallback: Employee
     $pdo->prepare("
         INSERT INTO users (username, password_hash, role_id, employee_id, is_active)
         VALUES (?, ?, ?, ?, 1)

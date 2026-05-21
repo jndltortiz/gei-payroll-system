@@ -755,7 +755,7 @@ require_once __DIR__ . '/../../includes/head.php';
 <?php include 'modals/modal-rate-tables.php'; ?>
 
 <script>
-const PAYROLL_SETTINGS = <?= json_encode([
+window.PAYROLL_SETTINGS = <?= json_encode([
     'setting_id'                 => $settings['setting_id'],
     'payroll_frequency'          => $settings['payroll_frequency'],
     'working_days_per_week'      => $settings['working_days_per_week'] ?? 5,
@@ -772,14 +772,13 @@ const PAYROLL_SETTINGS = <?= json_encode([
     'enable_overtime_pay'        => $settings['enable_overtime_pay'],
 ]) ?>;
 
-const DEPARTMENTS   = <?= json_encode($departments) ?>;
-const POSITIONS     = <?= json_encode($positions) ?>;
-const EMPLOYEES     = <?= json_encode($employees) ?>;
-const BASE_URL      = '<?= BASE_URL ?>';
-const SSS_RATES     = <?= json_encode($sssRates) ?>;
-const SSS_TOTAL     = <?= (int)$sssTotal ?>;
-const PHIL_RATES    = <?= json_encode($philRates) ?>;
-const PAGIBIG_RATES = <?= json_encode($pagibigRates) ?>;
+window.DEPARTMENTS   = <?= json_encode($departments) ?>;
+window.POSITIONS     = <?= json_encode($positions) ?>;
+window.EMPLOYEES     = <?= json_encode($employees) ?>;
+window.SSS_RATES     = <?= json_encode($sssRates) ?>;
+window.SSS_TOTAL     = <?= (int)$sssTotal ?>;
+window.PHIL_RATES    = <?= json_encode($philRates) ?>;
+window.PAGIBIG_RATES = <?= json_encode($pagibigRates) ?>;
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

@@ -5,11 +5,12 @@ require_once __DIR__ . '/../../config/database.php';
 $dateToday = date('Y-m-d');
 $tab = isset($_GET['tab']) ? $_GET['tab'] : 'today';
 
-// Summary counts
-$present = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='PRESENT'")->fetchColumn();
-$late    = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='LATE'")->fetchColumn();
-$absent  = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='ABSENT'")->fetchColumn();
-$leave   = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='LEAVE'")->fetchColumn();
+// Summary counts — added HALF_DAY
+$present  = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='PRESENT'")->fetchColumn();
+$late     = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='LATE'")->fetchColumn();
+$halfDay  = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='HALF_DAY'")->fetchColumn();
+$absent   = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='ABSENT'")->fetchColumn();
+$leave    = $pdo->query("SELECT COUNT(*) FROM attendance_records WHERE attendance_date='$dateToday' AND attendance_status='LEAVE'")->fetchColumn();
 
 // TODAY tab filters
 $search       = isset($_GET['search']) ? trim($_GET['search']) : '';
@@ -30,7 +31,6 @@ $totalRecords->execute($params);
 $totalRecords = $totalRecords->fetchColumn();
 $totalPages   = max(1, ceil($totalRecords / $limit));
 
-// WITH THIS:
 $stmt = $pdo->prepare("
     SELECT ar.*, e.first_name, e.last_name,
            d.department_name, p.position_name
@@ -56,7 +56,6 @@ $cutoffPeriod = isset($_GET['cutoff']) ? $_GET['cutoff'] : '';
 $cutoffDept   = isset($_GET['cdept'])  ? $_GET['cdept']  : '';
 $cutoffSearch = isset($_GET['csearch'])? trim($_GET['csearch']) : '';
 
-// Build cutoff period options
 $cutoffOptions = [];
 for ($i = 0; $i < 6; $i++) {
     $ts   = strtotime("-$i months");
@@ -84,19 +83,40 @@ $ctP = [':cs'=>$cutoffStart, ':ce'=>$cutoffEnd];
 if ($cutoffDept !== '') { $ctWhere .= " AND e.department_id=:cd"; $ctP[':cd'] = $cutoffDept; }
 if ($cutoffSearch !== '') { $ctWhere .= " AND (e.first_name LIKE :csr OR e.last_name LIKE :csr)"; $ctP[':csr'] = '%'.$cutoffSearch.'%'; }
 
-$ct = $pdo->prepare("SELECT SUM(ar.attendance_status='PRESENT') tp, SUM(ar.attendance_status='LATE') tl, SUM(ar.attendance_status='ABSENT') ta, COUNT(DISTINCT ar.employee_id) te FROM attendance_records ar JOIN employees e ON ar.employee_id=e.employee_id $ctWhere");
+// Added HALF_DAY to cutoff stats
+$ct = $pdo->prepare("
+    SELECT
+        SUM(ar.attendance_status='PRESENT')  tp,
+        SUM(ar.attendance_status='LATE')     tl,
+        SUM(ar.attendance_status='HALF_DAY') thd,
+        SUM(ar.attendance_status='ABSENT')   ta,
+        COUNT(DISTINCT ar.employee_id)       te
+    FROM attendance_records ar
+    JOIN employees e ON ar.employee_id=e.employee_id
+    $ctWhere
+");
 $ct->execute($ctP);
 $ct = $ct->fetch(PDO::FETCH_ASSOC);
-$avgRate = ($ct['te'] > 0 && $workingDays > 0) ? round(($ct['tp'] / ($ct['te'] * $workingDays)) * 100) : 0;
 
-$empStmt = $pdo->prepare("SELECT e.employee_id, e.first_name, e.last_name, d.department_name,
-    SUM(ar.attendance_status='PRESENT') ep, SUM(ar.attendance_status='LATE') el,
-    SUM(ar.attendance_status='ABSENT') ea, SUM(ar.attendance_status='LEAVE') ev
+// Attendance rate counts PRESENT + LATE + HALF_DAY as attended
+$avgRate = ($ct['te'] > 0 && $workingDays > 0)
+    ? round((($ct['tp'] + $ct['tl'] + $ct['thd']) / ($ct['te'] * $workingDays)) * 100)
+    : 0;
+
+$empStmt = $pdo->prepare("
+    SELECT e.employee_id, e.first_name, e.last_name, d.department_name,
+        SUM(ar.attendance_status='PRESENT')  ep,
+        SUM(ar.attendance_status='LATE')     el,
+        SUM(ar.attendance_status='HALF_DAY') ehd,
+        SUM(ar.attendance_status='ABSENT')   ea,
+        SUM(ar.attendance_status='LEAVE')    ev
     FROM employees e
-    LEFT JOIN attendance_records ar ON e.employee_id=ar.employee_id AND ar.attendance_date BETWEEN :cs3 AND :ce3
+    LEFT JOIN attendance_records ar ON e.employee_id=ar.employee_id
+        AND ar.attendance_date BETWEEN :cs3 AND :ce3
     LEFT JOIN departments d ON e.department_id=d.department_id
     WHERE e.employee_status='ACTIVE'
-    GROUP BY e.employee_id ORDER BY e.first_name ASC");
+    GROUP BY e.employee_id ORDER BY e.first_name ASC
+");
 $empStmt->execute([':cs3'=>$cutoffStart,':ce3'=>$cutoffEnd]);
 $empRows = $empStmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -129,7 +149,7 @@ require_once __DIR__ . '/../../includes/head.php';
             </div>
         </div>
 
-        <!-- SUMMARY CARDS -->
+        <!-- SUMMARY CARDS — now includes HALF DAY -->
         <div class="att-summary-cards">
             <div class="att-sum-card green">
                 <div>
@@ -144,6 +164,13 @@ require_once __DIR__ . '/../../includes/head.php';
                     <div class="att-sum-val"><?= $late ?></div>
                 </div>
                 <div class="att-sum-icon"><i class="fa fa-clock"></i></div>
+            </div>
+            <div class="att-sum-card orange">
+                <div>
+                    <div class="att-sum-label">HALF DAY</div>
+                    <div class="att-sum-val"><?= $halfDay ?></div>
+                </div>
+                <div class="att-sum-icon"><i class="fa fa-circle-half-stroke"></i></div>
             </div>
             <div class="att-sum-card red">
                 <div>
@@ -188,10 +215,11 @@ require_once __DIR__ . '/../../includes/head.php';
                         </div>
                         <select name="status" onchange="this.form.submit()">
                             <option value="">All Status</option>
-                            <option value="PRESENT" <?= $filterStatus==='PRESENT'?'selected':'' ?>>Present</option>
-                            <option value="LATE"    <?= $filterStatus==='LATE'   ?'selected':'' ?>>Late</option>
-                            <option value="ABSENT"  <?= $filterStatus==='ABSENT' ?'selected':'' ?>>Absent</option>
-                            <option value="LEAVE"   <?= $filterStatus==='LEAVE'  ?'selected':'' ?>>On Leave</option>
+                            <option value="PRESENT"  <?= $filterStatus==='PRESENT' ?'selected':'' ?>>Present</option>
+                            <option value="LATE"     <?= $filterStatus==='LATE'    ?'selected':'' ?>>Late</option>
+                            <option value="HALF_DAY" <?= $filterStatus==='HALF_DAY'?'selected':'' ?>>Half Day</option>
+                            <option value="ABSENT"   <?= $filterStatus==='ABSENT'  ?'selected':'' ?>>Absent</option>
+                            <option value="LEAVE"    <?= $filterStatus==='LEAVE'   ?'selected':'' ?>>On Leave</option>
                         </select>
                         <button type="submit" class="att-btn filter-btn">
                             <i class="fa fa-sliders"></i> Filters
@@ -216,10 +244,21 @@ require_once __DIR__ . '/../../includes/head.php';
                         <?php if(empty($rows)): ?>
                         <tr><td colspan="8" class="att-no-data">No attendance records for this date.</td></tr>
                         <?php else: foreach($rows as $r):
-                            $st = strtolower($r['attendance_status']);
-                            $stLabel = ['present'=>'Present','late'=>'Late','absent'=>'Absent','inc'=>'On Leave'][$st] ?? ucfirst($st);
+                            $stRaw   = $r['attendance_status'];           // e.g. HALF_DAY
+                            $stClass = strtolower($stRaw);                // e.g. half_day
+                            $stLabels = [
+                                'PRESENT'    => 'Present',
+                                'LATE'       => 'Late',
+                                'HALF_DAY'   => 'Half Day',
+                                'ABSENT'     => 'Absent',
+                                'LEAVE'      => 'On Leave',
+                                'INCOMPLETE' => 'Incomplete',
+                                'HOLIDAY'    => 'Holiday',
+                            ];
+                            $stLabel = $stLabels[$stRaw] ?? ucfirst(strtolower($stRaw));
                             $tin  = $r['time_in']  ? date('h:i A', strtotime($r['time_in']))  : '—';
                             $tout = $r['time_out'] ? date('h:i A', strtotime($r['time_out'])) : '—';
+                            $timeClass = $stClass === 'late' ? 'late' : ($stClass === 'present' ? 'ok' : ($stClass === 'half_day' ? 'half_day' : ''));
                         ?>
                         <tr>
                             <td>
@@ -230,9 +269,9 @@ require_once __DIR__ . '/../../includes/head.php';
                             </td>
                             <td><?= $r['department_name'] ? '<span class="att-dept-tag">'.htmlspecialchars($r['department_name']).'</span>' : '—' ?></td>
                             <td><?= $r['position_name'] ? '<span class="att-role-tag">'.htmlspecialchars($r['position_name']).'</span>' : '—' ?></td>
-                            <td><span class="att-time <?= $st==='late'?'late':($st==='present'?'ok':'') ?>"><?= $tin ?></span></td>
+                            <td><span class="att-time <?= $timeClass ?>"><?= $tin ?></span></td>
                             <td><?= $tout ?></td>
-                            <td><span class="att-badge <?= $st ?>"><?= $stLabel ?></span></td>
+                            <td><span class="att-badge <?= $stClass ?>"><?= $stLabel ?></span></td>
                             <td><?= htmlspecialchars($r['attendance_source'] ?? 'Manual') ?></td>
                             <td>
                                 <button class="att-action-btn"
@@ -292,11 +331,12 @@ require_once __DIR__ . '/../../includes/head.php';
                     </div>
                 </form>
 
-                <!-- Cutoff mini stats -->
+                <!-- Cutoff mini stats — added Half Day -->
                 <div class="att-cutoff-stats">
                     <div class="co-stat"><div class="co-label">WORKING DAYS</div><div class="co-val"><?= $workingDays ?></div></div>
                     <div class="co-stat green"><div class="co-label">TOTAL PRESENT</div><div class="co-val"><?= $ct['tp']??0 ?></div></div>
                     <div class="co-stat yellow"><div class="co-label">TOTAL LATE</div><div class="co-val"><?= $ct['tl']??0 ?></div></div>
+                    <div class="co-stat orange"><div class="co-label">TOTAL HALF DAY</div><div class="co-val"><?= $ct['thd']??0 ?></div></div>
                     <div class="co-stat red"><div class="co-label">TOTAL ABSENT</div><div class="co-val"><?= $ct['ta']??0 ?></div></div>
                     <div class="co-stat blue"><div class="co-label">AVG ATTENDANCE</div><div class="co-val"><?= $avgRate ?>%</div></div>
                 </div>
@@ -315,6 +355,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             <th>Department</th>
                             <th class="th-present">Present</th>
                             <th class="th-late">Late</th>
+                            <th class="th-half-day">Half Day</th>
                             <th class="th-absent">Absent</th>
                             <th class="th-leave">On Leave</th>
                             <th>Attendance Rate</th>
@@ -323,7 +364,8 @@ require_once __DIR__ . '/../../includes/head.php';
                     <tbody>
                         <?php foreach($empRows as $er):
                             $total = max($workingDays, 1);
-                            $rate  = min(100, round((($er['ep']+$er['el']) / $total) * 100));
+                            // Rate = PRESENT + LATE + HALF_DAY counted as attended
+                            $rate  = min(100, round((($er['ep']+$er['el']+$er['ehd']) / $total) * 100));
                             $rc    = $rate >= 90 ? 'rc-green' : ($rate >= 75 ? 'rc-yellow' : 'rc-red');
                         ?>
                         <tr>
@@ -331,6 +373,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             <td><?= htmlspecialchars($er['department_name']??'—') ?></td>
                             <td><span class="co-num green"><?= (int)$er['ep'] ?></span></td>
                             <td><span class="co-num yellow"><?= (int)$er['el'] ?></span></td>
+                            <td><span class="co-num orange"><?= (int)$er['ehd'] ?></span></td>
                             <td><span class="co-num red"><?= (int)$er['ea'] ?></span></td>
                             <td><span class="co-num blue"><?= (int)$er['ev'] ?></span></td>
                             <td>

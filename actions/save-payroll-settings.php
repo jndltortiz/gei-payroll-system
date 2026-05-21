@@ -109,6 +109,35 @@ try {
         }
     }
 
+    // Save manual government contribution values into deduction_types. Payroll
+    // generation reads these when government_calc_mode = MANUAL.
+    if ($govCalcMode === 'MANUAL') {
+        $manualGov = [
+            ['key' => 'sss',  'patterns' => ['%SSS%']],
+            ['key' => 'phil', 'patterns' => ['%Phil%']],
+            ['key' => 'pag',  'patterns' => ['%Pag-IBIG%', '%Pagibig%', '%HDMF%']],
+        ];
+
+        foreach ($manualGov as $gov) {
+            $inputType = ($body[$gov['key'] . '_type'] ?? '') === 'pct' ? 'PERCENTAGE' : 'FIXED';
+            $inputVal  = max(0, (float)($body[$gov['key'] . '_rate'] ?? 0));
+            $amount    = $inputType === 'FIXED' ? $inputVal : 0;
+            $rate      = $inputType === 'PERCENTAGE' ? $inputVal : 0;
+
+            $nameWhere = implode(' OR ', array_fill(0, count($gov['patterns']), 'deduction_name LIKE ?'));
+            $params = array_merge([$inputType, $amount, $rate], $gov['patterns']);
+            $pdo->prepare("
+                UPDATE deduction_types
+                SET deduction_value_type = ?,
+                    deduction_amount = ?,
+                    deduction_rate = ?
+                WHERE is_government = 1
+                  AND is_loan = 0
+                  AND ($nameWhere)
+            ")->execute($params);
+        }
+    }
+
     // Audit log
     $userId = $_SESSION['user']['user_id'] ?? null;
     if ($userId) {

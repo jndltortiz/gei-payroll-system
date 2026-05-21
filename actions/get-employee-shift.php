@@ -15,7 +15,8 @@ if (!$empId) {
 }
 
 $stmt = $pdo->prepare("
-    SELECT e.first_name, e.last_name, s.shift_name, s.start_time,
+    SELECT e.first_name, e.last_name, e.employment_type,
+           s.shift_name, s.start_time,
            s.end_time, s.grace_period_minutes, s.half_day_time
     FROM employees e
     LEFT JOIN shifts s ON e.shift_id = s.shift_id
@@ -31,6 +32,7 @@ if (!$emp) {
 echo json_encode([
     'success'              => true,
     'employee_name'        => $emp['first_name'] . ' ' . $emp['last_name'],
+    'employment_type'      => $emp['employment_type'] ?? 'FULL_TIME',   // ← NEW
     'shift_name'           => $emp['shift_name'] ?? null,
     'start_time'           => $emp['start_time'] ?? null,
     'end_time'             => $emp['end_time']   ?? null,

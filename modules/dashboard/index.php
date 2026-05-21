@@ -51,6 +51,18 @@ $lateEmployees = $pdo->prepare("
 $lateEmployees->execute([':today' => $today]);
 $lateEmployees = $lateEmployees->fetchAll();
 
+// ── FIX: fetch HALF_DAY employees (were previously invisible everywhere) ──
+$halfDayEmployees = $pdo->prepare("
+    SELECT e.first_name, e.last_name
+    FROM attendance_records ar
+    JOIN employees e ON ar.employee_id = e.employee_id
+    WHERE ar.attendance_date = :today
+    AND ar.attendance_status = 'HALF_DAY'
+");
+$halfDayEmployees->execute([':today' => $today]);
+$halfDayEmployees = $halfDayEmployees->fetchAll();
+
+// Absent = active employees with NO attendance record today at all
 $absentEmployees = $pdo->prepare("
     SELECT e.first_name, e.last_name
     FROM employees e
@@ -64,14 +76,15 @@ $absentEmployees = $pdo->prepare("
 $absentEmployees->execute([':today' => $today]);
 $absentEmployees = $absentEmployees->fetchAll();
 
-// ── Derived counts (no extra queries needed) ──
+// ── Derived counts ──
 $totalEmployeesCount = $totalEmployees;
-$presentCount = count($presentEmployees);
-$lateCount    = count($lateEmployees);
-$absentCount  = count($absentEmployees);
+$presentCount  = count($presentEmployees);
+$lateCount     = count($lateEmployees);
+$halfDayCount  = count($halfDayEmployees);   // ← NEW
+$absentCount   = count($absentEmployees);
 
-// Late employees attended — count them in the attendance rate
-$presentToday = $presentCount + $lateCount;
+// ── FIX: attendance rate counts PRESENT + LATE + HALF_DAY as "attended" ──
+$presentToday = $presentCount + $lateCount + $halfDayCount;
 
 // New employees this month
 $newThisMonth = $pdo->prepare("
@@ -89,10 +102,11 @@ $attendanceRate = $totalEmployees > 0
 
 $totalPayroll = $pdo->query("SELECT SUM(net_pay) FROM payroll_records")->fetchColumn();
 
+// ── FIX: weekly chart also counts HALF_DAY as attended ──
 $weeklyAttendance = $pdo->query("
     SELECT
         DATE(attendance_date) as date,
-        SUM(attendance_status IN ('PRESENT','LATE')) as present_count,
+        SUM(attendance_status IN ('PRESENT','LATE','HALF_DAY')) as present_count,
         SUM(attendance_status = 'ABSENT') as absent_count
     FROM attendance_records
     WHERE attendance_date >= CURDATE() - INTERVAL 6 DAY
@@ -123,8 +137,6 @@ for ($i = 6; $i >= 0; $i--) {
         $absentData[]  = 0;
     }
 }
-
-// NOTE: $today, $presentEmployees, $absentEmployees are already set above — used for activities below
 
 $activities = [];
 
@@ -328,17 +340,24 @@ require_once __DIR__ . '/../../includes/head.php';
             <div class="live-badge">Live</div>
           </div>
         </div>
+
+        <!-- FIX: presence stats now includes Half Day pill -->
         <div class="presence-stats">
           <div class="pstat"><div class="pstat-dot" style="background:var(--green)"></div> <?php echo $presentCount; ?> Present</div>
           <div class="pstat"><div class="pstat-dot" style="background:var(--yellow)"></div> <?php echo $lateCount; ?> Late</div>
+          <div class="pstat"><div class="pstat-dot" style="background:#f97316"></div> <?php echo $halfDayCount; ?> Half Day</div>
           <div class="pstat"><div class="pstat-dot" style="background:var(--red)"></div> <?php echo $absentCount; ?> Absent</div>
         </div>
+
+        <!-- FIX: filter tabs now includes Half Day tab -->
         <div class="presence-tabs">
           <button class="presence-tab active" onclick="filterPresence('all', this)">All <strong><?php echo $totalEmployeesCount; ?></strong></button>
           <button class="presence-tab" onclick="filterPresence('present', this)">Present <strong><?php echo $presentCount; ?></strong></button>
           <button class="presence-tab" onclick="filterPresence('late', this)">Late <strong><?php echo $lateCount; ?></strong></button>
+          <button class="presence-tab" onclick="filterPresence('half_day', this)">Half Day <strong><?php echo $halfDayCount; ?></strong></button>
           <button class="presence-tab" onclick="filterPresence('absent', this)">Absent <strong><?php echo $absentCount; ?></strong></button>
         </div>
+
         <div class="presence-grid" id="presenceGrid">
           <?php foreach ($presentEmployees as $emp): ?>
             <div class="presence-item" data-status="present">
@@ -346,25 +365,35 @@ require_once __DIR__ . '/../../includes/head.php';
                 <?php echo htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name']); ?>
                 </span>
             </div>
-            <?php endforeach; ?>
+          <?php endforeach; ?>
 
-            <?php foreach ($lateEmployees as $emp): ?>
+          <?php foreach ($lateEmployees as $emp): ?>
             <div class="presence-item" data-status="late">
                 <span class="presence-name late">
                 <?php echo htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name']); ?>
                 </span>
             </div>
-            <?php endforeach; ?>
+          <?php endforeach; ?>
 
-            <?php foreach ($absentEmployees as $emp): ?>
+          <!-- FIX: half-day employees now rendered in the grid -->
+          <?php foreach ($halfDayEmployees as $emp): ?>
+            <div class="presence-item" data-status="half_day">
+                <span class="presence-name half_day" style="color:#f97316;">
+                <?php echo htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name']); ?>
+                </span>
+            </div>
+          <?php endforeach; ?>
+
+          <?php foreach ($absentEmployees as $emp): ?>
             <div class="presence-item" data-status="absent">
                 <span class="presence-name absent">
                 <?php echo htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name']); ?>
                 </span>
             </div>
-            <?php endforeach; ?>
+          <?php endforeach; ?>
         </div>
       </div>
+
       <script>
       const labels = <?= json_encode($labels); ?>;
       const presentData = <?= json_encode($presentData); ?>;
