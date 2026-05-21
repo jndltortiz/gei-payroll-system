@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"c:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root gei_payroll_system -e \"SHOW COLUMNS FROM service_credits;\")",
+      "Bash(\"c:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root gei_payroll_system -e \"SHOW TABLES LIKE 'service_credit%';\")",
+      "Bash(\"c:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root gei_payroll_system -e \"SHOW COLUMNS FROM allowance_types LIKE 'is_service_credit_target';\")"
+    ]
+  }
+}

@@ -14,38 +14,7 @@
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
-
-// ── Inline helper: re-derive payroll totals from child rows ───────────────────
-// Defined here (not in a separate include) so static analysis tools can resolve it.
-function recalculatePayrollTotals(PDO $pdo, int $payrollId): void
-{
-    $pdo->prepare("
-        UPDATE payroll_records pr
-        SET
-            total_allowances = (
-                SELECT COALESCE(SUM(pa.amount), 0)
-                FROM payroll_allowances pa
-                WHERE pa.payroll_id = pr.payroll_id
-            ),
-            total_deductions = (
-                SELECT COALESCE(SUM(pd.amount), 0)
-                FROM payroll_deductions pd
-                WHERE pd.payroll_id = pr.payroll_id
-            ),
-            gross_pay = pr.basic_pay + (
-                SELECT COALESCE(SUM(pa.amount), 0)
-                FROM payroll_allowances pa
-                WHERE pa.payroll_id = pr.payroll_id
-            ),
-            net_pay = (
-                pr.basic_pay
-                + (SELECT COALESCE(SUM(pa.amount), 0) FROM payroll_allowances pa WHERE pa.payroll_id = pr.payroll_id)
-                - (SELECT COALESCE(SUM(pd.amount), 0) FROM payroll_deductions pd WHERE pd.payroll_id = pr.payroll_id)
-            ),
-            updated_at = NOW()
-        WHERE pr.payroll_id = ?
-    ")->execute([$payrollId]);
-}
+require_once __DIR__ . '/../includes/payroll-utils.php';
 header('Content-Type: application/json');
 requireLogin();
 
@@ -139,9 +108,23 @@ $autoApplyDeductions = (int)($settings['auto_apply_deductions'] ?? 1) === 1;
 $governmentCalcMode = $settings['government_calc_mode'] ?? 'STANDARD';
 
 // ── Pre-fetch deduction types (assignment rules are checked per employee) ─────
+// Absence deduction (is_absence_deduction=1) is computed separately; exclude here.
 $dtypes = $autoApplyDeductions
-    ? $pdo->query("SELECT * FROM deduction_types WHERE is_active = 1")->fetchAll()
+    ? $pdo->query("SELECT * FROM deduction_types WHERE is_active = 1 AND COALESCE(is_absence_deduction,0) = 0")->fetchAll()
     : [];
+
+// Pre-fetch absence deduction type once (requires migration 004).
+// Wrapped in try-catch so payroll generation still works if migration not yet run.
+$absDedTypeId = null;
+try {
+    $absDedRow = $pdo->query("
+        SELECT deduction_type_id FROM deduction_types
+        WHERE is_absence_deduction = 1 AND is_active = 1 LIMIT 1
+    ")->fetch();
+    if ($absDedRow) $absDedTypeId = (int)$absDedRow['deduction_type_id'];
+} catch (PDOException $e) {
+    // Migration 004 not yet run — absence deductions disabled for this run
+}
 
 // ── Generate records ──────────────────────────────────────────────────────────
 try {
@@ -195,7 +178,8 @@ try {
         $assignedAllowanceTypes = [];
         if ($autoApplyAllowances) {
             $atypes = $pdo->prepare("
-                SELECT DISTINCT at2.allowance_type_id, at2.allowance_name, at2.default_amount
+                SELECT DISTINCT at2.allowance_type_id, at2.allowance_name,
+                                at2.default_amount, at2.is_service_credit_target
                 FROM allowance_types at2
                 JOIN allowance_assignments aa ON at2.allowance_type_id = aa.allowance_type_id
                 WHERE at2.is_active = 1 AND aa.is_active = 1
@@ -214,21 +198,19 @@ try {
             $assignedAllowanceTypes = $atypes->fetchAll();
         }
 
-        // ── Fetch APPROVED service credits for this employee in this payroll period ──
-        // Approved credits are merged into Additional Assignment Payment
+        // ── Fetch APPROVED service credits for this employee ─────────────────────
+        // Picks up ALL approved, unpaid credits regardless of work date.
+        // Service credits are always for past work; they should be paid in the
+        // next available payroll run. Date-range filtering caused a deadlock when
+        // credits were approved after the matching period was already released.
         $scStmt = $pdo->prepare("
-            SELECT service_credit_id, equivalent_pay
-            FROM service_credits
-            WHERE employee_id = :eid
-              AND status = 'APPROVED'
-              AND payroll_id IS NULL
-              AND work_date BETWEEN :start AND :end
+            SELECT sc.service_credit_id, sc.equivalent_pay
+            FROM service_credits sc
+            WHERE sc.employee_id = :eid
+              AND sc.status = 'APPROVED'
+              AND sc.payroll_id IS NULL
         ");
-        $scStmt->execute([
-            ':eid'   => $employeeId,
-            ':start' => $period['pay_period_start'],
-            ':end'   => $period['pay_period_end'],
-        ]);
+        $scStmt->execute([':eid' => $employeeId]);
         $approvedCredits  = $scStmt->fetchAll();
         $serviceCreditPay = array_sum(array_column($approvedCredits, 'equivalent_pay'));
         $scIds            = array_column($approvedCredits, 'service_credit_id');
@@ -244,40 +226,34 @@ try {
         $addlAssignBaseAmt = 0;
 
         foreach ($assignedAllowanceTypes as $type) {
-            $amt  = (float)$type['default_amount'];
-            $name = strtolower($type['allowance_name'] ?? '');
+            $amt = (float)$type['default_amount'];
 
-            // Merge service credit pay into Additional Assignment allowance
-            if ((strpos($name, 'additional') !== false && strpos($name, 'assign') !== false)
-                 || strpos($name, 'addl') !== false || strpos($name, 'add\'l') !== false) {
+            // Merge service credit pay into the designated target allowance type.
+            // Detection uses the is_service_credit_target DB flag — not name strings.
+            if (!empty($type['is_service_credit_target'])) {
                 $addlAssignTypeId  = $type['allowance_type_id'];
                 $addlAssignBaseAmt = $amt;
-                $amt               = $amt + $serviceCreditPay; // merge here
-                $serviceCreditPay  = 0; // already merged, don't add again
+                $amt              += $serviceCreditPay;
+                $serviceCreditPay  = 0;
             }
 
             $insA->execute([$payrollId, $type['allowance_type_id'], $amt]);
             $totalAllowances += $amt;
         }
 
-        // If no Additional Assignment allowance type exists yet, add service credit pay separately
-        // (edge case: allowance type not configured)
+        // Fallback: service credit pay was not merged above because the target
+        // allowance type was not assigned to this employee (narrow assignment rule).
+        // Find the target type by flag and upsert the row directly.
         if ($serviceCreditPay > 0) {
-            // Try to find Additional Assignment allowance type
             $addlType = $pdo->prepare("
                 SELECT allowance_type_id FROM allowance_types
-                WHERE is_active = 1
-                  AND (allowance_name LIKE '%Additional Assignment%'
-                    OR allowance_name LIKE '%Add%l%Assign%')
+                WHERE is_active = 1 AND is_service_credit_target = 1
                 LIMIT 1
             ");
             $addlType->execute();
             $addlTypeRow = $addlType->fetch();
 
             if ($addlTypeRow) {
-                // Update an existing row, or insert one when the base allowance
-                // was not assigned to this employee. Approved service credits
-                // must not vanish because an allowance assignment is narrow.
                 $updScAllowance = $pdo->prepare("
                     UPDATE payroll_allowances
                     SET amount = amount + ?
@@ -289,7 +265,8 @@ try {
                 }
             } else {
                 throw new RuntimeException(
-                    'Approved service credit exists, but no active Additional Assignment allowance type is configured.'
+                    'Approved service credit exists but no allowance type has is_service_credit_target = 1. '
+                    . 'Run migration 001 or go to Payroll Settings → Allowances and mark the target type.'
                 );
             }
             $totalAllowances += $serviceCreditPay;
@@ -487,6 +464,24 @@ try {
             if ($amt >= 0) {
                 $insD->execute([$payrollId, $type['deduction_type_id'], $amt]);
                 $totalDeductions += $amt;
+            }
+        }
+
+        // ── Absence deduction (excess leave days beyond credit balance) ──────────
+        if ($absDedTypeId && $autoApplyDeductions && (float)($emp['daily_rate'] ?? 0) > 0) {
+            $absResult = computeAbsenceDeduction($pdo, $employeeId, $periodId, (float)$emp['daily_rate']);
+            if ($absResult !== null) {
+                $pdo->prepare("
+                    INSERT INTO payroll_deductions
+                        (payroll_id, deduction_type_id, amount, absence_days, notes)
+                    VALUES (?, ?, ?, ?, ?)
+                ")->execute([
+                    $payrollId,
+                    $absDedTypeId,
+                    $absResult['amount'],
+                    $absResult['days'],
+                    $absResult['notes'],
+                ]);
             }
         }
 

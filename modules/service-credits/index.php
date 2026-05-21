@@ -64,7 +64,10 @@ $stmt = $pdo->prepare("
     SELECT sc.*,
            CONCAT(e.first_name,' ',e.last_name) AS employee_name, e.employee_no,
            p.position_name, d.department_name,
-           CONCAT(u.first_name,' ',u.last_name) AS approved_by_name
+           CONCAT(u.first_name,' ',u.last_name) AS approved_by_name,
+           (SELECT MIN(scd.work_date) FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS first_date,
+           (SELECT MAX(scd.work_date) FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS last_date,
+           (SELECT COUNT(*)           FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS date_count
     FROM service_credits sc
     JOIN employees e   ON e.employee_id = sc.employee_id
     JOIN positions p   ON p.position_id = e.position_id
@@ -81,6 +84,29 @@ $stmt->bindValue(':lim',  $perPage, PDO::PARAM_INT);
 $stmt->bindValue(':off',  $offset,  PDO::PARAM_INT);
 $stmt->execute();
 $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// ── Batch-load child date rows for all records on this page ────────────────
+$scDates = [];
+if (!empty($records)) {
+    $scIds = array_column($records, 'service_credit_id');
+    $ph    = implode(',', array_fill(0, count($scIds), '?'));
+    $dSt   = $pdo->prepare("
+        SELECT service_credit_id, work_date,
+               CAST(days AS CHAR) AS days,
+               CAST(equivalent_pay AS CHAR) AS equivalent_pay
+        FROM service_credit_dates
+        WHERE service_credit_id IN ($ph)
+        ORDER BY work_date ASC
+    ");
+    $dSt->execute($scIds);
+    foreach ($dSt->fetchAll(PDO::FETCH_ASSOC) as $d) {
+        $scDates[$d['service_credit_id']][] = [
+            'work_date'      => $d['work_date'],
+            'days'           => (float)$d['days'],
+            'equivalent_pay' => (float)$d['equivalent_pay'],
+        ];
+    }
+}
 
 // ── Dropdowns ──────────────────────────────────────────────────────────────
 $employees = $pdo->query("
@@ -224,7 +250,7 @@ require_once __DIR__ . '/../../includes/head.php';
         <thead>
           <tr>
             <th>Employee</th>
-            <th>Work Date</th>
+            <th>Work Period</th>
             <th>Days</th>
             <th>Equiv. Pay</th>
             <th>Status</th>
@@ -249,6 +275,16 @@ require_once __DIR__ . '/../../includes/head.php';
           $canDelete   = $r['status'] === 'DRAFT';
           $canResubmit = in_array($r['status'], ['DRAFT','REJECTED']);
           $canApprove  = $r['status'] === 'PENDING';
+
+          // Build data payload including child dates for JS modals
+          $rDates = $scDates[$r['service_credit_id']] ?? [];
+          $rData  = array_merge($r, ['dates' => $rDates]);
+          $rJson  = htmlspecialchars(json_encode($rData), ENT_QUOTES);
+
+          // Work period display
+          $dc = (int)($r['date_count'] ?? 0);
+          $fd = $r['first_date'] ?? $r['work_date'] ?? null;
+          $ld = $r['last_date']  ?? $r['work_date'] ?? null;
         ?>
         <tr>
           <td>
@@ -260,13 +296,25 @@ require_once __DIR__ . '/../../includes/head.php';
               </div>
             </div>
           </td>
-          <td><?= date('M j, Y', strtotime($r['work_date'])) ?></td>
+          <td>
+            <?php if ($fd): ?>
+              <?php if ($dc > 1 && $ld): ?>
+                <?= date('M j', strtotime($fd)) ?> – <?= date('M j, Y', strtotime($ld)) ?>
+                <br><small style="color:#94a3b8;"><?= $dc ?> dates</small>
+              <?php else: ?>
+                <?= date('M j, Y', strtotime($fd)) ?>
+              <?php endif; ?>
+            <?php else: ?>
+              <span class="sc-na">—</span>
+            <?php endif; ?>
+          </td>
           <td><?= number_format((float)$r['days'],1) ?> day<?= $r['days']!=1?'s':'' ?></td>
           <td class="sc-pay-cell">₱<?= number_format((float)$r['equivalent_pay'],2) ?></td>
           <td><span class="sc-badge <?= $bdgClass ?>"><?= $bdgLabel ?></span></td>
           <td>
             <?php if ($r['payroll_id']): ?>
-              <span class="sc-payroll-link">#<?= $r['payroll_id'] ?></span>
+              <a href="<?= BASE_URL ?>modules/payroll/index.php"
+                 class="sc-payroll-link" title="View payroll">#<?= $r['payroll_id'] ?></a>
             <?php else: ?>
               <span class="sc-na">—</span>
             <?php endif; ?>
@@ -277,7 +325,7 @@ require_once __DIR__ . '/../../includes/head.php';
             <div class="sc-action-group">
               <!-- View details -->
               <button class="sc-icon-btn sc-icon-btn--view" title="View details"
-                onclick="openViewModal(<?= htmlspecialchars(json_encode($r)) ?>)">
+                onclick="openViewModal(<?= $rJson ?>)">
                 <i class="fa fa-eye"></i>
               </button>
               <?php if ($canApprove): ?>
@@ -299,7 +347,7 @@ require_once __DIR__ . '/../../includes/head.php';
               <?php endif; ?>
               <?php if ($canEdit): ?>
               <button class="sc-icon-btn sc-icon-btn--edit" title="Edit"
-                onclick="openEditModal(<?= htmlspecialchars(json_encode($r)) ?>)">
+                onclick="openEditModal(<?= $rJson ?>)">
                 <i class="fa fa-pen"></i>
               </button>
               <?php endif; ?>

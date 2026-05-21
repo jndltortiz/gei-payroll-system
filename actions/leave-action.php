@@ -67,6 +67,37 @@ function recalcParentStatus(PDO $pdo, int $leaveId): string
     return 'REJECTED';
 }
 
+// ── Helper: update used_days in employee_leave_credits ───────
+// delta > 0 = more days used (approvals), delta < 0 = fewer days used (reversals).
+// Only fires when leave_requests.school_year_id is set (new-system requests).
+function adjustLeaveCredits(PDO $pdo, int $leaveId, float $delta): void
+{
+    if ($delta == 0) return;
+
+    $stmt = $pdo->prepare("
+        SELECT lr.school_year_id, lr.leave_type_id, lr.employee_id
+        FROM   leave_requests lr
+        WHERE  lr.leave_id = ?
+    ");
+    $stmt->execute([$leaveId]);
+    $lr = $stmt->fetch();
+
+    if (!$lr || !$lr['school_year_id']) return; // legacy request — skip
+
+    $pdo->prepare("
+        UPDATE employee_leave_credits
+        SET    used_days = GREATEST(0, used_days + ?)
+        WHERE  employee_id    = ?
+          AND  school_year_id = ?
+          AND  leave_type_id  = ?
+    ")->execute([
+        $delta,
+        $lr['employee_id'],
+        $lr['school_year_id'],
+        $lr['leave_type_id'],
+    ]);
+}
+
 try {
     $pdo->beginTransaction();
 
@@ -86,6 +117,13 @@ try {
             exit;
         }
 
+        // Count PENDING dates before update (needed for credit adjustment)
+        $stmtPending = $pdo->prepare("
+            SELECT COUNT(*) FROM leave_request_dates WHERE leave_id = ? AND status = 'PENDING'
+        ");
+        $stmtPending->execute([$leaveId]);
+        $pendingCount = (int)$stmtPending->fetchColumn();
+
         // Update all PENDING date rows for this leave
         $pdo->prepare("
             UPDATE leave_request_dates
@@ -95,6 +133,13 @@ try {
                 remarks     = ?
             WHERE leave_id = ? AND status = 'PENDING'
         ")->execute([$newDateStatus, $userId, $notes ?: null, $leaveId]);
+
+        // Adjust leave credits:
+        //   approve → each PENDING date becomes APPROVED → used_days +N
+        //   reject  → each PENDING date becomes REJECTED → used_days unchanged (never counted)
+        if ($action === 'approve' && $pendingCount > 0) {
+            adjustLeaveCredits($pdo, $leaveId, (float)$pendingCount);
+        }
 
         // Recalculate parent status
         $parentStatus = recalcParentStatus($pdo, $leaveId);
@@ -133,7 +178,7 @@ try {
             exit;
         }
 
-        // Fetch the date row to get its parent leave_id
+        // Fetch the date row to get its parent leave_id and previous status
         $stmtDate = $pdo->prepare("
             SELECT * FROM leave_request_dates WHERE date_id = ?
         ");
@@ -146,6 +191,7 @@ try {
         }
 
         $parentLeaveId = (int)$dateRow['leave_id'];
+        $prevStatus    = $dateRow['status'];
 
         // Update this single date row
         $pdo->prepare("
@@ -156,6 +202,16 @@ try {
                 remarks     = ?
             WHERE date_id   = ?
         ")->execute([$newDateStatus, $userId, $notes ?: null, $dateId]);
+
+        // Adjust leave credits based on status transition:
+        //   PENDING  → APPROVED : +1 (newly approved)
+        //   PENDING  → REJECTED : 0  (was never counted)
+        //   APPROVED → REJECTED : -1 (reversal)
+        //   APPROVED → APPROVED : 0  (no change)
+        $creditDelta = 0;
+        if ($prevStatus === 'PENDING'  && $newDateStatus === 'APPROVED') $creditDelta = +1;
+        if ($prevStatus === 'APPROVED' && $newDateStatus === 'REJECTED') $creditDelta = -1;
+        adjustLeaveCredits($pdo, $parentLeaveId, (float)$creditDelta);
 
         // Recalculate parent status
         $parentStatus = recalcParentStatus($pdo, $parentLeaveId);

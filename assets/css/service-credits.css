@@ -274,3 +274,45 @@
 
 /* ── Loading ───────────────────────────────────────────────────── */
 .sc-loading { text-align: center; padding: 30px; color: #94a3b8; font-size: 14px; }
+
+/* ── Multi-date rows (create / edit modal) ────────────────────── */
+.sc-date-row {
+    border: 1px solid #e5e7eb; border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 8px; background: #fafafa;
+}
+.sc-date-row-fields {
+    display: grid;
+    grid-template-columns: 1fr 78px 130px 28px;
+    gap: 8px; align-items: end;
+}
+.sc-date-row-col { display: flex; flex-direction: column; }
+.sc-small-label {
+    font-size: 10px; font-weight: 700; color: #64748b;
+    text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px;
+}
+.sc-date-row input { padding: 7px 9px; }
+.sc-date-row-remove {
+    width: 28px; height: 34px; border: 1px solid #fca5a5; background: none;
+    border-radius: 6px; color: #ef4444; cursor: pointer; font-size: 11px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    align-self: flex-end;
+}
+.sc-date-row-remove:hover { background: #fee2e2; }
+.sc-btn-add-date {
+    background: none; border: 1.5px dashed #0f766e; color: #0f766e;
+    border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+    transition: background .15s;
+}
+.sc-btn-add-date:hover { background: #f0fdf9; }
+.sc-date-totals {
+    margin-top: 6px; padding: 7px 12px; background: #f0fdf9;
+    border: 1px solid #a7f3d0; border-radius: 7px; font-size: 13px; color: #065f46;
+}
+
+/* ── Dates header row inside form group ───────────────────────── */
+.sc-dates-hdr {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
+}
+.sc-dates-hdr label { margin-bottom: 0; }

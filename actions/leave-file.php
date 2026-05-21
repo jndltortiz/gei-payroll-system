@@ -62,17 +62,21 @@ $startDate = $cleanDates[0];
 $endDate   = end($cleanDates);
 $totalDays = count($cleanDates);
 
+// Resolve active school year (nullable — legacy behaviour preserved if none)
+$stmtSY       = $pdo->query("SELECT school_year_id FROM school_years WHERE is_active = 1 LIMIT 1");
+$schoolYearId = $stmtSY ? ($stmtSY->fetchColumn() ?: null) : null;
+
 try {
     $pdo->beginTransaction();
 
     // 1. Parent leave_request
     $stmtLR = $pdo->prepare("
         INSERT INTO leave_requests
-            (employee_id, leave_type_id, reason, start_date, end_date,
+            (employee_id, leave_type_id, school_year_id, reason, start_date, end_date,
              total_days, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'PENDING', NOW(), NOW())
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', NOW(), NOW())
     ");
-    $stmtLR->execute([$employeeId, $leaveTypeId, $reason, $startDate, $endDate, $totalDays]);
+    $stmtLR->execute([$employeeId, $leaveTypeId, $schoolYearId, $reason, $startDate, $endDate, $totalDays]);
     $leaveId = (int)$pdo->lastInsertId();
 
     // 2. One row per date in leave_request_dates

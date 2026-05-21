@@ -80,7 +80,11 @@ if (!empty($records)) {
     }
 
     $detailStmt = $pdo->prepare("
-        SELECT pr.payroll_id, dt.deduction_name AS name, pd.amount
+        SELECT pr.payroll_id,
+               dt.deduction_name                    AS name,
+               COALESCE(dt.is_absence_deduction, 0) AS is_absence,
+               pd.amount,
+               pd.absence_days
         FROM payroll_records pr
         JOIN payroll_deductions pd ON pr.payroll_id = pd.payroll_id
         JOIN deduction_types dt ON pd.deduction_type_id = dt.deduction_type_id
@@ -89,8 +93,14 @@ if (!empty($records)) {
     ");
     $detailStmt->execute([$periodId]);
     foreach ($detailStmt->fetchAll() as $d) {
+        $name = $d['name'];
+        if ($d['is_absence'] && $d['absence_days'] !== null) {
+            $days  = (float)$d['absence_days'];
+            $label = $days == 1 ? '1 day' : number_format($days, 1) . ' days';
+            $name .= ' (' . $label . ')';
+        }
         $deductionDetails[$d['payroll_id']][] = [
-            'name' => $d['name'],
+            'name'   => $name,
             'amount' => (float)$d['amount'],
         ];
     }
@@ -107,6 +117,14 @@ $wlStmt = $pdo->prepare("
 ");
 $wlStmt->execute([$periodId]);
 $workflowLog = $wlStmt->fetchAll();
+
+// ── Release event — used by payslip buttons ───────────────────────────────────
+$releaseEvent = null;
+foreach ($workflowLog as $ev) {
+    if ($ev['event_type'] === 'RELEASED') { $releaseEvent = $ev; break; }
+}
+$psReleasedAt = htmlspecialchars($releaseEvent['created_at'] ?? '', ENT_QUOTES, 'UTF-8');
+$psReleasedBy = htmlspecialchars($releaseEvent['performer_name'] ?? '', ENT_QUOTES, 'UTF-8');
 
 // ── Latest rejection remarks (for admin banner) ───────────────────────────────
 $latestReturn = null;
@@ -352,7 +370,7 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
                 <th>Total Ded.</th>
                 <th>Net Pay</th>
                 <th>Status</th>
-                <?php if ($canEdit): ?><th>Actions</th><?php endif; ?>
+                <?php if ($userIsAdmin || $userIsPrincipal): ?><th>Actions</th><?php endif; ?>
             </tr>
         </thead>
         <tbody>
@@ -385,7 +403,7 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
             <td style="color:#ef4444"><?= peso($r['total_deductions']) ?></td>
             <td><strong style="color:#0f766e"><?= peso($r['net_pay']) ?></strong></td>
             <td><span class="badge badge--<?= strtolower($r['payroll_status']) ?>"><?= $r['payroll_status'] ?></span></td>
-            <?php if ($canEdit): ?>
+            <?php if ($userIsAdmin || $userIsPrincipal): ?>
             <td class="row-actions">
                 <button class="btn-icon" title="View Payslip" onclick="openPayslip(this)"
                     data-name="<?= htmlspecialchars(trim($r['employee_name'])) ?>"
@@ -403,9 +421,13 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
                     data-deductions="<?= $deductionJson ?>"
                     data-gross="<?= $r['gross_pay'] ?>"
                     data-total-deductions="<?= $r['total_deductions'] ?>"
-                    data-net="<?= $r['net_pay'] ?>">
+                    data-net="<?= $r['net_pay'] ?>"
+                    data-payroll-status="<?= htmlspecialchars($r['payroll_status']) ?>"
+                    data-released-at="<?= $psReleasedAt ?>"
+                    data-released-by="<?= $psReleasedBy ?>">
                     <i class="fa fa-eye"></i>
                 </button>
+                <?php if ($canEdit): ?>
                 <button class="btn-icon btn-icon--edit" title="Edit" onclick="openEdit(this)"
                     data-payroll-id="<?= $r['payroll_id'] ?>"
                     data-name="<?= htmlspecialchars(trim($r['employee_name'])) ?>"
@@ -420,6 +442,7 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
                     data-sss-premium="<?= $r['sss_p'] ?>" data-sss-loan="<?= $r['sss_l'] ?>">
                     <i class="fa fa-pen"></i>
                 </button>
+                <?php endif; ?>
             </td>
             <?php endif; ?>
         </tr>
@@ -586,7 +609,10 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
                 data-deductions="<?= $deductionJson ?>"
                 data-gross="<?= $r['gross_pay'] ?>"
                 data-total-deductions="<?= $r['total_deductions'] ?>"
-                data-net="<?= $r['net_pay'] ?>">
+                data-net="<?= $r['net_pay'] ?>"
+                data-payroll-status="<?= htmlspecialchars($r['payroll_status']) ?>"
+                data-released-at="<?= $psReleasedAt ?>"
+                data-released-by="<?= $psReleasedBy ?>">
                 <i class="fa fa-eye"></i>
             </button>
         </div>

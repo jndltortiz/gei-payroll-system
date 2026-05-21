@@ -54,6 +54,7 @@ if ($selectedId) {
     $stmt = $pdo->prepare("
         SELECT pr.payroll_id, pr.employee_id, pr.basic_pay, pr.gross_pay,
                pr.total_allowances, pr.total_deductions, pr.net_pay, pr.payroll_status,
+               pr.released_at,
                CONCAT(e.first_name,' ',e.last_name) AS employee_name,
                p.position_name, d.department_name,
 
@@ -116,7 +117,10 @@ $allowanceDetails = [];
 $deductionDetails = [];
 if ($selectedId && !empty($records)) {
     $detailStmt = $pdo->prepare("
-        SELECT pr.payroll_id, at2.allowance_name AS name, pa.amount
+        SELECT pr.payroll_id,
+               at2.allowance_type_id AS type_id,
+               at2.allowance_name    AS name,
+               pa.amount
         FROM payroll_records pr
         JOIN payroll_allowances pa ON pr.payroll_id = pa.payroll_id
         JOIN allowance_types at2 ON pa.allowance_type_id = at2.allowance_type_id
@@ -126,13 +130,19 @@ if ($selectedId && !empty($records)) {
     $detailStmt->execute([$selectedId]);
     foreach ($detailStmt->fetchAll() as $d) {
         $allowanceDetails[$d['payroll_id']][] = [
-            'name' => $d['name'],
-            'amount' => (float)$d['amount'],
+            'type_id' => (int)$d['type_id'],
+            'name'    => $d['name'],
+            'amount'  => (float)$d['amount'],
         ];
     }
 
     $detailStmt = $pdo->prepare("
-        SELECT pr.payroll_id, dt.deduction_name AS name, pd.amount
+        SELECT pr.payroll_id,
+               dt.deduction_type_id        AS type_id,
+               dt.deduction_name           AS name,
+               COALESCE(dt.is_absence_deduction, 0) AS is_absence,
+               pd.amount,
+               pd.absence_days
         FROM payroll_records pr
         JOIN payroll_deductions pd ON pr.payroll_id = pd.payroll_id
         JOIN deduction_types dt ON pd.deduction_type_id = dt.deduction_type_id
@@ -141,10 +151,33 @@ if ($selectedId && !empty($records)) {
     ");
     $detailStmt->execute([$selectedId]);
     foreach ($detailStmt->fetchAll() as $d) {
+        $name = $d['name'];
+        if ($d['is_absence'] && $d['absence_days'] !== null) {
+            $days  = (float)$d['absence_days'];
+            $label = $days == 1 ? '1 day' : number_format($days, 1) . ' days';
+            $name .= ' (' . $label . ')';
+        }
         $deductionDetails[$d['payroll_id']][] = [
-            'name' => $d['name'],
-            'amount' => (float)$d['amount'],
+            'type_id' => (int)$d['type_id'],
+            'name'    => $name,
+            'amount'  => (float)$d['amount'],
         ];
+    }
+}
+
+// ── Release event for payslip data attrs ─────────────────────────────────────
+$psReleasedAt = '';
+$psReleasedBy = '';
+if ($selectedId) {
+    $relEvt = $pdo->prepare("
+        SELECT performer_name, created_at FROM payroll_workflow_log
+        WHERE period_id = ? AND event_type = 'RELEASED' LIMIT 1
+    ");
+    $relEvt->execute([$selectedId]);
+    $relRow = $relEvt->fetch();
+    if ($relRow) {
+        $psReleasedAt = htmlspecialchars($relRow['created_at'],    ENT_QUOTES, 'UTF-8');
+        $psReleasedBy = htmlspecialchars($relRow['performer_name'], ENT_QUOTES, 'UTF-8');
     }
 }
 
@@ -309,13 +342,13 @@ require_once __DIR__ . '/../../includes/head.php';
                     <th>Deductions</th>
                     <th>Net Pay</th>
                     <th>Status</th>
-                    <?php if ($periodIsEditable): ?><th>Actions</th><?php endif; ?>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
             <?php if (empty($records)): ?>
                 <tr>
-                    <td colspan="<?= $periodIsEditable ? 9 : 8 ?>"
+                    <td colspan="9"
                         style="text-align:center;padding:48px;color:#9ca3af;">
                         <?php if (!$selectedId): ?>
                             No pay period selected.
@@ -353,9 +386,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             <?= $row['payroll_status'] ?>
                         </span>
                     </td>
-                    <?php if ($periodIsEditable): ?>
                     <td class="row-actions">
-                        <!-- data-period-label added so view-modal.php ps-period-label gets populated -->
                         <button class="btn-icon" title="View Payslip"
                             onclick="openPayslip(this)"
                             data-payroll-id="<?= $row['payroll_id'] ?>"
@@ -379,9 +410,13 @@ require_once __DIR__ . '/../../includes/head.php';
                             data-deductions="<?= $deductionJson ?>"
                             data-gross="<?= $row['gross_pay'] ?>"
                             data-total-deductions="<?= $row['total_deductions'] ?>"
-                            data-net="<?= $row['net_pay'] ?>">
+                            data-net="<?= $row['net_pay'] ?>"
+                            data-payroll-status="<?= htmlspecialchars($row['payroll_status']) ?>"
+                            data-released-at="<?= $psReleasedAt ?>"
+                            data-released-by="<?= $psReleasedBy ?>">
                             <i class="fa fa-eye"></i>
                         </button>
+                        <?php if ($periodIsEditable): ?>
                         <button class="btn-icon btn-icon--edit" title="Edit (this period only)"
                             onclick="openEdit(this)"
                             data-payroll-id="<?= $row['payroll_id'] ?>"
@@ -390,20 +425,12 @@ require_once __DIR__ . '/../../includes/head.php';
                             data-dept="<?= htmlspecialchars($row['department_name'] ?? '') ?>"
                             data-empid="<?= $row['employee_id'] ?>"
                             data-basic="<?= $row['basic_pay'] ?>"
-                            data-assign="<?= $row['addl_assign'] ?>"
-                            data-rice="<?= $row['rice_subsidy'] ?>"
-                            data-laundry="<?= $row['laundry'] ?>"
-                            data-peraa-premium="<?= $row['peraa_premium'] ?>"
-                            data-peraa-loan="<?= $row['peraa_loan'] ?>"
-                            data-hdmf-premium="<?= $row['hdmf_premium'] ?>"
-                            data-hdmf-loan="<?= $row['hdmf_loan'] ?>"
-                            data-philhealth="<?= $row['philhealth'] ?>"
-                            data-sss-premium="<?= $row['sss_premium'] ?>"
-                            data-sss-loan="<?= $row['sss_loan'] ?>">
+                            data-allowances="<?= $allowanceJson ?>"
+                            data-deductions="<?= $deductionJson ?>">
                             <i class="fa fa-pen"></i>
                         </button>
+                        <?php endif; ?>
                     </td>
-                    <?php endif; ?>
                 </tr>
             <?php endforeach; ?>
             <?php endif; ?>

@@ -8,7 +8,10 @@ $pending = $pdo->query("
     SELECT sc.*,
            CONCAT(e.first_name,' ',e.last_name) AS employee_name,
            e.employee_no, p.position_name, d.department_name,
-           COALESCE(NULLIF(ec.daily_rate,0), ROUND(ec.monthly_salary/22,2)) AS daily_rate
+           COALESCE(NULLIF(ec.daily_rate,0), ROUND(ec.monthly_salary/22,2)) AS daily_rate,
+           (SELECT MIN(scd.work_date) FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS first_date,
+           (SELECT MAX(scd.work_date) FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS last_date,
+           (SELECT COUNT(*)           FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS date_count
     FROM service_credits sc
     JOIN employees e   ON e.employee_id   = sc.employee_id
     JOIN positions p   ON p.position_id   = e.position_id
@@ -25,7 +28,10 @@ $history = $pdo->query("
     SELECT sc.*,
            CONCAT(e.first_name,' ',e.last_name) AS employee_name,
            p.position_name,
-           CONCAT(u.first_name,' ',u.last_name) AS actioned_by_name
+           CONCAT(u.first_name,' ',u.last_name) AS actioned_by_name,
+           (SELECT MIN(scd.work_date) FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS first_date,
+           (SELECT MAX(scd.work_date) FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS last_date,
+           (SELECT COUNT(*)           FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS date_count
     FROM service_credits sc
     JOIN employees e ON e.employee_id = sc.employee_id
     JOIN positions p ON p.position_id = e.position_id
@@ -112,13 +118,23 @@ require_once __DIR__ . '/../../../includes/head.php';
         <span class="sc-badge sc-badge--pending">Pending</span>
       </div>
 
+      <?php
+        $dc = (int)($sc['date_count'] ?? 0);
+        $fd = $sc['first_date'] ?? $sc['work_date'] ?? null;
+        $ld = $sc['last_date']  ?? $sc['work_date'] ?? null;
+        $dateDisplay = $fd
+            ? ($dc > 1 && $ld
+                ? date('M j', strtotime($fd)) . ' – ' . date('M j, Y', strtotime($ld)) . ' (' . $dc . ' dates)'
+                : date('M j, Y', strtotime($fd)))
+            : '—';
+      ?>
       <div class="sc-view-grid" style="margin-bottom:12px;">
         <div class="sc-view-item">
-          <small>Work Date</small>
-          <strong><?= date('M j, Y', strtotime($sc['work_date'])) ?></strong>
+          <small>Work Date<?= $dc > 1 ? 's' : '' ?></small>
+          <strong><?= htmlspecialchars($dateDisplay) ?></strong>
         </div>
         <div class="sc-view-item">
-          <small>Days</small>
+          <small>Total Days</small>
           <strong><?= number_format((float)$sc['days'],1) ?> day<?= $sc['days']!=1?'s':'' ?></strong>
         </div>
         <div class="sc-view-item">
@@ -172,7 +188,7 @@ require_once __DIR__ . '/../../../includes/head.php';
           <thead>
             <tr>
               <th>Employee</th>
-              <th>Work Date</th>
+              <th>Work Period</th>
               <th>Days</th>
               <th>Equiv. Pay</th>
               <th>Status</th>
@@ -187,10 +203,20 @@ require_once __DIR__ . '/../../../includes/head.php';
             ];
             $bc = $badges[$h['status']] ?? 'sc-badge--draft';
           ?>
+          <?php
+            $hdc = (int)($h['date_count'] ?? 0);
+            $hfd = $h['first_date'] ?? $h['work_date'] ?? null;
+            $hld = $h['last_date']  ?? $h['work_date'] ?? null;
+            $hDateDisp = $hfd
+                ? ($hdc > 1 && $hld
+                    ? date('M j', strtotime($hfd)) . ' – ' . date('M j, Y', strtotime($hld))
+                    : date('M j, Y', strtotime($hfd)))
+                : '—';
+          ?>
           <tr>
             <td><strong><?= htmlspecialchars($h['employee_name']) ?></strong><br>
                 <small style="color:#94a3b8;"><?= htmlspecialchars($h['position_name']) ?></small></td>
-            <td><?= date('M j, Y', strtotime($h['work_date'])) ?></td>
+            <td><?= htmlspecialchars($hDateDisp) ?><?= $hdc > 1 ? '<br><small style="color:#94a3b8;">' . $hdc . ' dates</small>' : '' ?></td>
             <td><?= number_format((float)$h['days'],1) ?></td>
             <td style="font-weight:700;color:#0f766e;">₱<?= number_format((float)$h['equivalent_pay'],2) ?></td>
             <td><span class="sc-badge <?= $bc ?>"><?= ucfirst(strtolower($h['status'])) ?></span></td>

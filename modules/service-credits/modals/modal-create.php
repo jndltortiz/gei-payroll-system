@@ -26,47 +26,34 @@ if (!isset($employees)) $employees = [];
             <option value="">— Select employee —</option>
             <?php foreach ($employees as $e): ?>
             <option value="<?= $e['employee_id'] ?>"
-                    data-rate="<?= number_format((float)($e['daily_rate']??0), 2, '.', '') ?>">
-              <?= htmlspecialchars($e['full_name'].' — '.$e['position_name']) ?>
+                    data-rate="<?= number_format((float)($e['daily_rate'] ?? 0), 2, '.', '') ?>">
+              <?= htmlspecialchars($e['full_name'] . ' — ' . $e['position_name']) ?>
             </option>
             <?php endforeach; ?>
           </select>
           <div id="scRateHint" style="display:none;" class="sc-rate-hint">
             <i class="fa fa-circle-info"></i>
             Daily rate: <strong id="scRateDisplay">—</strong>
-            &nbsp;·&nbsp; Equivalent pay = Days × Daily Rate
+            &nbsp;·&nbsp; Each row auto-computes Days × Daily Rate
           </div>
         </div>
 
-        <!-- Date + Days (2-col) -->
-        <div class="sc-form-row">
-          <div class="sc-form-group">
-            <label>Date of Extra Work <span class="req">*</span></label>
-            <input type="date" name="work_date" id="scWorkDate"
-                   value="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d') ?>" required>
-          </div>
-          <div class="sc-form-group">
-            <label>Number of Days <span class="req">*</span></label>
-            <input type="number" name="days" id="scDays"
-                   value="1.0" step="0.5" min="0.5" max="30" required
-                   oninput="computeScPay()">
-          </div>
-        </div>
-
-        <!-- Equivalent Pay -->
+        <!-- Work Date Rows (multi-date, rendered by JS) -->
         <div class="sc-form-group">
-          <label>
-            Equivalent Pay (₱) <span class="req">*</span>
-            <span id="scAutoLabel" style="display:none;" class="sc-auto-badge">
-              <i class="fa fa-bolt"></i> Auto-computed
-            </span>
-          </label>
-          <div class="sc-peso-input">
-            <span>₱</span>
-            <input type="number" name="equivalent_pay" id="scEquivPay"
-                   value="0.00" step="0.01" min="0" required>
+          <div class="sc-dates-hdr">
+            <label>Work Dates <span class="req">*</span></label>
+            <button type="button" class="sc-btn-add-date" onclick="addScDateRow()">
+              <i class="fa fa-plus"></i> Add Date
+            </button>
           </div>
-          <small>Computed from Days × Daily Rate. Adjust if a different rate applies (e.g. holiday, overtime).</small>
+          <div id="scDateRows">
+            <!-- Populated by renderScDateRows() on DOMContentLoaded / resetCreateModal() -->
+          </div>
+          <div class="sc-date-totals" id="scDateTotals" style="display:none;">
+            Total: <strong id="scTotalDays">0.0</strong> day(s)
+            &nbsp;·&nbsp;
+            Equiv. Pay: ₱<strong id="scTotalPay">0.00</strong>
+          </div>
         </div>
 
         <!-- Description -->

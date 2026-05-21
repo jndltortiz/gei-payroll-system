@@ -16,38 +16,67 @@ $pendingCount = $stmtPending->fetchColumn();
 $userId = $_SESSION['user']['user_id'] ?? null;
 $employeeId = $_SESSION['user']['employee_id'] ?? null;
 
-// My leave balance: standard leave days - days used
-$myBalance = 0;
-$myDaysUsed = 0;
+// My leave balance — prefer employee_leave_credits (active school year, all types summed).
+// Fall back to legacy payroll_settings + SUM(approved requests) if no credit rows exist.
+$myBalance        = 0;
+$myDaysUsed       = 0;
+$myAllocated      = 0;
+$usesCreditSystem = false;
+
 if ($employeeId) {
-    // Get payroll settings for default paid leave days
-    $stmtSettings = $pdo->query("SELECT default_paid_leave_days FROM payroll_settings LIMIT 1");
-    $settings = $stmtSettings->fetch();
-    $defaultDays = $settings['default_paid_leave_days'] ?? 30;
+    // Try the new credit system: find the active school year
+    $stmtActiveSY = $pdo->query("SELECT school_year_id FROM school_years WHERE is_active = 1 LIMIT 1");
+    $activeSYId   = $stmtActiveSY ? $stmtActiveSY->fetchColumn() : null;
 
-    // Days used = approved leave transactions (debit)
-    $stmtUsed = $pdo->prepare("
-        SELECT COALESCE(SUM(lt.days), 0)
-        FROM leave_transactions lt
-        JOIN leave_transaction_types ltt ON lt.transaction_type_id = ltt.transaction_type_id
-        WHERE lt.employee_id = ?
-          AND ltt.type_name IN ('DEBIT', 'USE', 'USED', 'DEDUCTION')
-    ");
-    $stmtUsed->execute([$employeeId]);
-    $myDaysUsed = (float) $stmtUsed->fetchColumn();
-
-    // Fallback: count approved leave_requests total_days
-    if ($myDaysUsed == 0) {
-        $stmtApproved = $pdo->prepare("
-            SELECT COALESCE(SUM(total_days), 0)
-            FROM leave_requests
-            WHERE employee_id = ? AND status = 'APPROVED'
+    if ($activeSYId) {
+        $stmtCredits = $pdo->prepare("
+            SELECT COALESCE(SUM(allocated_days), 0) AS total_alloc,
+                   COALESCE(SUM(used_days),      0) AS total_used
+            FROM   employee_leave_credits
+            WHERE  employee_id    = ?
+              AND  school_year_id = ?
         ");
-        $stmtApproved->execute([$employeeId]);
-        $myDaysUsed = (float) $stmtApproved->fetchColumn();
+        $stmtCredits->execute([$employeeId, $activeSYId]);
+        $credits = $stmtCredits->fetch();
+
+        if ($credits && ((float)$credits['total_alloc'] > 0 || (float)$credits['total_used'] > 0)) {
+            $myAllocated      = (float)$credits['total_alloc'];
+            $myDaysUsed       = (float)$credits['total_used'];
+            $myBalance        = $myAllocated - $myDaysUsed;
+            $usesCreditSystem = true;
+        }
     }
 
-    $myBalance = $defaultDays - $myDaysUsed;
+    // Legacy fallback
+    if (!$usesCreditSystem) {
+        $stmtSettings = $pdo->query("SELECT default_paid_leave_days FROM payroll_settings LIMIT 1");
+        $settings     = $stmtSettings->fetch();
+        $defaultDays  = (float)($settings['default_paid_leave_days'] ?? 30);
+        $myAllocated  = $defaultDays;
+
+        // Try leave_transactions first
+        $stmtTx = $pdo->prepare("
+            SELECT COALESCE(SUM(lt.days), 0)
+            FROM leave_transactions lt
+            JOIN leave_transaction_types ltt ON lt.transaction_type_id = ltt.transaction_type_id
+            WHERE lt.employee_id = ?
+              AND ltt.type_name IN ('DEBIT', 'USE', 'USED', 'DEDUCTION')
+        ");
+        $stmtTx->execute([$employeeId]);
+        $myDaysUsed = (float)$stmtTx->fetchColumn();
+
+        if ($myDaysUsed == 0) {
+            $stmtApproved = $pdo->prepare("
+                SELECT COALESCE(SUM(total_days), 0)
+                FROM leave_requests
+                WHERE employee_id = ? AND status = 'APPROVED'
+            ");
+            $stmtApproved->execute([$employeeId]);
+            $myDaysUsed = (float)$stmtApproved->fetchColumn();
+        }
+
+        $myBalance = $defaultDays - $myDaysUsed;
+    }
 }
 
 // Staff on leave today
@@ -161,8 +190,17 @@ require_once __DIR__ . '/../../includes/head.php';
             <div class="stat-cards">
                 <div class="stat-card stat-card--blue">
                     <div class="stat-card__label">My Leave Balance</div>
-                    <div class="stat-card__value stat-card__value--blue"><?= number_format($myBalance, 0) ?> Days</div>
-                    <div class="stat-card__sub">Available this year</div>
+                    <div class="stat-card__value stat-card__value--blue"
+                         style="<?= $myBalance < 0 ? 'color:#dc2626;' : '' ?>">
+                        <?= number_format($myBalance, 1) ?> Days
+                    </div>
+                    <div class="stat-card__sub">
+                        <?php if ($usesCreditSystem): ?>
+                            <?= number_format($myDaysUsed, 1) ?> used of <?= number_format($myAllocated, 1) ?> allocated
+                        <?php else: ?>
+                            <?= number_format($myDaysUsed, 1) ?> days used
+                        <?php endif; ?>
+                    </div>
                 </div>
                 <div class="stat-card stat-card--amber">
                     <div class="stat-card__label">Pending Approvals</div>

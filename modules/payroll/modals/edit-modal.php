@@ -3,7 +3,7 @@
 
     <form class="modal-box edit-box" method="POST" action="<?= BASE_URL ?>actions/payroll-update.php">
 
-        <input type="hidden" id="edit-empid" name="employee_id">
+        <input type="hidden" id="edit-empid"    name="employee_id">
         <input type="hidden" id="edit-payrollid" name="payroll_id">
 
         <!-- HEADER -->
@@ -19,83 +19,37 @@
             <strong>Department:</strong> <span id="edit-dept"></span>
         </div>
 
-        <!-- ALLOWANCES -->
-        <h4 class="section-title">ALLOWANCES & ASSIGNMENTS</h4>
-
-        <div class="form-grid">
+        <!-- BASIC PAY (always present, not from allowance_types) -->
+        <h4 class="section-title">BASIC PAY</h4>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr;">
             <div>
                 <label>Basic Salary</label>
-                <input type="number" id="edit-basic" name="basic">
-            </div>
-
-            <div>
-                <label>Additional Assignment Pay</label>
-                <input type="number" id="edit-assign" name="assign">
-            </div>
-
-            <div>
-                <label>Rice Subsidy</label>
-                <input type="number" id="edit-rice" name="rice">
-            </div>
-
-            <div>
-                <label>Laundry Allowance</label>
-                <input type="number" id="edit-laundry" name="laundry">
+                <input type="number" id="edit-basic" name="basic" step="0.01" min="0">
             </div>
         </div>
 
-        <!-- DEDUCTIONS -->
+        <!-- ALLOWANCES — rendered dynamically by openEdit() in payroll.js -->
+        <h4 class="section-title">ALLOWANCES &amp; ASSIGNMENTS</h4>
+        <div class="form-grid" id="edit-allowances-container">
+            <!-- Populated by JS -->
+        </div>
+
+        <!-- DEDUCTIONS — rendered dynamically by openEdit() in payroll.js -->
         <h4 class="section-title">DEDUCTIONS</h4>
-
-        <div class="form-grid">
-            <div>
-                <label>PERAA Premium</label>
-                <input type="number" id="edit-peraa-premium" name="peraa_premium">
-            </div>
-
-            <div>
-                <label>PERAA Loan</label>
-                <input type="number" id="edit-peraa-loan" name="peraa_loan">
-            </div>
-
-            <div>
-                <label>HDMF Premium</label>
-                <input type="number" id="edit-hdmf-premium" name="hdmf_premium">
-            </div>
-
-            <div>
-                <label>HDMF Loan</label>
-                <input type="number" id="edit-hdmf-loan" name="hdmf_loan">
-            </div>
-
-            <div>
-                <label>PhilHealth</label>
-                <input type="number" id="edit-philhealth" name="philhealth">
-            </div>
-
-            <div>
-                <label>SSS Premium</label>
-                <input type="number" id="edit-sss-premium" name="sss_premium">
-            </div>
-
-            <div>
-                <label>SSS Loan</label>
-                <input type="number" id="edit-sss-loan" name="sss_loan">
-            </div>
+        <div class="form-grid" id="edit-deductions-container">
+            <!-- Populated by JS -->
         </div>
 
-        <!-- COMPUTED -->
+        <!-- COMPUTED TOTALS -->
         <div class="computed-box">
             <div>
                 <small>Gross Pay</small>
                 <strong id="edit-gross"></strong>
             </div>
-
             <div>
                 <small>Total Deductions</small>
                 <strong class="text-red" id="edit-totalded"></strong>
             </div>
-
             <div>
                 <small>Net Pay</small>
                 <strong id="edit-net"></strong>
@@ -110,4 +64,3 @@
 
     </form>
 </div>
-

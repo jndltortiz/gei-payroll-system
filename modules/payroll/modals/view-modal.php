@@ -15,8 +15,9 @@
 
         <!-- GREEN BANNER -->
         <div class="payslip-banner">
+            <div class="payslip-institution">Great Eastern Institute</div>
+            <div class="payslip-institution-sub">Ala Paz, Tarlac</div>
             <h2>PAYSLIP</h2>
-            <!-- was: hardcoded "March 1 – March 15, 2026" -->
             <p>Pay Period: <span id="ps-period-label">—</span></p>
         </div>
 
@@ -81,10 +82,30 @@
             <strong id="ps-net">-</strong>
         </div>
 
+        <!-- SIGNATURE LINES -->
+        <div class="payslip-signatures">
+            <div class="sig-block">
+                <div class="sig-line"></div>
+                <div class="sig-label">Prepared by</div>
+            </div>
+            <div class="sig-block">
+                <div class="sig-line"></div>
+                <div class="sig-label">Approved by</div>
+            </div>
+            <div class="sig-block">
+                <div class="sig-line"></div>
+                <div class="sig-label">Released by</div>
+                <div class="sig-name" id="ps-released-by">—</div>
+            </div>
+        </div>
+
         <!-- FOOTER -->
         <div class="payslip-footer">
+            <div class="payslip-release-info">
+                <span>Status: <strong id="ps-status">—</strong></span>
+                <span>Released: <span id="ps-released-at">—</span></span>
+            </div>
             <p>This is a system-generated payslip. No signature required.</p>
-            <!-- was: hardcoded "April 23, 2026" -->
             <small>Generated on: <span id="ps-generated-on">—</span></small>
         </div>
 
@@ -92,7 +113,7 @@
         <div class="modal-actions">
             <button class="btn-outline" onclick="closePayslip()">Close</button>
             <button class="btn-outline" onclick="printPayslip()">Print</button>
-            <button class="btn-primary" onclick="downloadPayslipPDF()">Download PDF</button>
+            <button class="btn-primary" onclick="downloadPayslipPDF()">Print / Save PDF</button>
         </div>
 
     </div>

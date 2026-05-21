@@ -4,48 +4,20 @@
  * Updates allowances, deductions, and recomputed totals for one payroll record.
  * Only DRAFT records whose period is still OPEN may be edited.
  *
- * POST params: payroll_id, employee_id, basic, assign, rice, laundry,
- *              peraa_premium, peraa_loan, hdmf_premium, hdmf_loan,
- *              philhealth, sss_premium, sss_loan
+ * POST params:
+ *   payroll_id    — record to update
+ *   basic         — updated basic pay
+ *   pa[{type_id}] — allowance amounts keyed by allowance_type_id
+ *   pd[{type_id}] — deduction amounts keyed by deduction_type_id
  *
- * Redirects back to admin payroll index on success.
+ * Redirects back to admin payroll index on completion.
  */
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/payroll-utils.php';
 
-// ── Inline helper: re-derive payroll totals from child rows ───────────────────
-function recalculatePayrollTotals(PDO $pdo, int $payrollId): void
-{
-    $pdo->prepare("
-        UPDATE payroll_records pr
-        SET
-            total_allowances = (
-                SELECT COALESCE(SUM(pa.amount), 0)
-                FROM payroll_allowances pa
-                WHERE pa.payroll_id = pr.payroll_id
-            ),
-            total_deductions = (
-                SELECT COALESCE(SUM(pd.amount), 0)
-                FROM payroll_deductions pd
-                WHERE pd.payroll_id = pr.payroll_id
-            ),
-            gross_pay = pr.basic_pay + (
-                SELECT COALESCE(SUM(pa.amount), 0)
-                FROM payroll_allowances pa
-                WHERE pa.payroll_id = pr.payroll_id
-            ),
-            net_pay = (
-                pr.basic_pay
-                + (SELECT COALESCE(SUM(pa.amount), 0) FROM payroll_allowances pa WHERE pa.payroll_id = pr.payroll_id)
-                - (SELECT COALESCE(SUM(pd.amount), 0) FROM payroll_deductions pd WHERE pd.payroll_id = pr.payroll_id)
-            ),
-            updated_at = NOW()
-        WHERE pr.payroll_id = ?
-    ")->execute([$payrollId]);
-}
-
-requireAdminAction(); // Admin only — principals cannot edit payroll
+requireAdminAction();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: ' . BASE_URL . 'modules/payroll/index.php');
@@ -59,7 +31,7 @@ if (!$payrollId) {
     exit;
 }
 
-// FIX #6b — guard: reject edits on non-DRAFT records or non-OPEN periods
+// Guard: only DRAFT records in OPEN periods may be edited
 $guard = $pdo->prepare("
     SELECT pr.payroll_status, pp.status AS period_status
     FROM payroll_records pr
@@ -74,77 +46,56 @@ if (!$guardRow) {
     exit;
 }
 if ($guardRow['payroll_status'] !== 'DRAFT' || $guardRow['period_status'] !== 'OPEN') {
-    // Silently redirect — cannot edit a submitted / approved / released record
     header('Location: ' . BASE_URL . 'modules/payroll/index.php?error=locked');
     exit;
 }
 
-// ── Collect inputs ────────────────────────────────────────────────────────────
-$basic         = (float)($_POST['basic']         ?? 0);
-$assign        = (float)($_POST['assign']        ?? 0);
-$rice          = (float)($_POST['rice']          ?? 0);
-$laundry       = (float)($_POST['laundry']       ?? 0);
+// ── Basic pay ─────────────────────────────────────────────────────────────────
+$basic = max(0.0, (float)($_POST['basic'] ?? 0));
+$pdo->prepare("UPDATE payroll_records SET basic_pay = ? WHERE payroll_id = ?")
+    ->execute([$basic, $payrollId]);
 
-$peraa_premium = (float)($_POST['peraa_premium'] ?? 0);
-$peraa_loan    = (float)($_POST['peraa_loan']    ?? 0);
-$hdmf_premium  = (float)($_POST['hdmf_premium']  ?? 0);
-$hdmf_loan     = (float)($_POST['hdmf_loan']     ?? 0);
-$philhealth    = (float)($_POST['philhealth']    ?? 0);
-$sss_premium   = (float)($_POST['sss_premium']   ?? 0);
-$sss_loan      = (float)($_POST['sss_loan']      ?? 0);
+// ── Allowances — update by allowance_type_id (not by name) ───────────────────
+$allowances = $_POST['pa'] ?? [];
+if (!empty($allowances) && is_array($allowances)) {
+    $updAllowance = $pdo->prepare("
+        UPDATE payroll_allowances
+        SET    amount = ?
+        WHERE  payroll_id = ? AND allowance_type_id = ?
+    ");
+    foreach ($allowances as $typeId => $amount) {
+        $typeId = (int)$typeId;
+        $amount = max(0.0, (float)$amount);
+        if ($typeId > 0) {
+            $updAllowance->execute([$amount, $payrollId, $typeId]);
+        }
+    }
+}
 
-// ── Update allowances ─────────────────────────────────────────────────────────
-$pdo->prepare("
-    UPDATE payroll_allowances pa
-    JOIN allowance_types atype ON pa.allowance_type_id = atype.allowance_type_id
-    SET pa.amount = CASE
-        WHEN atype.allowance_name = 'Additional Assignment Pay' THEN ?
-        WHEN atype.allowance_name = 'Rice Subsidy'              THEN ?
-        WHEN atype.allowance_name = 'Laundry Allowance'         THEN ?
-        ELSE pa.amount
-    END
-    WHERE pa.payroll_id = ?
-")->execute([$assign, $rice, $laundry, $payrollId]);
+// ── Deductions — update by deduction_type_id (not by name) ───────────────────
+$deductions = $_POST['pd'] ?? [];
+if (!empty($deductions) && is_array($deductions)) {
+    $updDeduction = $pdo->prepare("
+        UPDATE payroll_deductions
+        SET    amount = ?
+        WHERE  payroll_id = ? AND deduction_type_id = ?
+    ");
+    foreach ($deductions as $typeId => $amount) {
+        $typeId = (int)$typeId;
+        $amount = max(0.0, (float)$amount);
+        if ($typeId > 0) {
+            $updDeduction->execute([$amount, $payrollId, $typeId]);
+        }
+    }
+}
 
-// ── Update deductions ─────────────────────────────────────────────────────────
-$pdo->prepare("
-    UPDATE payroll_deductions pd
-    JOIN deduction_types dt ON pd.deduction_type_id = dt.deduction_type_id
-    SET pd.amount = CASE
-        WHEN dt.deduction_name = 'PERAA Premium' THEN ?
-        WHEN dt.deduction_name = 'PERAA Loan'    THEN ?
-        WHEN dt.deduction_name = 'HDMF Premium'  THEN ?
-        WHEN dt.deduction_name = 'HDMF Loan'     THEN ?
-        WHEN dt.deduction_name = 'PhilHealth'    THEN ?
-        WHEN dt.deduction_name = 'SSS Premium'   THEN ?
-        WHEN dt.deduction_name = 'SSS Loan'      THEN ?
-        ELSE pd.amount
-    END
-    WHERE pd.payroll_id = ?
-")->execute([
-    $peraa_premium, $peraa_loan,
-    $hdmf_premium,  $hdmf_loan,
-    $philhealth,
-    $sss_premium,   $sss_loan,
-    $payrollId
-]);
-
-// ── Update basic pay ──────────────────────────────────────────────────────────
-$pdo->prepare("
-    UPDATE payroll_records SET basic_pay = ? WHERE payroll_id = ?
-")->execute([$basic, $payrollId]);
-
-// ── Recompute totals from DB rows (not from POST values) ─────────────────────
-// This is more reliable than summing POST fields — it reads the actual
-// rows in payroll_allowances / payroll_deductions, so any allowance type
-// not explicitly handled above still gets counted correctly.
+// ── Recompute totals from DB rows (uses shared helper from payroll-utils.php) ─
 recalculatePayrollTotals($pdo, $payrollId);
 
 // ── Audit ─────────────────────────────────────────────────────────────────────
-// Fetch the recalculated net_pay straight from DB for the log message
 $netStmt = $pdo->prepare("SELECT net_pay FROM payroll_records WHERE payroll_id = ?");
 $netStmt->execute([$payrollId]);
-$netPay  = (float)($netStmt->fetchColumn() ?? 0);
+$netPay = (float)($netStmt->fetchColumn() ?? 0);
 
 $uid = $_SESSION['user']['user_id'] ?? null;
 if ($uid) {
@@ -154,7 +105,7 @@ if ($uid) {
     ")->execute([
         $uid,
         $payrollId,
-        "Manually updated payroll record #{$payrollId} — net pay: ₱" . number_format($netPay, 2)
+        "Manually updated payroll record #{$payrollId} — net pay: ₱" . number_format($netPay, 2),
     ]);
 }
 

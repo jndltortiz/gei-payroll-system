@@ -81,10 +81,20 @@ $_sidebarInit  = strtoupper(substr($_SESSION['user']['first_name'] ?? 'A', 0, 1)
     </a>
 
     <div class="nav-section-label">LEAVE</div>
-    <a class="nav-item <?= sidebarActive('modules/leave') ?>"
+    <a class="nav-item <?= sidebarActive('modules/leave/') ?>"
        href="<?= BASE_URL ?>modules/leave/index.php">
       <i class="fa fa-calendar-days"></i>
       <span>Leave Records</span>
+    </a>
+    <a class="nav-item <?= sidebarActive('modules/leave-credits') ?>"
+       href="<?= BASE_URL ?>modules/leave-credits/index.php">
+      <i class="fa fa-id-card-clip"></i>
+      <span>Leave Credits</span>
+    </a>
+    <a class="nav-item <?= sidebarActive('modules/school-years') ?>"
+       href="<?= BASE_URL ?>modules/school-years/index.php">
+      <i class="fa fa-graduation-cap"></i>
+      <span>School Years</span>
     </a>
 
     <div class="nav-section-label">REPORTS &amp; ANALYTICS</div>

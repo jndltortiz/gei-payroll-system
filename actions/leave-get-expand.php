@@ -38,37 +38,70 @@ try {
     $empId = $leave['employee_id'];
 
     // ── Leave Balance ────────────────────────────────────────
-    $stmtSettings = $pdo->query("SELECT default_paid_leave_days FROM payroll_settings LIMIT 1");
-    $settings     = $stmtSettings->fetch();
-    $standardDays = (float)($settings['default_paid_leave_days'] ?? 30);
+    // Prefer the new employee_leave_credits system when:
+    //   (a) this leave request has a school_year_id, AND
+    //   (b) a credit row exists for this employee/year/type.
+    // Fall back to the legacy payroll_settings + SUM(total_days) calculation
+    // so existing records continue to display correctly.
+    $schoolYearId = $leave['school_year_id'] ?? null;
+    $leaveTypeId  = $leave['leave_type_id']  ?? null;
+    $balance      = null;
 
-    // Days used = sum of total_days on APPROVED leave requests
-    $stmtUsed = $pdo->prepare("
-        SELECT COALESCE(SUM(total_days), 0)
-        FROM leave_requests
-        WHERE employee_id = ? AND status = 'APPROVED'
-    ");
-    $stmtUsed->execute([$empId]);
-    $daysUsed = (float)$stmtUsed->fetchColumn();
+    if ($schoolYearId && $leaveTypeId) {
+        $stmtCredit = $pdo->prepare("
+            SELECT allocated_days, used_days,
+                   (allocated_days - used_days) AS remaining_days
+            FROM   employee_leave_credits
+            WHERE  employee_id    = ?
+              AND  school_year_id = ?
+              AND  leave_type_id  = ?
+        ");
+        $stmtCredit->execute([$empId, $schoolYearId, $leaveTypeId]);
+        $credit = $stmtCredit->fetch();
 
-    // Service credits (approved)
-    $stmtSC = $pdo->prepare("
-        SELECT COALESCE(SUM(days), 0)
-        FROM service_credits
-        WHERE employee_id = ? AND is_approved = 1
-    ");
-    $stmtSC->execute([$empId]);
-    $serviceCredits = (float)$stmtSC->fetchColumn();
+        if ($credit) {
+            $balance = [
+                'employee_name'      => trim($leave['first_name'] . ' ' . $leave['last_name']),
+                'standard_leave'     => number_format((float)$credit['allocated_days'], 1),
+                'days_used'          => number_format((float)$credit['used_days'], 1),
+                'remaining'          => number_format((float)$credit['remaining_days'], 1),
+                'service_credits'    => null, // not applicable in new system
+                'uses_credit_system' => true,
+            ];
+        }
+    }
 
-    $remaining = $standardDays - $daysUsed + $serviceCredits;
+    // Legacy fallback: payroll_settings default + SUM of approved requests
+    if (!$balance) {
+        $stmtSettings = $pdo->query("SELECT default_paid_leave_days FROM payroll_settings LIMIT 1");
+        $settings     = $stmtSettings->fetch();
+        $standardDays = (float)($settings['default_paid_leave_days'] ?? 30);
 
-    $balance = [
-        'employee_name'   => trim($leave['first_name'] . ' ' . $leave['last_name']),
-        'standard_leave'  => number_format($standardDays, 0),
-        'service_credits' => number_format($serviceCredits, 0),
-        'days_used'       => number_format($daysUsed, 1),
-        'remaining'       => number_format($remaining, 1),
-    ];
+        $stmtUsed = $pdo->prepare("
+            SELECT COALESCE(SUM(total_days), 0)
+            FROM   leave_requests
+            WHERE  employee_id = ? AND status = 'APPROVED'
+        ");
+        $stmtUsed->execute([$empId]);
+        $daysUsed = (float)$stmtUsed->fetchColumn();
+
+        $stmtSC = $pdo->prepare("
+            SELECT COALESCE(SUM(days), 0)
+            FROM   service_credits
+            WHERE  employee_id = ? AND is_approved = 1
+        ");
+        $stmtSC->execute([$empId]);
+        $serviceCredits = (float)$stmtSC->fetchColumn();
+
+        $balance = [
+            'employee_name'      => trim($leave['first_name'] . ' ' . $leave['last_name']),
+            'standard_leave'     => number_format($standardDays, 0),
+            'service_credits'    => number_format($serviceCredits, 0),
+            'days_used'          => number_format($daysUsed, 1),
+            'remaining'          => number_format($standardDays - $daysUsed + $serviceCredits, 1),
+            'uses_credit_system' => false,
+        ];
+    }
 
     // ── Per-date breakdown from leave_request_dates ──────────
     $stmtDates = $pdo->prepare("

@@ -45,26 +45,24 @@ function renderPayslipRows(containerId, rows, emptyLabel) {
 }
 
 function computePayroll() {
-    let basic = Number(document.getElementById("edit-basic").value) || 0;
-    let assign = Number(document.getElementById("edit-assign").value) || 0;
-    let rice = Number(document.getElementById("edit-rice").value) || 0;
-    let laundry = Number(document.getElementById("edit-laundry").value) || 0;
+    const basic = Number(document.getElementById("edit-basic").value) || 0;
 
-    let peraaP = Number(document.getElementById("edit-peraa-premium").value) || 0;
-    let peraaL = Number(document.getElementById("edit-peraa-loan").value) || 0;
-    let hdmfP = Number(document.getElementById("edit-hdmf-premium").value) || 0;
-    let hdmfL = Number(document.getElementById("edit-hdmf-loan").value) || 0;
-    let philhealth = Number(document.getElementById("edit-philhealth").value) || 0;
-    let sssP = Number(document.getElementById("edit-sss-premium").value) || 0;
-    let sssL = Number(document.getElementById("edit-sss-loan").value) || 0;
+    let totalAllowances = 0;
+    document.querySelectorAll('#edit-allowances-container input[type="number"]').forEach(input => {
+        totalAllowances += Number(input.value) || 0;
+    });
 
-    let gross = basic + assign + rice + laundry;
-    let totalDed = peraaP + peraaL + hdmfP + hdmfL + philhealth + sssP + sssL;
-    let net = gross - totalDed;
+    let totalDeductions = 0;
+    document.querySelectorAll('#edit-deductions-container input[type="number"]').forEach(input => {
+        totalDeductions += Number(input.value) || 0;
+    });
 
-    document.getElementById("edit-gross").innerText = peso(gross);
-    document.getElementById("edit-totalded").innerText = peso(totalDed);
-    document.getElementById("edit-net").innerText = peso(net);
+    const gross = basic + totalAllowances;
+    const net   = gross - totalDeductions;
+
+    document.getElementById("edit-gross").innerText    = peso(gross);
+    document.getElementById("edit-totalded").innerText = peso(totalDeductions);
+    document.getElementById("edit-net").innerText      = peso(net);
 }
 
 window.openPayslip = function(el) {
@@ -121,6 +119,20 @@ window.openPayslip = function(el) {
     document.getElementById("ps-totalded").innerText = peso(totalDed);
     document.getElementById("ps-net").innerText = peso(net);
 
+    const statusEl = document.getElementById("ps-status");
+    if (statusEl) statusEl.innerText = el.dataset.payrollStatus || '—';
+
+    const releasedAtEl = document.getElementById("ps-released-at");
+    if (releasedAtEl) {
+        const relAt = el.dataset.releasedAt;
+        releasedAtEl.innerText = relAt
+            ? new Date(relAt).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+            : '—';
+    }
+
+    const releasedByEl = document.getElementById("ps-released-by");
+    if (releasedByEl) releasedByEl.innerText = el.dataset.releasedBy || '—';
+
     const generatedOn = document.getElementById("ps-generated-on");
     if (generatedOn) {
         generatedOn.innerText = new Date().toLocaleDateString('en-PH', {
@@ -140,34 +152,52 @@ window.closePayslip = function() {
 }
 
 window.printPayslip = function() {
+    document.body.classList.add('printing-payslip');
     window.print();
+    window.addEventListener('afterprint', function onAfterPrint() {
+        document.body.classList.remove('printing-payslip');
+        window.removeEventListener('afterprint', onAfterPrint);
+    });
 }
 
 window.downloadPayslipPDF = function() {
-    window.print();
+    printPayslip();
 }
 
 window.openEdit = function(el) {
-    console.log("EDIT CLICKED", el);
-    console.log(el.dataset);
-
-    document.getElementById("edit-empid").value = el.dataset.empid;
-    document.getElementById("edit-name").innerText = el.dataset.name || '';
+    document.getElementById("edit-empid").value      = el.dataset.empid;
+    document.getElementById("edit-payrollid").value  = el.dataset.payrollId;
+    document.getElementById("edit-name").innerText    = el.dataset.name     || '';
     document.getElementById("edit-position").innerText = el.dataset.position || '';
-    document.getElementById("edit-dept").innerText = el.dataset.dept || '';
+    document.getElementById("edit-dept").innerText     = el.dataset.dept     || '';
+    document.getElementById("edit-basic").value        = el.dataset.basic    || 0;
 
-    document.getElementById("edit-basic").value = el.dataset.basic || 0;
-    document.getElementById("edit-assign").value = el.dataset.assign || 0;
-    document.getElementById("edit-rice").value = el.dataset.rice || 0;
-    document.getElementById("edit-laundry").value = el.dataset.laundry || 0;
-    document.getElementById("edit-peraa-premium").value = el.dataset.peraaPremium || 0;
-    document.getElementById("edit-peraa-loan").value = el.dataset.peraaLoan || 0;
-    document.getElementById("edit-hdmf-premium").value = el.dataset.hdmfPremium || 0;
-    document.getElementById("edit-hdmf-loan").value = el.dataset.hdmfLoan || 0;
-    document.getElementById("edit-philhealth").value = el.dataset.philhealth || 0;
-    document.getElementById("edit-sss-premium").value = el.dataset.sssPremium || 0;
-    document.getElementById("edit-sss-loan").value = el.dataset.sssLoan || 0;
-    document.getElementById("edit-payrollid").value = el.dataset.payrollId;
+    const allowances = parseJsonData(el.dataset.allowances, []);
+    const deductions = parseJsonData(el.dataset.deductions, []);
+
+    // Render allowance inputs keyed by type_id — no name matching needed
+    const allowContainer = document.getElementById('edit-allowances-container');
+    allowContainer.innerHTML = allowances.length
+        ? allowances.map(row => `
+            <div>
+                <label>${escHtml(row.name)}</label>
+                <input type="number" name="pa[${Number(row.type_id)}]"
+                       value="${Number(row.amount || 0).toFixed(2)}"
+                       step="0.01" min="0">
+            </div>`).join('')
+        : '<p style="color:#9ca3af;font-size:13px;grid-column:1/-1;">No allowances on this record.</p>';
+
+    // Render deduction inputs keyed by type_id — no name matching needed
+    const dedContainer = document.getElementById('edit-deductions-container');
+    dedContainer.innerHTML = deductions.length
+        ? deductions.map(row => `
+            <div>
+                <label>${escHtml(row.name)}</label>
+                <input type="number" name="pd[${Number(row.type_id)}]"
+                       value="${Number(row.amount || 0).toFixed(2)}"
+                       step="0.01" min="0">
+            </div>`).join('')
+        : '<p style="color:#9ca3af;font-size:13px;grid-column:1/-1;">No deductions on this record.</p>';
 
     document.getElementById("editModal").style.display = "flex";
     document.body.style.overflow = "hidden";

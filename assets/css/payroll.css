@@ -606,7 +606,7 @@
 @media print {
     .sidebar, .header, .filter-bar, .pay-period-row,
     .row-actions, .submit-btn, #payrollFlash,
-    #generateModal, #editModal, #payslipModal,
+    #generateModal, #editModal,
     .actions button { display: none !important; }
 
     .main-content { padding: 0 !important; }
@@ -636,3 +636,79 @@
 .processing-notice { background: #fef3c7; color: #92400e; }
 .approved-notice   { background: #d1fae5; color: #065f46; }
 .released-notice   { background: #ede9fe; color: #5b21b6; }
+
+/* ── Payslip: school branding ────────────────────────────────────────────────*/
+.payslip-institution {
+    font-size: 16px; font-weight: 800;
+    letter-spacing: 0.5px; text-transform: uppercase;
+}
+.payslip-institution-sub {
+    font-size: 11px; opacity: 0.85;
+    margin-top: 2px; margin-bottom: 8px;
+}
+
+/* ── Payslip: signature lines ────────────────────────────────────────────────*/
+.payslip-signatures {
+    display: flex; justify-content: space-between;
+    gap: 16px; margin: 24px 0 8px;
+}
+.sig-block { flex: 1; text-align: center; }
+.sig-line {
+    border-bottom: 1px solid #374151;
+    height: 32px; margin-bottom: 4px;
+}
+.sig-label {
+    font-size: 10px; color: #6b7280;
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+.sig-name { font-size: 11px; font-weight: 600; color: #111827; margin-top: 2px; }
+
+/* ── Payslip: release info bar ───────────────────────────────────────────────*/
+.payslip-release-info {
+    display: flex; justify-content: center;
+    gap: 16px; font-size: 11px; color: #374151;
+    margin-bottom: 6px; flex-wrap: wrap;
+}
+.payslip-release-info strong { font-weight: 600; }
+
+/* ── Payslip: responsive (mobile) ────────────────────────────────────────────*/
+@media (max-width: 580px) {
+    .payslip-box {
+        width: 100% !important; max-width: 100% !important;
+        padding: 16px !important; border-radius: 0 !important;
+        margin: 0 !important;
+    }
+    .payslip-info { grid-template-columns: 1fr !important; }
+    .payslip-signatures { flex-direction: column !important; gap: 20px !important; }
+}
+
+/* ── Print: payslip isolation ────────────────────────────────────────────────
+   printPayslip() adds .printing-payslip to <body> before window.print() and
+   removes it in the afterprint event. Everything becomes invisible except the
+   payslip box, giving a clean single-page printout on desktop and mobile.
+   ─────────────────────────────────────────────────────────────────────────── */
+@media print {
+    body.printing-payslip * { visibility: hidden; }
+
+    body.printing-payslip .payslip-box,
+    body.printing-payslip .payslip-box * { visibility: visible; }
+
+    /* Suppress buttons and modal chrome from the print output */
+    body.printing-payslip .modal-actions,
+    body.printing-payslip .modal-actions *,
+    body.printing-payslip .modal-header,
+    body.printing-payslip .modal-header * { visibility: hidden; }
+
+    body.printing-payslip .payslip-box {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%;
+        max-width: none;
+        max-height: none;
+        overflow: visible;
+        border-radius: 0;
+        box-shadow: none;
+        padding: 20mm 18mm;
+        background: #fff;
+    }
+}
