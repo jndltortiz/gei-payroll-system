@@ -375,11 +375,33 @@ window.toggleSwitch = function(el, hiddenId) {
 // SEARCH TABLE (client-side)
 // ================================
 window.searchTable = function() {
-    const input = document.getElementById('searchInput').value.toLowerCase();
-    const rows  = document.querySelectorAll('#empTable tbody tr');
+    const input   = document.getElementById('searchInput').value.toLowerCase();
+    const rows    = document.querySelectorAll('#empTable tbody tr:not(#empNoResults)');
+    let   visible = 0;
+
     rows.forEach(row => {
-        row.style.display = row.innerText.toLowerCase().includes(input) ? '' : 'none';
+        const show = row.innerText.toLowerCase().includes(input);
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
     });
+
+    // Show/hide no-results row
+    let noRes = document.getElementById('empNoResults');
+    if (input && visible === 0) {
+        if (!noRes) {
+            const tbody = document.querySelector('#empTable tbody');
+            const tr = document.createElement('tr');
+            tr.id = 'empNoResults';
+            tr.innerHTML = '<td colspan="8"><div class="empty-state" style="padding:40px 24px;"><i class="fa fa-magnifying-glass"></i><p>No results for “' + input + '”</p><small>Try a different name or employee number</small></div></td>';
+            tbody.appendChild(tr);
+        } else {
+            noRes.style.display = '';
+            const small = noRes.querySelector('p');
+            if (small) small.textContent = 'No results for “' + input + '”';
+        }
+    } else if (noRes) {
+        noRes.style.display = 'none';
+    }
 };
 
 // ================================

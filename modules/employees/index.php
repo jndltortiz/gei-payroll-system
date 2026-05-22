@@ -87,13 +87,17 @@ require_once __DIR__ . '/../../includes/head.php';
             <div class="card">
                 <!-- FILTER BAR -->
                 <div class="table-header">
-                    <input
-                        type="text"
-                        id="searchInput"
-                        placeholder="Search by name or ID..."
-                        value="<?= htmlspecialchars($search) ?>"
-                        onkeyup="searchTable()"
-                    >
+                    <div style="position:relative;flex:1;max-width:300px;">
+                        <i class="fa fa-magnifying-glass" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:13px;pointer-events:none;"></i>
+                        <input
+                            type="text"
+                            id="searchInput"
+                            placeholder="Search by name or ID..."
+                            value="<?= htmlspecialchars($search) ?>"
+                            onkeyup="searchTable()"
+                            style="padding-left:32px;width:100%;"
+                        >
+                    </div>
                     <select id="deptFilterSelect" onchange="filterDept()">
                         <option value="0" <?= $deptFilter == 0 ? 'selected' : '' ?>>All Departments</option>
                         <?php foreach ($departments as $dept): ?>
@@ -109,17 +113,28 @@ require_once __DIR__ . '/../../includes/head.php';
                     <table id="empTable">
                         <thead>
                             <tr>
-                                <th>Employee No</th>
-                                <th>Name</th>
-                                <th>Position</th>
-                                <th>Department</th>
+                                <th class="sortable" data-col="0" data-sort-type="text">Employee No</th>
+                                <th class="sortable" data-col="1" data-sort-type="text">Name</th>
+                                <th class="sortable" data-col="2" data-sort-type="text">Position</th>
+                                <th class="sortable" data-col="3" data-sort-type="text">Department</th>
                                 <th>Shift</th>
-                                <th>Date Hired</th>
-                                <th>Status</th>
+                                <th class="sortable" data-col="5" data-sort-type="date">Date Hired</th>
+                                <th class="sortable" data-col="6" data-sort-type="text">Status</th>
                                 <th style="text-align:right;">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
+                            <?php if (empty($result)): ?>
+                            <tr id="empEmptyRow">
+                                <td colspan="8">
+                                    <div class="empty-state" style="padding:40px 24px;">
+                                        <i class="fa fa-users-slash"></i>
+                                        <p>No employees found</p>
+                                        <small>Try adjusting your search or department filter</small>
+                                    </div>
+                                </td>
+                            </tr>
+                            <?php endif; ?>
                             <?php foreach ($result as $row): ?>
                             <tr>
                                 <td><?= htmlspecialchars($row['employee_no'] ?? 'EMP-' . str_pad($row['employee_id'], 3, '0', STR_PAD_LEFT)) ?></td>

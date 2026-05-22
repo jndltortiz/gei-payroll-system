@@ -55,6 +55,9 @@ if ($selectedId) {
         SELECT pr.payroll_id, pr.employee_id, pr.basic_pay, pr.gross_pay,
                pr.total_allowances, pr.total_deductions, pr.net_pay, pr.payroll_status,
                pr.released_at,
+               COALESCE(pr.employer_sss_share, 0)        AS employer_sss_share,
+               COALESCE(pr.employer_philhealth_share, 0) AS employer_philhealth_share,
+               COALESCE(pr.employer_pagibig_share, 0)    AS employer_pagibig_share,
                CONCAT(e.first_name,' ',e.last_name) AS employee_name,
                p.position_name, d.department_name,
 
@@ -138,16 +141,18 @@ if ($selectedId && !empty($records)) {
 
     $detailStmt = $pdo->prepare("
         SELECT pr.payroll_id,
-               dt.deduction_type_id        AS type_id,
-               dt.deduction_name           AS name,
-               COALESCE(dt.is_absence_deduction, 0) AS is_absence,
+               dt.deduction_type_id                  AS type_id,
+               dt.deduction_name                     AS name,
+               COALESCE(dt.is_absence_deduction, 0)  AS is_absence,
+               COALESCE(dt.is_government, 0)          AS is_gov,
+               COALESCE(dt.is_loan, 0)               AS is_loan,
                pd.amount,
                pd.absence_days
         FROM payroll_records pr
         JOIN payroll_deductions pd ON pr.payroll_id = pd.payroll_id
         JOIN deduction_types dt ON pd.deduction_type_id = dt.deduction_type_id
         WHERE pr.period_id = ?
-        ORDER BY dt.deduction_name
+        ORDER BY COALESCE(dt.is_government,0) DESC, COALESCE(dt.is_loan,0) DESC, dt.deduction_name
     ");
     $detailStmt->execute([$selectedId]);
     foreach ($detailStmt->fetchAll() as $d) {
@@ -161,6 +166,8 @@ if ($selectedId && !empty($records)) {
             'type_id' => (int)$d['type_id'],
             'name'    => $name,
             'amount'  => (float)$d['amount'],
+            'is_gov'  => (bool)$d['is_gov'],
+            'is_loan' => (bool)$d['is_loan'],
         ];
     }
 }
@@ -413,7 +420,10 @@ require_once __DIR__ . '/../../includes/head.php';
                             data-net="<?= $row['net_pay'] ?>"
                             data-payroll-status="<?= htmlspecialchars($row['payroll_status']) ?>"
                             data-released-at="<?= $psReleasedAt ?>"
-                            data-released-by="<?= $psReleasedBy ?>">
+                            data-released-by="<?= $psReleasedBy ?>"
+                            data-employer-sss="<?= $row['employer_sss_share'] ?>"
+                            data-employer-philhealth="<?= $row['employer_philhealth_share'] ?>"
+                            data-employer-pagibig="<?= $row['employer_pagibig_share'] ?>">
                             <i class="fa fa-eye"></i>
                         </button>
                         <?php if ($periodIsEditable): ?>
@@ -425,6 +435,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             data-dept="<?= htmlspecialchars($row['department_name'] ?? '') ?>"
                             data-empid="<?= $row['employee_id'] ?>"
                             data-basic="<?= $row['basic_pay'] ?>"
+                            data-total-allowances="<?= $row['total_allowances'] ?>"
                             data-allowances="<?= $allowanceJson ?>"
                             data-deductions="<?= $deductionJson ?>">
                             <i class="fa fa-pen"></i>

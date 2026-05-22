@@ -249,14 +249,14 @@ require_once __DIR__ . '/../../includes/head.php';
       <table class="sc-table">
         <thead>
           <tr>
-            <th>Employee</th>
+            <th class="sortable" data-col="0" data-sort-type="text">Employee</th>
             <th>Work Period</th>
-            <th>Days</th>
-            <th>Equiv. Pay</th>
-            <th>Status</th>
+            <th class="sortable" data-col="2" data-sort-type="number">Days</th>
+            <th class="sortable" data-col="3" data-sort-type="number">Equiv. Pay</th>
+            <th class="sortable" data-col="4" data-sort-type="text">Status</th>
             <th>Payroll</th>
             <th>Approved By</th>
-            <th>Created</th>
+            <th class="sortable" data-col="7" data-sort-type="date">Created</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -332,7 +332,11 @@ require_once __DIR__ . '/../../includes/head.php';
               <!-- Approve inline -->
               <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php"
                     style="display:inline"
-                    onsubmit="return confirm('Approve this service credit for ₱<?= number_format((float)$r['equivalent_pay'],2) ?>?\nIt will be included in the next payroll as Additional Assignment Payment.')">
+                    data-confirm-title="Approve Service Credit"
+                    data-confirm-message="Approve this service credit for ₱<?= number_format((float)$r['equivalent_pay'],2) ?>?"
+                    data-confirm-note="It will be included in the next payroll as Additional Assignment Pay."
+                    data-confirm-type="info"
+                    data-confirm-btn="Approve">
                 <input type="hidden" name="action" value="approve">
                 <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
                 <button type="submit" class="sc-icon-btn sc-icon-btn--approve" title="Approve">
@@ -354,7 +358,10 @@ require_once __DIR__ . '/../../includes/head.php';
               <?php if ($canResubmit && $r['status']==='REJECTED'): ?>
               <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php"
                     style="display:inline"
-                    onsubmit="return confirm('Resubmit this for approval?')">
+                    data-confirm-title="Resubmit for Approval"
+                    data-confirm-message="Resubmit this service credit for approval?"
+                    data-confirm-type="warning"
+                    data-confirm-btn="Resubmit">
                 <input type="hidden" name="action" value="resubmit">
                 <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
                 <button type="submit" class="sc-icon-btn sc-icon-btn--resubmit" title="Resubmit">

@@ -141,7 +141,11 @@ require_once __DIR__ . '/../../includes/head.php';
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <?php if (!$y['is_active']): ?>
             <form method="POST" action="<?= BASE_URL ?>actions/school-year-action.php" style="display:inline;"
-                  onsubmit="return confirm('Set <?= htmlspecialchars($y['year_name']) ?> as the active school year?\n\nThis will deactivate the current active year.')">
+                  data-confirm-title="Set Active School Year"
+                  data-confirm-message="Set &quot;<?= htmlspecialchars($y['year_name']) ?>&quot; as the active school year?"
+                  data-confirm-note="This will deactivate the current active school year."
+                  data-confirm-type="warning"
+                  data-confirm-btn="Set Active">
               <input type="hidden" name="action" value="set_active">
               <input type="hidden" name="school_year_id" value="<?= $y['school_year_id'] ?>">
               <button type="submit" class="sy-btn-sm sy-btn-sm--teal">
@@ -155,7 +159,11 @@ require_once __DIR__ . '/../../includes/head.php';
             </button>
             <?php if (!$y['is_active'] && $y['leave_count'] == 0 && $y['credit_count'] == 0): ?>
             <form method="POST" action="<?= BASE_URL ?>actions/school-year-action.php" style="display:inline;"
-                  onsubmit="return confirm('Delete school year <?= htmlspecialchars($y['year_name']) ?>?\nThis cannot be undone.')">
+                  data-confirm-title="Delete School Year"
+                  data-confirm-message="Delete school year &quot;<?= htmlspecialchars($y['year_name']) ?>&quot;? It has no leave requests or credit allocations."
+                  data-confirm-note="This cannot be undone."
+                  data-confirm-type="danger"
+                  data-confirm-btn="Delete School Year">
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="school_year_id" value="<?= $y['school_year_id'] ?>">
               <button type="submit" class="sy-btn-sm sy-btn-sm--danger">

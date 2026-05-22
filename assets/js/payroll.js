@@ -1,7 +1,7 @@
 console.log("PAYROLL JS LOADED");
 
 function peso(num) {
-    return "\u20b1" + Number(num || 0).toLocaleString('en-PH', {
+    return "₱" + Number(num || 0).toLocaleString('en-PH', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     });
@@ -27,6 +27,7 @@ function parseJsonData(value, fallback) {
     }
 }
 
+// Render a flat list of rows into a container (earnings, employer contrib, etc.)
 function renderPayslipRows(containerId, rows, emptyLabel) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -42,6 +43,32 @@ function renderPayslipRows(containerId, rows, emptyLabel) {
             <span>${peso(row.amount)}</span>
         </div>
     `).join('');
+}
+
+// Render deduction rows grouped by Government / Loans / Other
+function renderGroupedDeductionRows(containerId, rows) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (!rows.length) {
+        container.innerHTML = '<div class="row"><span>No deductions</span><span>' + peso(0) + '</span></div>';
+        return;
+    }
+
+    const govRows   = rows.filter(r => r.is_gov);
+    const loanRows  = rows.filter(r => r.is_loan);
+    const otherRows = rows.filter(r => !r.is_gov && !r.is_loan);
+
+    function section(label, items) {
+        if (!items.length) return '';
+        return '<div class="ded-group-label">' + escHtml(label) + '</div>'
+            + items.map(r => '<div class="row"><span>' + escHtml(r.name) + '</span><span>' + peso(r.amount) + '</span></div>').join('');
+    }
+
+    container.innerHTML =
+        section('Government Contributions', govRows) +
+        section('Loans', loanRows) +
+        section('Other Deductions', otherRows);
 }
 
 function computePayroll() {
@@ -67,57 +94,61 @@ function computePayroll() {
 
 window.openPayslip = function(el) {
     const basic = Number(el.dataset.basic || 0);
+
     const fallbackAllowances = [
         { name: 'Additional Assignment Pay', amount: Number(el.dataset.assign || 0) },
-        { name: 'Rice Subsidy', amount: Number(el.dataset.rice || 0) },
-        { name: 'Laundry Allowance', amount: Number(el.dataset.laundry || 0) },
+        { name: 'Rice Subsidy',              amount: Number(el.dataset.rice || 0) },
+        { name: 'Laundry Allowance',         amount: Number(el.dataset.laundry || 0) },
     ].filter(row => Number(row.amount) !== 0);
 
     const fallbackDeductions = [
-        { name: 'PERAA Premium', amount: Number(el.dataset.peraaPremium || 0) },
-        { name: 'PERAA Loan', amount: Number(el.dataset.peraaLoan || 0) },
-        { name: 'HDMF Premium', amount: Number(el.dataset.hdmfPremium || 0) },
-        { name: 'HDMF Loan', amount: Number(el.dataset.hdmfLoan || 0) },
-        { name: 'PhilHealth', amount: Number(el.dataset.philhealth || 0) },
-        { name: 'SSS Premium', amount: Number(el.dataset.sssPremium || 0) },
-        { name: 'SSS Loan', amount: Number(el.dataset.sssLoan || 0) },
+        { name: 'PERAA Premium',  is_gov: false, is_loan: false, amount: Number(el.dataset.peraaPremium || 0) },
+        { name: 'PERAA Loan',     is_gov: false, is_loan: true,  amount: Number(el.dataset.peraaLoan || 0) },
+        { name: 'HDMF Premium',   is_gov: false, is_loan: false, amount: Number(el.dataset.hdmfPremium || 0) },
+        { name: 'HDMF Loan',      is_gov: false, is_loan: true,  amount: Number(el.dataset.hdmfLoan || 0) },
+        { name: 'PhilHealth',     is_gov: true,  is_loan: false, amount: Number(el.dataset.philhealth || 0) },
+        { name: 'SSS Premium',    is_gov: true,  is_loan: false, amount: Number(el.dataset.sssPremium || 0) },
+        { name: 'SSS Loan',       is_gov: false, is_loan: true,  amount: Number(el.dataset.sssLoan || 0) },
     ].filter(row => Number(row.amount) !== 0);
 
-    const allowanceRows = [
+    // Earnings: Basic Salary always shown; allowances filtered to non-zero
+    const parsedAllowances = parseJsonData(el.dataset.allowances, fallbackAllowances);
+    const earningsRows = [
         { name: 'Basic Salary', amount: basic },
-        ...parseJsonData(el.dataset.allowances, fallbackAllowances)
+        ...parsedAllowances.filter(r => Number(r.amount) !== 0)
     ];
-    const deductionRows = parseJsonData(el.dataset.deductions, fallbackDeductions);
+
+    // Deductions: filter zero-value rows before grouping
+    const allDeductions = parseJsonData(el.dataset.deductions, fallbackDeductions)
+        .filter(r => Number(r.amount) !== 0);
 
     let gross = Number(el.dataset.gross || 0);
     if (!gross) {
-        gross = allowanceRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+        gross = earningsRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     }
 
     let totalDed = Number(el.dataset.totalDeductions || 0);
-    if (!totalDed && deductionRows.length) {
-        totalDed = deductionRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    if (!totalDed && allDeductions.length) {
+        totalDed = allDeductions.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     }
 
     let net = Number(el.dataset.net || 0);
-    if (!net) {
-        net = gross - totalDed;
-    }
+    if (!net) net = gross - totalDed;
 
-    document.getElementById("ps-name").innerText = el.dataset.name || '';
+    document.getElementById("ps-name").innerText     = el.dataset.name || '';
     document.getElementById("ps-position").innerText = el.dataset.position || '';
-    document.getElementById("ps-dept").innerText = el.dataset.dept || '';
-    document.getElementById("ps-empid").innerText = el.dataset.empid || '';
+    document.getElementById("ps-dept").innerText     = el.dataset.dept || '';
+    document.getElementById("ps-empid").innerText    = el.dataset.empid || '';
 
     const periodLabel = document.getElementById("ps-period-label");
     if (periodLabel) periodLabel.innerText = el.dataset.periodLabel || "-";
 
-    renderPayslipRows("ps-earnings-rows", allowanceRows, "No earnings");
+    renderPayslipRows("ps-earnings-rows", earningsRows, "No earnings");
     document.getElementById("ps-gross").innerText = peso(gross);
 
-    renderPayslipRows("ps-deductions-rows", deductionRows, "No deductions");
+    renderGroupedDeductionRows("ps-deductions-rows", allDeductions);
     document.getElementById("ps-totalded").innerText = peso(totalDed);
-    document.getElementById("ps-net").innerText = peso(net);
+    document.getElementById("ps-net").innerText      = peso(net);
 
     const statusEl = document.getElementById("ps-status");
     if (statusEl) statusEl.innerText = el.dataset.payrollStatus || '—';
@@ -136,10 +167,33 @@ window.openPayslip = function(el) {
     const generatedOn = document.getElementById("ps-generated-on");
     if (generatedOn) {
         generatedOn.innerText = new Date().toLocaleDateString('en-PH', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
+            year: 'numeric', month: 'long', day: 'numeric'
         });
+    }
+
+    // Employer contributions — admin/principal view only; hidden on print
+    const empSss     = Number(el.dataset.employerSss || 0);
+    const empPhil    = Number(el.dataset.employerPhilhealth || 0);
+    const empPagibig = Number(el.dataset.employerPagibig || 0);
+    const employerSection  = document.getElementById('ps-employer-section');
+    const employerRowsEl   = document.getElementById('ps-employer-rows');
+    const employerTotalEl  = document.getElementById('ps-employer-total');
+    if (employerSection && employerRowsEl) {
+        const employerRows = [
+            { name: 'SSS (Employer Share)',        amount: empSss },
+            { name: 'PhilHealth (Employer Share)', amount: empPhil },
+            { name: 'Pag-IBIG (Employer Share)',   amount: empPagibig },
+        ].filter(r => Number(r.amount) !== 0);
+        if (employerRows.length) {
+            renderPayslipRows('ps-employer-rows', employerRows, '');
+            if (employerTotalEl) {
+                const empTotal = employerRows.reduce((s, r) => s + Number(r.amount), 0);
+                employerTotalEl.innerText = peso(empTotal);
+            }
+            employerSection.style.display = '';
+        } else {
+            employerSection.style.display = 'none';
+        }
     }
 
     document.getElementById("payslipModal").style.display = "flex";
@@ -165,39 +219,71 @@ window.downloadPayslipPDF = function() {
 }
 
 window.openEdit = function(el) {
-    document.getElementById("edit-empid").value      = el.dataset.empid;
-    document.getElementById("edit-payrollid").value  = el.dataset.payrollId;
+    document.getElementById("edit-empid").value        = el.dataset.empid;
+    document.getElementById("edit-payrollid").value   = el.dataset.payrollId;
     document.getElementById("edit-name").innerText    = el.dataset.name     || '';
     document.getElementById("edit-position").innerText = el.dataset.position || '';
-    document.getElementById("edit-dept").innerText     = el.dataset.dept     || '';
-    document.getElementById("edit-basic").value        = el.dataset.basic    || 0;
+    document.getElementById("edit-dept").innerText    = el.dataset.dept     || '';
+    document.getElementById("edit-basic").value       = el.dataset.basic    || 0;
 
-    const allowances = parseJsonData(el.dataset.allowances, []);
-    const deductions = parseJsonData(el.dataset.deductions, []);
+    const allowances      = parseJsonData(el.dataset.allowances, []);
+    const deductions      = parseJsonData(el.dataset.deductions, []);
+    const totalAllowances = Number(el.dataset.totalAllowances || 0);
 
-    // Render allowance inputs keyed by type_id — no name matching needed
+    // ── Allowances ────────────────────────────────────────────────────────────
     const allowContainer = document.getElementById('edit-allowances-container');
-    allowContainer.innerHTML = allowances.length
-        ? allowances.map(row => `
+    if (allowances.length) {
+        allowContainer.innerHTML = allowances.map(row => `
             <div>
                 <label>${escHtml(row.name)}</label>
                 <input type="number" name="pa[${Number(row.type_id)}]"
                        value="${Number(row.amount || 0).toFixed(2)}"
                        step="0.01" min="0">
-            </div>`).join('')
-        : '<p style="color:#9ca3af;font-size:13px;grid-column:1/-1;">No allowances on this record.</p>';
+            </div>`).join('');
+    } else if (totalAllowances > 0) {
+        allowContainer.innerHTML = `<p class="edit-empty" style="grid-column:1/-1;color:#b45309;">
+            <i class="fa fa-triangle-exclamation"></i>
+            Allowance details unavailable — <strong>regenerate payroll</strong> to populate individual entries.
+        </p>`;
+    } else {
+        allowContainer.innerHTML = '<p class="edit-empty" style="grid-column:1/-1;">No allowances on this record.</p>';
+    }
 
-    // Render deduction inputs keyed by type_id — no name matching needed
+    // ── Deductions — grouped by category ─────────────────────────────────────
     const dedContainer = document.getElementById('edit-deductions-container');
-    dedContainer.innerHTML = deductions.length
-        ? deductions.map(row => `
-            <div>
-                <label>${escHtml(row.name)}</label>
-                <input type="number" name="pd[${Number(row.type_id)}]"
-                       value="${Number(row.amount || 0).toFixed(2)}"
-                       step="0.01" min="0">
-            </div>`).join('')
-        : '<p style="color:#9ca3af;font-size:13px;grid-column:1/-1;">No deductions on this record.</p>';
+    if (!deductions.length) {
+        dedContainer.innerHTML = '<p class="edit-empty" style="grid-column:1/-1;">No deductions on this record.</p>';
+    } else {
+        const govDeds   = deductions.filter(d => d.is_gov);
+        const loanDeds  = deductions.filter(d => d.is_loan);
+        const otherDeds = deductions.filter(d => !d.is_gov && !d.is_loan);
+
+        function buildDedInputs(items) {
+            return items.map(row => `
+                <div>
+                    <label>
+                        ${escHtml(row.name)}
+                        ${row.is_gov  ? ' <span class="row-tag row-tag--gov">Gov</span>' : ''}
+                        ${row.is_loan ? ' <span class="row-tag row-tag--loan">Loan</span>' : ''}
+                    </label>
+                    <input type="number" name="pd[${Number(row.type_id)}]"
+                           value="${Number(row.amount || 0).toFixed(2)}"
+                           step="0.01" min="0">
+                </div>`).join('');
+        }
+
+        function groupHeader(label) {
+            return `<p style="grid-column:1/-1;font-size:11px;font-weight:700;text-transform:uppercase;
+                               color:#6b7280;letter-spacing:.5px;margin:10px 0 4px;
+                               border-bottom:1px dashed #d1d5db;padding-bottom:3px;">${escHtml(label)}</p>`;
+        }
+
+        let html = '';
+        if (govDeds.length)   html += groupHeader('Government Contributions') + buildDedInputs(govDeds);
+        if (loanDeds.length)  html += groupHeader('Loans')                    + buildDedInputs(loanDeds);
+        if (otherDeds.length) html += groupHeader('Other Deductions')         + buildDedInputs(otherDeds);
+        dedContainer.innerHTML = html;
+    }
 
     document.getElementById("editModal").style.display = "flex";
     document.body.style.overflow = "hidden";

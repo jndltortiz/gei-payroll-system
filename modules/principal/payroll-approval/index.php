@@ -25,13 +25,45 @@ $pending = $pdo->query("
 $history = $pdo->query("
     SELECT pp.*,
            COUNT(pr.payroll_id) AS emp_count,
-           SUM(pr.net_pay)      AS total_net
+           SUM(pr.gross_pay)    AS total_gross,
+           SUM(pr.net_pay)      AS total_net,
+           (SELECT wl2.created_at
+            FROM payroll_workflow_log wl2
+            WHERE wl2.period_id = pp.period_id AND wl2.event_type = 'APPROVED'
+            ORDER BY wl2.created_at DESC LIMIT 1) AS approved_at
     FROM payroll_periods pp
     LEFT JOIN payroll_records pr ON pp.period_id = pr.period_id
     WHERE pp.status IN ('APPROVED','RELEASED')
     GROUP BY pp.period_id
     ORDER BY pp.pay_period_start DESC
 ")->fetchAll();
+
+// ── Prior rejection context for re-submitted PROCESSING periods ──────────────
+$returnHistory  = [];
+$submissionMeta = [];
+if (!empty($pending)) {
+    $pendingIds = implode(',', array_map('intval', array_column($pending, 'period_id')));
+    $retRows = $pdo->query("
+        SELECT wl.period_id, wl.remarks, wl.created_at, wl.performer_name
+        FROM payroll_workflow_log wl
+        INNER JOIN (
+            SELECT period_id, MAX(created_at) AS latest
+            FROM payroll_workflow_log
+            WHERE event_type = 'RETURNED' AND period_id IN ($pendingIds)
+            GROUP BY period_id
+        ) mx ON wl.period_id = mx.period_id AND wl.created_at = mx.latest
+        WHERE wl.event_type = 'RETURNED'
+    ")->fetchAll();
+    foreach ($retRows as $r) $returnHistory[(int)$r['period_id']] = $r;
+
+    $subRows = $pdo->query("
+        SELECT period_id, MAX(created_at) AS submitted_at
+        FROM payroll_workflow_log
+        WHERE event_type = 'SUBMITTED' AND period_id IN ($pendingIds)
+        GROUP BY period_id
+    ")->fetchAll();
+    foreach ($subRows as $r) $submissionMeta[(int)$r['period_id']] = $r['submitted_at'];
+}
 
 $pageTitle = 'Payroll Approvals — Principal Portal';
 $extraCSS  = [BASE_URL . 'assets/css/principal.css'];
@@ -96,6 +128,12 @@ require_once __DIR__ . '/../../../includes/head.php';
         <div>
           <div class="pr-pending-label">Pending Review</div>
           <div class="pr-pending-period">Pay Period: <?= htmlspecialchars($periodLabel) ?></div>
+          <?php if (!empty($submissionMeta[$p['period_id']])): ?>
+          <div class="pr-submission-meta">
+            <i class="fa fa-paper-plane"></i>
+            Submitted <?= date('M j, Y', strtotime($submissionMeta[$p['period_id']])) ?>
+          </div>
+          <?php endif; ?>
         </div>
         <span class="pr-badge pr-badge--awaiting">Awaiting Approval</span>
       </div>
@@ -106,14 +144,34 @@ require_once __DIR__ . '/../../../includes/head.php';
           <div class="pr-stat-value"><?= (int)$p['emp_count'] ?></div>
         </div>
         <div class="pr-stat">
-          <div class="pr-stat-label">Total Gross Payroll</div>
+          <div class="pr-stat-label">Total Gross</div>
           <div class="pr-stat-value pr-stat-value--lg">₱<?= number_format((float)$p['total_gross'], 2) ?></div>
+        </div>
+        <div class="pr-stat">
+          <div class="pr-stat-label">Total Deductions</div>
+          <div class="pr-stat-value pr-stat-value--lg pr-stat-value--red">₱<?= number_format((float)$p['total_deductions'], 2) ?></div>
         </div>
         <div class="pr-stat">
           <div class="pr-stat-label">Total Net Payable</div>
           <div class="pr-stat-value pr-stat-value--lg pr-stat-value--teal">₱<?= number_format((float)$p['total_net'], 2) ?></div>
         </div>
       </div>
+
+      <?php if (!empty($returnHistory[$p['period_id']])):
+          $ret = $returnHistory[$p['period_id']];
+      ?>
+      <div class="pr-return-notice">
+        <div class="pr-return-notice-header">
+          <i class="fa fa-rotate-left"></i>
+          Previously returned for revision
+          <span class="pr-return-notice-date">— <?= date('M j, Y', strtotime($ret['created_at'])) ?></span>
+        </div>
+        <?php if ($ret['remarks']): ?>
+        <div class="pr-return-notice-remarks">"<?= htmlspecialchars($ret['remarks']) ?>"</div>
+        <?php endif; ?>
+        <div class="pr-return-notice-hint">Admin has revised and resubmitted this payroll for re-review.</div>
+      </div>
+      <?php endif; ?>
 
       <div class="pr-pending-actions">
         <div class="pr-action-btns">
@@ -123,7 +181,7 @@ require_once __DIR__ . '/../../../includes/head.php';
           </button>
           <button class="pr-btn-reject"
                   onclick="openRejectModal(<?= $p['period_id'] ?>, '<?= htmlspecialchars($periodLabel, ENT_QUOTES) ?>')">
-            <i class="fa fa-circle-xmark"></i> Reject &amp; Return to Admin
+            <i class="fa fa-rotate-left"></i> Return for Revision
           </button>
         </div>
         <div class="pr-view-links">
@@ -159,8 +217,9 @@ require_once __DIR__ . '/../../../includes/head.php';
           <thead>
             <tr>
               <th>Pay Period</th>
-              <th>Approved Date</th>
+              <th style="text-align:center;">Employees</th>
               <th>Net Payable</th>
+              <th>Approved Date</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
@@ -169,12 +228,15 @@ require_once __DIR__ . '/../../../includes/head.php';
           <?php foreach ($history as $h):
               $hl = date('M j', strtotime($h['pay_period_start'])) . ' – ' .
                     date('M j, Y', strtotime($h['pay_period_end']));
-              $approvedDate = date('M j, Y', strtotime($h['updated_at']));
+              $approvedDate = $h['approved_at']
+                  ? date('M j, Y', strtotime($h['approved_at']))
+                  : date('M j, Y', strtotime($h['updated_at']));
           ?>
           <tr>
             <td><strong><?= htmlspecialchars($hl) ?></strong></td>
-            <td style="color:#64748b;"><?= $approvedDate ?></td>
+            <td style="text-align:center;font-weight:600;color:#374151;"><?= (int)$h['emp_count'] ?></td>
             <td><strong>₱<?= number_format((float)$h['total_net'], 2) ?></strong></td>
+            <td style="color:#64748b;"><?= $approvedDate ?></td>
             <td>
               <span class="pr-badge pr-badge--<?= strtolower($h['status']) ?>">
                 <i class="fa fa-lock" style="font-size:10px;"></i>

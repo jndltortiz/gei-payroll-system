@@ -38,11 +38,12 @@ $recStmt = $pdo->prepare("
            COALESCE(MAX(CASE WHEN at2.allowance_name LIKE '%Laundry%' THEN pa.amount END),0) AS laundry,
            COALESCE(MAX(CASE WHEN dt.deduction_name LIKE '%PERAA%Premium%' THEN pd.amount END),0) AS peraa_p,
            COALESCE(MAX(CASE WHEN dt.deduction_name LIKE '%PERAA%Loan%'    THEN pd.amount END),0) AS peraa_l,
-           COALESCE(MAX(CASE WHEN dt.deduction_name LIKE '%HDMF%Premium%'  THEN pd.amount END),0) AS hdmf_p,
-           COALESCE(MAX(CASE WHEN dt.deduction_name LIKE '%HDMF%Loan%'     THEN pd.amount END),0) AS hdmf_l,
+           COALESCE(MAX(CASE WHEN (dt.deduction_name LIKE '%HDMF%' OR dt.deduction_name LIKE '%Pag-IBIG%' OR dt.deduction_name LIKE '%Pagibig%') AND COALESCE(dt.is_loan,0)=0 THEN pd.amount END),0) AS hdmf_p,
+           COALESCE(MAX(CASE WHEN (dt.deduction_name LIKE '%HDMF%' OR dt.deduction_name LIKE '%Pag-IBIG%' OR dt.deduction_name LIKE '%Pagibig%') AND COALESCE(dt.is_loan,0)=1 THEN pd.amount END),0) AS hdmf_l,
            COALESCE(MAX(CASE WHEN dt.deduction_name LIKE '%Phil%'           THEN pd.amount END),0) AS philhealth,
-           COALESCE(MAX(CASE WHEN dt.deduction_name LIKE '%SSS%Premium%'   THEN pd.amount END),0) AS sss_p,
-           COALESCE(MAX(CASE WHEN dt.deduction_name LIKE '%SSS%Loan%'      THEN pd.amount END),0) AS sss_l
+           COALESCE(MAX(CASE WHEN dt.deduction_name LIKE '%SSS%' AND COALESCE(dt.is_loan,0)=0 THEN pd.amount END),0) AS sss_p,
+           COALESCE(MAX(CASE WHEN dt.deduction_name LIKE '%SSS%' AND COALESCE(dt.is_loan,0)=1 THEN pd.amount END),0) AS sss_l,
+           COALESCE(MAX(CASE WHEN dt.deduction_name LIKE '%Withholding%' OR dt.deduction_name LIKE '%W/Tax%' THEN pd.amount END),0) AS wtax
     FROM payroll_records pr
     JOIN employees e ON pr.employee_id = e.employee_id
     LEFT JOIN positions p   ON e.position_id   = p.position_id
@@ -367,6 +368,7 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
                 <th>HDMF-P</th><th>HDMF-L</th>
                 <th>PhilHealth</th>
                 <th>SSS-P</th><th>SSS-L</th>
+                <th>W.Tax</th>
                 <th>Total Ded.</th>
                 <th>Net Pay</th>
                 <th>Status</th>
@@ -375,7 +377,7 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
         </thead>
         <tbody>
         <?php if (empty($records)): ?>
-            <tr><td colspan="18" style="text-align:center;padding:40px;color:#9ca3af;">No payroll records.</td></tr>
+            <tr><td colspan="19" style="text-align:center;padding:40px;color:#9ca3af;">No payroll records.</td></tr>
         <?php else: ?>
         <?php foreach ($records as $r): ?>
         <?php
@@ -400,6 +402,7 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
             <td><?= peso($r['philhealth']) ?></td>
             <td><?= peso($r['sss_p']) ?></td>
             <td><?= peso($r['sss_l']) ?></td>
+            <td><?= peso($r['wtax']) ?></td>
             <td style="color:#ef4444"><?= peso($r['total_deductions']) ?></td>
             <td><strong style="color:#0f766e"><?= peso($r['net_pay']) ?></strong></td>
             <td><span class="badge badge--<?= strtolower($r['payroll_status']) ?>"><?= $r['payroll_status'] ?></span></td>

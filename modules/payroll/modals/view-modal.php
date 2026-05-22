@@ -82,6 +82,22 @@
             <strong id="ps-net">-</strong>
         </div>
 
+        <!-- EMPLOYER CONTRIBUTIONS — admin/principal view only; hidden on print -->
+        <div id="ps-employer-section" class="payslip-section payslip-employer-contrib" style="display:none;">
+            <h4 class="employer-title">EMPLOYER CONTRIBUTIONS</h4>
+            <div class="card" style="border:1px dashed #d1d5db;background:#f9fafb;">
+                <div id="ps-employer-rows"></div>
+                <hr>
+                <div class="row total">
+                    <strong style="color:#6b7280;">Total Employer Cost</strong>
+                    <strong id="ps-employer-total" style="color:#6b7280;">-</strong>
+                </div>
+                <div style="font-size:11px;color:#9ca3af;margin-top:6px;font-style:italic;">
+                    Employer contributions are not deducted from employee pay.
+                </div>
+            </div>
+        </div>
+
         <!-- SIGNATURE LINES -->
         <div class="payslip-signatures">
             <div class="sig-block">

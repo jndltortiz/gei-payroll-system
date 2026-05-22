@@ -297,7 +297,7 @@ function initRateTables() {
             </tr>
         `).join('');
         document.getElementById('sssTotalNote').innerHTML =
-            `<strong>Note:</strong> Full table has ${PS_SSS_TOTAL} salary brackets. Employee share: 4.5%, Employer share: 10%`;
+            `<strong>Note:</strong> Full table has ${PS_SSS_TOTAL} salary brackets. Employee share: 4.5%, Employer share: 9.5% (SSS Circular 2022-033)`;
     }
 
     // PhilHealth
@@ -673,7 +673,15 @@ async function submitCreatePeriods() {
 }
 
 async function deletePeriod(id, name) {
-    if (!confirm(`Delete period "${name}"?\n\nThis cannot be undone and will only work if no payroll records exist for this period.`)) return;
+    try {
+        await GEI.confirm({
+            title:       'Delete Payroll Period',
+            message:     `Delete period "${name}"? This will only succeed if no payroll records exist for this period.`,
+            note:        'This cannot be undone.',
+            type:        'danger',
+            confirmText: 'Delete Period',
+        });
+    } catch { return; }
 
     try {
         const fd = new FormData();

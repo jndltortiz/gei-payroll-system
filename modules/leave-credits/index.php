@@ -338,7 +338,7 @@ require_once __DIR__ . '/../../includes/head.php';
       </button>
     </div>
     <form method="POST" action="<?= BASE_URL ?>actions/leave-credits-action.php"
-          onsubmit="return confirmBulk()">
+          onsubmit="confirmBulk(event)">
       <input type="hidden" name="action"         value="bulk_allocate">
       <input type="hidden" name="school_year_id" value="<?= $filterYear ?>">
       <input type="hidden" name="redirect"       value="<?= htmlspecialchars($_SERVER['REQUEST_URI']) ?>">
@@ -429,14 +429,19 @@ function openBulkModal() {
     document.getElementById('bulkModal').style.display = 'flex';
 }
 
-function confirmBulk() {
-    const lt   = document.querySelector('#bulkModal select[name=leave_type_id]');
-    const days = document.querySelector('#bulkModal input[name=allocated_days]');
-    const ltText = lt.options[lt.selectedIndex]?.text || '';
-    return confirm(
-        'Bulk-allocate ' + days.value + ' days of "' + ltText + '" to all matching employees?\n\n' +
-        'Existing allocations will be OVERWRITTEN. Used days are preserved.'
-    );
+function confirmBulk(e) {
+    e.preventDefault();
+    const lt     = document.querySelector('#bulkModal select[name=leave_type_id]');
+    const days   = document.querySelector('#bulkModal input[name=allocated_days]');
+    const ltText = lt ? (lt.options[lt.selectedIndex]?.text || 'selected type') : 'selected type';
+    const daysVal = days ? (days.value || '?') : '?';
+    GEI.confirm({
+        title:       'Apply Bulk Allocation',
+        message:     'Allocate ' + daysVal + ' days of "' + ltText + '" to all active employees?',
+        note:        'Existing allocations will be overwritten. Used days are preserved.',
+        type:        'warning',
+        confirmText: 'Apply Allocation',
+    }).then(() => e.target.submit()).catch(() => {});
 }
 
 document.querySelectorAll('.sy-modal-overlay').forEach(el => {

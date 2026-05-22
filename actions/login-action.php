@@ -72,7 +72,11 @@ setFlash('success', 'Login successful.');
 // ── Role-based redirect ───────────────────────────────────────────────────────
 switch ($user['role_name']) {
     case 'Principal':
+    case 'Special Assistant':
         header('Location: ' . BASE_URL . 'modules/principal/payroll-approval/index.php');
+        break;
+    case 'Employee':
+        header('Location: ' . BASE_URL . 'modules/employee/dashboard/index.php');
         break;
     default:
         header('Location: ' . BASE_URL . 'modules/dashboard/index.php');

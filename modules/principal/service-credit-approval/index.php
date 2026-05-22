@@ -165,7 +165,11 @@ require_once __DIR__ . '/../../../includes/head.php';
           </button>
           <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php"
                 style="display:inline"
-                onsubmit="return confirm('Approve this service credit for ₱<?= number_format((float)$sc['equivalent_pay'],2) ?>?\n\nThis will be included in the next payroll as Additional Assignment Payment.')">
+                data-confirm-title="Approve Service Credit"
+                data-confirm-message="Approve this service credit for ₱<?= number_format((float)$sc['equivalent_pay'],2) ?>?"
+                data-confirm-note="This will be included in the next payroll as Additional Assignment Pay."
+                data-confirm-type="info"
+                data-confirm-btn="Approve">
             <input type="hidden" name="action" value="approve">
             <input type="hidden" name="service_credit_id" value="<?= $sc['service_credit_id'] ?>">
             <input type="hidden" name="redirect" value="<?= BASE_URL ?>modules/principal/service-credit-approval/index.php">

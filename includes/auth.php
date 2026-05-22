@@ -22,17 +22,13 @@ function requireLogin(): void
 function guestOnly(): void
 {
     if (isLoggedIn()) {
-
-        // Principal / Special Assistant
         if (isPrincipalRole()) {
             header('Location: ' . BASE_URL . 'modules/principal/payroll-approval/index.php');
-        }
-
-        // Admin / Accounting
-        else {
+        } elseif (isEmployee()) {
+            header('Location: ' . BASE_URL . 'modules/employee/dashboard/index.php');
+        } else {
             header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
         }
-
         exit;
     }
 }
@@ -122,6 +118,14 @@ function isAdmin(): bool
 }
 
 /**
+ * Employee self-service role.
+ */
+function isEmployee(): bool
+{
+    return currentRole() === 'employee';
+}
+
+/**
  * Principal-side approval roles
  * (Principal, Special Assistant)
  */
@@ -139,35 +143,53 @@ function isPrincipalRole(): bool
 
 /**
  * Principal-only pages.
- * Non-principals → dashboard
  */
 function requirePrincipal(): void
 {
     requireLogin();
 
     if (!isPrincipalRole()) {
-        header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
+        if (isEmployee()) {
+            header('Location: ' . BASE_URL . 'modules/employee/dashboard/index.php');
+        } else {
+            header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
+        }
         exit;
     }
 }
 
 /**
  * Admin-only pages.
- * Principals → principal portal
  */
 function requireAdminPage(): void
 {
     requireLogin();
 
     if (!isAdmin()) {
-
-        // Redirect principal-side users back to their portal
         if (isPrincipalRole()) {
             header('Location: ' . BASE_URL . 'modules/principal/payroll-approval/index.php');
+        } elseif (isEmployee()) {
+            header('Location: ' . BASE_URL . 'modules/employee/dashboard/index.php');
         } else {
             header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
         }
+        exit;
+    }
+}
 
+/**
+ * Employee-only pages.
+ */
+function requireEmployee(): void
+{
+    requireLogin();
+
+    if (!isEmployee()) {
+        if (isPrincipalRole()) {
+            header('Location: ' . BASE_URL . 'modules/principal/dashboard/index.php');
+        } else {
+            header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
+        }
         exit;
     }
 }
@@ -198,6 +220,25 @@ function requireAdminAction(): void
         echo json_encode([
             'success' => false,
             'message' => 'Access denied. Admin access required.',
+        ]);
+
+        exit;
+    }
+}
+
+/**
+ * Employee-only AJAX actions.
+ */
+function requireEmployeeAction(): void
+{
+    requireLogin();
+
+    if (!isEmployee()) {
+        http_response_code(403);
+
+        echo json_encode([
+            'success' => false,
+            'message' => 'Access denied. Employee access required.',
         ]);
 
         exit;

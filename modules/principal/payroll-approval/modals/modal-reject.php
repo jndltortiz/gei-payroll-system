@@ -2,14 +2,14 @@
 <div class="pr-modal-overlay" id="rejectOverlay">
   <div class="pr-modal-box pr-modal-box--sm">
     <div class="pr-modal-header">
-      <h3>Reject Payroll</h3>
+      <h3>Return for Revision</h3>
       <button onclick="closeReject()" title="Close"><i class="fa fa-times"></i></button>
     </div>
     <div class="pr-modal-body">
       <div class="pr-reject-info">
         <i class="fa fa-triangle-exclamation"></i>
-        Please provide remarks explaining why the payroll is being returned.
-        This will be sent to the HR Admin for corrections.
+        Provide remarks explaining what needs to be corrected.
+        The HR Admin will revise and resubmit for your approval.
       </div>
       <div style="margin-top:16px;">
         <label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:6px;">
@@ -25,7 +25,7 @@
     <div class="pr-modal-footer">
       <button class="pr-btn-cancel" onclick="closeReject()">Cancel</button>
       <button class="pr-btn-reject-confirm" id="rejectSubmitBtn" onclick="submitReject()">
-        <i class="fa fa-circle-xmark"></i> Submit Rejection
+        <i class="fa fa-rotate-left"></i> Return for Revision
       </button>
     </div>
   </div>

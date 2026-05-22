@@ -110,15 +110,20 @@ $_sidebarInit  = strtoupper(substr($_SESSION['user']['first_name'] ?? 'A', 0, 1)
     </a>
 
     <div class="nav-section-label">SYSTEM</div>
-    <a class="nav-item <?= sidebarActive('modules/audit') ?>"
-       href="<?= BASE_URL ?>modules/audit/index.php">
-      <i class="fa fa-shield-halved"></i>
-      <span>Audit Logs</span>
+    <a class="nav-item <?= sidebarActive('modules/shifts') ?>"
+       href="<?= BASE_URL ?>modules/shifts/index.php">
+      <i class="fa fa-business-time"></i>
+      <span>Shifts</span>
     </a>
     <a class="nav-item <?= sidebarActive('modules/holidays') ?>"
        href="<?= BASE_URL ?>modules/holidays/index.php">
       <i class="fa fa-calendar-check"></i>
       <span>Holidays</span>
+    </a>
+    <a class="nav-item <?= sidebarActive('modules/audit') ?>"
+       href="<?= BASE_URL ?>modules/audit/index.php">
+      <i class="fa fa-shield-halved"></i>
+      <span>Audit Logs</span>
     </a>
     <a class="nav-item <?= sidebarActive('modules/settings') ?>"
        href="<?= BASE_URL ?>modules/settings/index.php">

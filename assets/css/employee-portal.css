@@ -1,0 +1,495 @@
+/* ============================================================
+   employee-portal.css – GEI HR System
+   Employee Self-Service Portal. Prefix: emp-
+   Requires: global.css loaded first
+   ============================================================ */
+
+/* ── Employee Portal Theme Override ── */
+body {
+    --sidebar-bg:     #1e3a5f;
+    --sidebar-hover:  #2a4d7a;
+    --sidebar-active: #2d5f9a;
+    --accent:         #2563eb;
+    --accent-light:   #eff6ff;
+    --accent-mid:     #bfdbfe;
+}
+
+/* ── Layout ── */
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+}
+
+/* ── Page Shell ── */
+.emp-page {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+/* ── Greeting Bar ── */
+.emp-greeting {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.emp-greeting h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 2px;
+}
+
+.emp-greeting p {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.emp-greeting-pill {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+}
+
+/* ── KPI Cards Row ── */
+.emp-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.emp-kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    box-shadow: var(--shadow);
+}
+
+.emp-kpi-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 17px;
+    flex-shrink: 0;
+}
+
+.emp-kpi--blue   .emp-kpi-icon { background: #dbeafe; color: #2563eb; }
+.emp-kpi--green  .emp-kpi-icon { background: #d1fae5; color: #059669; }
+.emp-kpi--amber  .emp-kpi-icon { background: #fef3c7; color: #d97706; }
+.emp-kpi--red    .emp-kpi-icon { background: #fee2e2; color: #dc2626; }
+.emp-kpi--purple .emp-kpi-icon { background: #ede9fe; color: #6366f1; }
+.emp-kpi--teal   .emp-kpi-icon { background: #ccfbf1; color: #0f766e; }
+
+.emp-kpi-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.emp-kpi-value {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+    word-break: break-word;
+}
+
+.emp-kpi-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-top: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.emp-kpi-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+/* ── Grid Layouts ── */
+.emp-grid-1-1 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+/* ── Panel ── */
+.emp-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    box-shadow: var(--shadow);
+}
+
+.emp-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.emp-panel-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.emp-panel-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-main);
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+/* ── Payslip Stats Grid ── */
+.emp-payslip-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.emp-pstat {
+    background: var(--bg-main);
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+
+.emp-pstat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 4px;
+}
+
+.emp-pstat-value {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.emp-pstat-value--blue  { color: #2563eb; }
+.emp-pstat-value--green { color: #059669; }
+.emp-pstat-value--red   { color: #dc2626; }
+
+/* ── Leave Credits List ── */
+.emp-leave-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.emp-leave-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+}
+
+.emp-leave-name {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.emp-leave-used {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.emp-leave-balance {
+    font-size: 14px;
+    font-weight: 700;
+    color: #2563eb;
+    min-width: 28px;
+    text-align: right;
+}
+
+.emp-leave-balance--low  { color: #d97706; }
+.emp-leave-balance--zero { color: #dc2626; }
+
+.emp-leave-bar-wrap {
+    width: 52px;
+    height: 5px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.emp-leave-bar {
+    height: 100%;
+    background: #2563eb;
+    border-radius: 3px;
+}
+
+.emp-leave-bar--low  { background: #f59e0b; }
+.emp-leave-bar--zero { background: #ef4444; }
+
+/* ── Status Badges ── */
+.emp-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.emp-badge--pending   { background: #fef3c7; color: #92400e; }
+.emp-badge--approved  { background: #d1fae5; color: #065f46; }
+.emp-badge--rejected  { background: #fee2e2; color: #991b1b; }
+.emp-badge--active    { background: #dbeafe; color: #1e40af; }
+.emp-badge--released  { background: #d1fae5; color: #065f46; }
+.emp-badge--completed { background: #e0e7ff; color: #3730a3; }
+
+/* ── Item Rows (Latest Leave / SC) ── */
+.emp-item-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+    background: #eff6ff;
+    color: #2563eb;
+}
+
+.emp-item-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.emp-item-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.emp-item-date {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+/* ── Attendance Grid ── */
+.emp-att-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.emp-att-cell {
+    background: var(--bg-main);
+    border-radius: 8px;
+    padding: 10px 8px;
+    text-align: center;
+}
+
+.emp-att-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin: 0 auto 5px;
+}
+
+.emp-att-num {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.emp-att-lbl {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-top: 3px;
+}
+
+/* ── Loan Row ── */
+.emp-loan-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.emp-loan-row:last-child { border-bottom: none; }
+
+.emp-loan-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    background: #fef3c7;
+    color: #d97706;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.emp-loan-name {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.emp-loan-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
+
+.emp-loan-balance {
+    font-size: 14px;
+    font-weight: 700;
+    color: #d97706;
+    text-align: right;
+}
+
+.emp-loan-balance-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: right;
+    margin-top: 1px;
+}
+
+/* ── Link Button ── */
+.emp-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #2563eb;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: none;
+}
+
+.emp-link-btn:hover { text-decoration: underline; }
+
+/* ── Empty State ── */
+.emp-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 20px;
+    color: var(--text-muted);
+    gap: 8px;
+    text-align: center;
+}
+
+.emp-empty i {
+    font-size: 28px;
+    opacity: 0.4;
+}
+
+.emp-empty p {
+    font-size: 12px;
+    margin: 0;
+}
+
+/* ── Header / Topbar ── */
+.header {
+    height: var(--header-height);
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.header-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #dbeafe;
+    color: #1d4ed8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+    .emp-kpi-row { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 780px) {
+    .emp-grid-1-1 { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 540px) {
+    .emp-kpi-row   { grid-template-columns: 1fr 1fr; }
+    .main-content  { padding: 16px; }
+}

@@ -106,6 +106,8 @@ $settings = $pdo->query("SELECT * FROM payroll_settings LIMIT 1")->fetch() ?: []
 $autoApplyAllowances = (int)($settings['auto_apply_allowances'] ?? 1) === 1;
 $autoApplyDeductions = (int)($settings['auto_apply_deductions'] ?? 1) === 1;
 $governmentCalcMode = $settings['government_calc_mode'] ?? 'STANDARD';
+$isSemiMonthly      = ($settings['payroll_frequency'] ?? 'SEMI_MONTHLY') === 'SEMI_MONTHLY';
+$periodDivisor      = $isSemiMonthly ? 2 : 1; // contributions stored as monthly; divide for semi-monthly
 
 // ── Pre-fetch deduction types (assignment rules are checked per employee) ─────
 // Absence deduction (is_absence_deduction=1) is computed separately; exclude here.
@@ -283,7 +285,12 @@ try {
         }
 
         // Deductions — use government bracket tables where applicable
-        $totalDeductions = 0;
+        $totalDeductions    = 0;
+        $govContribMonthly  = 0.0; // monthly SSS+PhilHealth+Pag-IBIG; used as withholding tax base
+        $wtaxDtypeRow       = null; // withholding tax type processed after gov contributions
+        $employerSss        = 0.0; // employer-side contributions (informational; not deducted from pay)
+        $employerPhilHealth = 0.0;
+        $employerPagibig    = 0.0;
         $insD = $pdo->prepare("
             INSERT INTO payroll_deductions (payroll_id, deduction_type_id, amount)
             VALUES (?,?,?)
@@ -414,39 +421,80 @@ try {
                     } else {
                         $amt = (float)$type['deduction_amount'];
                     }
+                } elseif (strpos($name, 'withholding') !== false || strpos($name, 'w/tax') !== false) {
+                    // Deferred: withholding tax needs SSS+Phil+Pag-IBIG totals first
+                    $wtaxDtypeRow = $type;
+                    continue;
+
                 } elseif (strpos($name, 'sss') !== false) {
+                    // Bracket table stores monthly amounts → divide by periodDivisor
                     $row = $pdo->prepare("
-                        SELECT employee_share FROM sss_contribution_table
+                        SELECT employee_share, employer_share FROM sss_contribution_table
                         WHERE min_salary <= ? AND max_salary >= ? AND is_active = 1
                         ORDER BY effective_date DESC LIMIT 1
                     ");
                     $row->execute([$basic, $basic]);
                     $r = $row->fetch();
-                    $amt = $r ? (float)$r['employee_share'] : round($basic * 0.045, 2);
+                    $monthly     = $r ? (float)$r['employee_share'] : round($basic * 0.045, 2);
+                    $employerSss = $r ? (float)$r['employer_share'] : round($basic * 0.095, 2);
+                    $govContribMonthly += $monthly;
+                    $amt = round($monthly / $periodDivisor, 2);
 
                 } elseif (strpos($name, 'philhealth') !== false || strpos($name, 'phil') !== false) {
+                    // Use fixed employee_share when non-zero; else compute basic × rate
                     $row = $pdo->prepare("
-                        SELECT employee_share FROM philhealth_contribution_table
+                        SELECT employee_share, employee_share_rate,
+                               employer_share, employer_share_rate
+                        FROM philhealth_contribution_table
                         WHERE min_salary <= ? AND max_salary >= ? AND is_active = 1
                         ORDER BY effective_date DESC LIMIT 1
                     ");
                     $row->execute([$basic, $basic]);
                     $r = $row->fetch();
-                    $amt = $r ? (float)$r['employee_share'] : round($basic * 0.025, 2);
+                    if ($r) {
+                        $monthly            = (float)$r['employee_share'] > 0
+                            ? (float)$r['employee_share']
+                            : round($basic * (float)$r['employee_share_rate'], 2);
+                        $employerPhilHealth = (float)$r['employer_share'] > 0
+                            ? (float)$r['employer_share']
+                            : round($basic * (float)$r['employer_share_rate'], 2);
+                    } else {
+                        $monthly            = round($basic * 0.025, 2);
+                        $employerPhilHealth = $monthly;
+                    }
+                    $govContribMonthly += $monthly;
+                    $amt = round($monthly / $periodDivisor, 2);
 
                 } elseif (strpos($name, 'pag-ibig') !== false || strpos($name, 'hdmf') !== false
                           || strpos($name, 'pagibig') !== false) {
+                    // Compute from employee_rate; cap at max_employee_contribution
                     $row = $pdo->prepare("
-                        SELECT employee_share FROM pagibig_contribution_table
+                        SELECT employee_rate, employer_rate, employee_share, employer_share,
+                               max_employee_contribution
+                        FROM pagibig_contribution_table
                         WHERE min_salary <= ? AND max_salary >= ? AND is_active = 1
                         ORDER BY effective_date DESC LIMIT 1
                     ");
                     $row->execute([$basic, $basic]);
                     $r = $row->fetch();
-                    $amt = $r ? (float)$r['employee_share'] : 200;
+                    if ($r) {
+                        $monthly         = (float)$r['employee_share'] > 0
+                            ? (float)$r['employee_share']
+                            : round($basic * (float)$r['employee_rate'], 2);
+                        $cap = ($r['max_employee_contribution'] !== null) ? (float)$r['max_employee_contribution'] : 0;
+                        if ($cap > 0) $monthly = min($monthly, $cap);
+                        $employerPagibig = (float)$r['employer_share'] > 0
+                            ? (float)$r['employer_share']
+                            : round($basic * (float)$r['employer_rate'], 2);
+                    } else {
+                        $monthly         = 100.00;
+                        $employerPagibig = 100.00;
+                    }
+                    $govContribMonthly += $monthly;
+                    $amt = round($monthly / $periodDivisor, 2);
 
                 } elseif (strpos($name, 'peraa') !== false) {
-                    // PERAA premium (FIXED amount from deduction_types)
+                    // PERAA premium — fixed per-period amount from deduction_types
                     $amt = (float)$type['deduction_amount'];
                 }
 
@@ -461,9 +509,42 @@ try {
                 $amt = (float)$type['deduction_amount'];
             }
 
-            if ($amt >= 0) {
+            if ($amt > 0) {
                 $insD->execute([$payrollId, $type['deduction_type_id'], $amt]);
                 $totalDeductions += $amt;
+            }
+        }
+
+        // ── Withholding tax — BIR TRAIN Law (2023+) ──────────────────────────────
+        // Computed here, after SSS+PhilHealth+Pag-IBIG, so they can be subtracted
+        // from the taxable base per BIR rules.
+        if ($wtaxDtypeRow !== null && $autoApplyDeductions) {
+            if ($governmentCalcMode === 'MANUAL') {
+                $wtaxAmt = $wtaxDtypeRow['deduction_value_type'] === 'PERCENTAGE'
+                    ? round($basic * ($wtaxDtypeRow['deduction_rate'] / 100), 2)
+                    : (float)$wtaxDtypeRow['deduction_amount'];
+            } else {
+                // Taxable = (monthly_basic - monthly mandatory contributions) × 12
+                $annualTaxable = max(0.0, ($basic - $govContribMonthly)) * 12;
+                if ($annualTaxable <= 250000) {
+                    $annualTax = 0.0;
+                } elseif ($annualTaxable <= 400000) {
+                    $annualTax = ($annualTaxable - 250000) * 0.15;
+                } elseif ($annualTaxable <= 800000) {
+                    $annualTax = 22500.0 + ($annualTaxable - 400000) * 0.20;
+                } elseif ($annualTaxable <= 2000000) {
+                    $annualTax = 102500.0 + ($annualTaxable - 800000) * 0.25;
+                } elseif ($annualTaxable <= 8000000) {
+                    $annualTax = 402500.0 + ($annualTaxable - 2000000) * 0.30;
+                } else {
+                    $annualTax = 2202500.0 + ($annualTaxable - 8000000) * 0.35;
+                }
+                $taxPeriods = $isSemiMonthly ? 24 : 12;
+                $wtaxAmt = round($annualTax / $taxPeriods, 2);
+            }
+            if ($wtaxAmt > 0) {
+                $insD->execute([$payrollId, $wtaxDtypeRow['deduction_type_id'], $wtaxAmt]);
+                $totalDeductions += $wtaxAmt;
             }
         }
 
@@ -487,6 +568,20 @@ try {
 
         // Final totals — derived from child rows to ensure accuracy
         recalculatePayrollTotals($pdo, $payrollId);
+
+        // Store employer-side contributions (informational; not deducted from employee pay)
+        // Wrapped in try-catch: silently skipped if migration 005 has not been run yet.
+        try {
+            $pdo->prepare("
+                UPDATE payroll_records
+                SET employer_sss_share        = ?,
+                    employer_philhealth_share = ?,
+                    employer_pagibig_share    = ?
+                WHERE payroll_id = ?
+            ")->execute([$employerSss, $employerPhilHealth, $employerPagibig, $payrollId]);
+        } catch (PDOException $e) {
+            // Migration 005 not yet applied — employer shares not stored this run
+        }
 
         $generated++;
     }

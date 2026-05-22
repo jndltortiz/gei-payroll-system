@@ -422,7 +422,15 @@ async function submitAdjust(loanId) {
 }
 
 async function markFullyPaid(loanId) {
-    if (!confirm('Mark this loan as fully paid? This sets the balance to ₱0.00 and closes the loan.')) return;
+    try {
+        await GEI.confirm({
+            title:       'Mark Loan as Fully Paid',
+            message:     'This sets the outstanding balance to ₱0.00 and closes the loan.',
+            note:        'This action cannot be undone.',
+            type:        'warning',
+            confirmText: 'Mark as Paid',
+        });
+    } catch { return; }
     const fd = new FormData(); fd.append('action','complete'); fd.append('loan_id',loanId);
     try {
         const res  = await fetch(`${BASE_URL}actions/loans-action.php`,{method:'POST',body:fd});

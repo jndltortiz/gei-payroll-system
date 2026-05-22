@@ -27,10 +27,20 @@ if (!$employeeId || !$date || !$status) {
     exit;
 }
 
+// ── Holiday check — takes priority over all other status logic ────────────────
+// If the date is recorded in the holidays table, force HOLIDAY status.
+$holCheck = $pdo->prepare("SELECT holiday_name FROM holidays WHERE holiday_date = ?");
+$holCheck->execute([$date]);
+if ($holRow = $holCheck->fetch()) {
+    $status  = 'HOLIDAY';
+    $remarks = $remarks ?? $holRow['holiday_name'];
+}
+
 // ── Server-side status auto-compute (mirrors front-end logic) ─────────────────
 // If time_in is provided, recompute status so it is always consistent
 // even if the user somehow bypassed the JS auto-suggest.
-if ($timeIn) {
+// Skipped when the date is a holiday (status already forced above).
+if ($timeIn && $status !== 'HOLIDAY') {
     $empStmt = $pdo->prepare("
         SELECT e.employment_type,
                s.start_time, s.grace_period_minutes, s.half_day_time

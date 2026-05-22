@@ -1,0 +1,337 @@
+/* ============================================================
+   principal-analytics.css – GEI HR System
+   Principal Portal: Analytics page. Prefix: pan-
+   Requires: global.css + principal.css loaded first
+   ============================================================ */
+
+/* ── KPI Cards Row ── */
+.pan-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.pan-kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    box-shadow: var(--shadow);
+}
+
+.pan-kpi-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.pan-kpi--teal .pan-kpi-icon { background: #ccfbf1; color: #0f766e; }
+.pan-kpi--amber .pan-kpi-icon { background: #fef3c7; color: #d97706; }
+.pan-kpi--green .pan-kpi-icon { background: #d1fae5; color: #059669; }
+.pan-kpi--blue  .pan-kpi-icon { background: #dbeafe; color: #2563eb; }
+
+.pan-kpi-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.pan-kpi-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+    word-break: break-word;
+}
+
+.pan-kpi-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-top: 3px;
+}
+
+.pan-kpi-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+/* ── Grid Layouts ── */
+.pan-grid-2-1 {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.pan-grid-1-1 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+/* ── Panel ── */
+.pan-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    box-shadow: var(--shadow);
+    margin-bottom: 20px;
+}
+
+.pan-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+}
+
+.pan-panel-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pan-panel-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-main);
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+/* ── Chart Wrap ── */
+.pan-chart-wrap {
+    height: 220px;
+    position: relative;
+}
+
+.pan-chart-wrap--sm {
+    height: 180px;
+}
+
+/* ── Chart Legend ── */
+.pan-chart-legend {
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 12px;
+}
+
+.pan-legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 5px;
+    flex-shrink: 0;
+}
+
+.pan-legend--teal  { background: #0f766e; }
+.pan-legend--amber { background: #d97706; }
+.pan-legend--green { background: #10b981; }
+.pan-legend--blue  { background: #3b82f6; }
+
+/* ── Workflow List ── */
+.pan-workflow-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.pan-wf-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-main);
+}
+
+.pan-wf-row--active {
+    border-color: #fde68a;
+    background: #fffbeb;
+}
+
+.pan-wf-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.pan-wf-icon--amber  { background: #fef3c7; color: #d97706; }
+.pan-wf-icon--blue   { background: #dbeafe; color: #2563eb; }
+.pan-wf-icon--purple { background: #ede9fe; color: #6366f1; }
+.pan-wf-icon--teal   { background: #ccfbf1; color: #0f766e; }
+
+.pan-wf-body {
+    flex: 1;
+}
+
+.pan-wf-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.pan-wf-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
+
+.pan-wf-count {
+    font-size: 20px;
+    font-weight: 700;
+    min-width: 32px;
+    text-align: right;
+}
+
+.pan-wf-count--amber  { color: #d97706; }
+.pan-wf-count--blue   { color: #2563eb; }
+.pan-wf-count--purple { color: #6366f1; }
+.pan-wf-count--teal   { color: #0f766e; }
+.pan-wf-count--zero   { color: #cbd5e1; }
+
+.pan-returned-note {
+    margin-top: 14px;
+    font-size: 12px;
+    color: #92400e;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 6px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ── Leave Status Summary ── */
+.pan-leave-summary {
+    display: flex;
+    gap: 18px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.pan-leave-stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.pan-leave-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* ── Donut / Legend ── */
+.pan-donut-panel-inner {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+.pan-donut-wrap {
+    height: 180px;
+    width: 180px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.pan-donut-legend {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pan-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.pan-legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.pan-legend-val {
+    margin-left: auto;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+/* ── Empty State ── */
+.pan-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 44px 24px;
+    color: var(--text-muted);
+    gap: 10px;
+    text-align: center;
+}
+
+.pan-empty i {
+    font-size: 32px;
+    opacity: 0.4;
+}
+
+.pan-empty p {
+    font-size: 13px;
+    margin: 0;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1200px) {
+    .pan-kpi-row  { grid-template-columns: repeat(2, 1fr); }
+    .pan-grid-2-1 { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 800px) {
+    .pan-grid-1-1 { grid-template-columns: 1fr; }
+    .pan-donut-panel-inner { flex-direction: column; }
+    .pan-donut-wrap { width: 160px; height: 160px; }
+}
+
+@media (max-width: 540px) {
+    .pan-kpi-row { grid-template-columns: 1fr; }
+}
