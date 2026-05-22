@@ -250,10 +250,28 @@ require_once __DIR__ . '/../../../includes/head.php';
         </div>
       </div>
 
-      <!-- Net Pay -->
+      <!-- Net Pay (before post-deduction additions) -->
       <div style="background:#eff6ff;border:2px solid #bfdbfe;border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;">
         <span style="font-size:14px;font-weight:700;color:#1e40af;">NET PAY</span>
         <span style="font-size:20px;font-weight:800;color:#2563eb;" id="ps-net"></span>
+      </div>
+
+      <!-- Post-Deduction Additions (Rice Subsidy, Laundry — shown only when present) -->
+      <div id="ps-postded-section" style="display:none;margin-top:14px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#7c3aed;margin-bottom:8px;">
+          <i class="fa fa-circle-plus"></i> Additional Allowances
+        </div>
+        <div id="ps-postded" style="border:1px solid #ede9fe;border-radius:8px 8px 0 0;overflow:hidden;"></div>
+        <div style="display:flex;justify-content:space-between;padding:10px 14px;background:#ede9fe;border-radius:0 0 8px 8px;font-weight:700;font-size:13px;color:#5b21b6;">
+          <span>Total Additions</span>
+          <span id="ps-postded-total"></span>
+        </div>
+      </div>
+
+      <!-- Total Take-Home Pay (shown when post-deduction additions exist) -->
+      <div id="ps-takehome-box" style="display:none;background:#f5f3ff;border:2px solid #c4b5fd;border-radius:10px;padding:14px 18px;justify-content:space-between;align-items:center;margin-top:8px;">
+        <span style="font-size:14px;font-weight:700;color:#5b21b6;">TOTAL TAKE-HOME PAY</span>
+        <span style="font-size:20px;font-weight:800;color:#7c3aed;" id="ps-takehome"></span>
       </div>
 
       <!-- Released -->
@@ -300,23 +318,35 @@ function viewPayslip(payrollId) {
             document.getElementById('ps-empname').textContent   = r.employee_name;
             document.getElementById('ps-position').textContent  = r.position_name || '—';
             document.getElementById('ps-dept').textContent      = r.department_name || '—';
-            document.getElementById('ps-gross').textContent     = fmt(r.gross_pay);
-            document.getElementById('ps-totalded').textContent  = fmt(r.total_deductions);
-            document.getElementById('ps-net').textContent       = fmt(r.net_pay);
 
             if (r.released_at) {
                 document.getElementById('ps-released-info').textContent =
                     'Released on ' + new Date(r.released_at).toLocaleDateString('en-PH', {month:'long', day:'numeric', year:'numeric'});
             }
 
-            // Earnings rows
+            // Classify allowances: post-deduction additions vs core earnings (GEI payslip format)
+            const POST_DED = /rice|laundry/i;
+            const postDedAllowances = data.allowances.filter(a => POST_DED.test(a.name));
+            const coreAllowances    = data.allowances.filter(a => !POST_DED.test(a.name));
+
+            const postDedTotal   = postDedAllowances.reduce((s, a) => s + parseFloat(a.amount || 0), 0);
+            const coreGross      = parseFloat(r.gross_pay) - postDedTotal;
+            const intermediateNet = parseFloat(r.net_pay) - postDedTotal;
+            const finalTakeHome  = parseFloat(r.net_pay);
+
+            document.getElementById('ps-gross').textContent    = fmt(coreGross);
+            document.getElementById('ps-totalded').textContent = fmt(r.total_deductions);
+            document.getElementById('ps-net').textContent      = fmt(intermediateNet);
+
+            // Earnings rows (core only — Basic Pay + Additional Assignment + others)
             const earningsEl = document.getElementById('ps-earnings');
             earningsEl.innerHTML = '';
             if (parseFloat(r.basic_pay) > 0) {
                 earningsEl.innerHTML += rowHtml('Basic Pay', r.basic_pay);
             }
-            data.allowances.forEach(a => {
-                earningsEl.innerHTML += rowHtml(a.name, a.amount);
+            coreAllowances.forEach(a => {
+                const label = /additional assignment/i.test(a.name) ? a.name + ' (Overload)' : a.name;
+                earningsEl.innerHTML += rowHtml(label, a.amount);
             });
 
             // Deduction rows
@@ -327,6 +357,22 @@ function viewPayslip(payrollId) {
             });
             if (!data.deductions.length) {
                 dedEl.innerHTML = '<div style="padding:10px 14px;color:#94a3b8;font-size:12px;">No deductions</div>';
+            }
+
+            // Post-deduction additions section (Rice Subsidy, Laundry Allowance)
+            const postDedSection = document.getElementById('ps-postded-section');
+            const takeHomeBox    = document.getElementById('ps-takehome-box');
+            if (postDedTotal > 0) {
+                const postDedEl = document.getElementById('ps-postded');
+                postDedEl.innerHTML = '';
+                postDedAllowances.forEach(a => { postDedEl.innerHTML += rowHtml(a.name, a.amount); });
+                document.getElementById('ps-postded-total').textContent = fmt(postDedTotal);
+                document.getElementById('ps-takehome').textContent      = fmt(finalTakeHome);
+                postDedSection.style.display = 'block';
+                takeHomeBox.style.display    = 'flex';
+            } else {
+                postDedSection.style.display = 'none';
+                takeHomeBox.style.display    = 'none';
             }
 
             document.getElementById('ps-loading').style.display = 'none';

@@ -33,11 +33,31 @@
         <div class="form-grid" id="edit-allowances-container">
             <!-- Populated by JS -->
         </div>
+        <!-- One-time allowance additions for this period only -->
+        <div id="edit-new-allowances"></div>
+        <div style="margin:8px 0 4px;">
+            <button type="button" onclick="addAllowanceAdjustment()"
+                    style="width:100%;padding:7px 14px;font-size:12px;font-weight:600;
+                           border:1.5px dashed #10b981;border-radius:8px;background:#f0fdf4;
+                           color:#059669;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+                <i class="fa fa-plus"></i> Add One-Time Allowance
+            </button>
+        </div>
 
         <!-- DEDUCTIONS — rendered dynamically by openEdit() in payroll.js -->
         <h4 class="section-title">DEDUCTIONS</h4>
         <div class="form-grid" id="edit-deductions-container">
             <!-- Populated by JS -->
+        </div>
+        <!-- One-time deduction additions for this period only -->
+        <div id="edit-new-deductions"></div>
+        <div style="margin:8px 0 4px;">
+            <button type="button" onclick="addDeductionAdjustment()"
+                    style="width:100%;padding:7px 14px;font-size:12px;font-weight:600;
+                           border:1.5px dashed #ef4444;border-radius:8px;background:#fef2f2;
+                           color:#dc2626;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+                <i class="fa fa-plus"></i> Add One-Time Deduction
+            </button>
         </div>
 
         <!-- COMPUTED TOTALS -->

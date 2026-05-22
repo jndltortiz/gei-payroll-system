@@ -1,16 +1,16 @@
-<?php /** modal: add-attendance-modal.php — included by attendance/index.php */ ?>
+<?php /** modal: add-attendance-modal.php — "Log Employee In" */ ?>
 
 <div id="addAttendanceModal" class="att-modal" style="display:none;">
-  <div class="att-modal-box">
+  <div class="att-modal-box att-modal-box--lg">
 
     <div class="att-modal-header">
       <div>
-        <h3>Add Attendance Manually</h3>
-        <p id="addModalSubtitle" style="font-size:13px;opacity:0.8;margin-top:2px;">
-          Fill in the employee details below to record attendance manually
+        <h3><i class="fa fa-arrow-right-to-bracket"></i> Log Employee In</h3>
+        <p style="font-size:13px;opacity:0.8;margin-top:2px;">
+          Records Time In for selected employees using the current system time
         </p>
       </div>
-      <button type="button" class="att-modal-close" onclick="closeAddModal()">
+      <button type="button" class="att-modal-close" onclick="closeAttModal()">
         <i class="fa fa-times"></i>
       </button>
     </div>
@@ -18,266 +18,267 @@
     <div id="addAttError" style="display:none;margin:12px 16px 0;padding:10px 14px;
          background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:13px;"></div>
 
-    <form id="addAttForm" onsubmit="submitAddAttendance(event)">
-      <div class="att-modal-body">
+    <div class="att-modal-body">
 
-        <!-- STEP 1: Employee search -->
+      <!-- Time display -->
+      <div class="att-notice-box">
+        <strong><i class="fa fa-clock"></i>
+          Time In will be recorded as: <span id="loginTimeLive" style="font-size:15px;font-weight:800;">—</span>
+        </strong>
+        <p>Current system time is used automatically. Use Edit to correct past records.</p>
+      </div>
+
+      <!-- Employee filters -->
+      <div class="att-field-row" style="gap:8px;">
         <div class="att-field">
-          <label>Employee Name <span class="req">*</span></label>
-          <select name="employee_id" id="add_employee_id" required
-                  onchange="onAddAttendanceEmployeeChange(this)">
-            <option value="">— Select employee —</option>
-            <?php foreach ($pdo->query("
-                SELECT e.employee_id, CONCAT(e.first_name,' ',e.last_name) AS full_name,
-                       p.position_name
-                FROM employees e
-                LEFT JOIN positions p ON e.position_id=p.position_id
-                WHERE e.employee_status='ACTIVE'
-                ORDER BY e.last_name, e.first_name
-            ")->fetchAll() as $emp): ?>
-            <option value="<?= $emp['employee_id'] ?>"
-                    data-name="<?= htmlspecialchars($emp['full_name']) ?>">
-              <?= htmlspecialchars($emp['full_name']) ?>
-              <?php if ($emp['position_name']): ?>(<?= htmlspecialchars($emp['position_name']) ?>)<?php endif; ?>
+          <label>Department</label>
+          <select id="addEmpDeptFilter" onchange="loadEmployeesForModal()">
+            <option value="">All Departments</option>
+            <?php foreach ($depts as $d): ?>
+            <option value="<?= $d['department_id'] ?>">
+              <?= htmlspecialchars($d['department_name']) ?>
             </option>
             <?php endforeach; ?>
           </select>
         </div>
-
-        <!-- Shift info hint (shown after employee selected) -->
-        <div id="add-shift-hint" style="display:none;padding:8px 12px;background:#f0fdf9;
-             border:1px solid #a7f3d0;border-radius:8px;font-size:12px;color:#065f46;margin-bottom:12px;">
-          <i class="fa fa-clock"></i>
-          <span id="add-shift-hint-text"></span>
-        </div>
-
-        <!-- Date -->
         <div class="att-field">
-          <label>Date <span class="req">*</span></label>
-          <input type="date" name="date" id="add_date"
-                 value="<?= date('Y-m-d') ?>" required>
+          <label>Position / Role</label>
+          <select id="addEmpPosFilter" onchange="loadEmployeesForModal()">
+            <option value="">All Positions</option>
+            <?php foreach ($positions as $p): ?>
+            <option value="<?= $p['position_id'] ?>">
+              <?= htmlspecialchars($p['position_name']) ?>
+            </option>
+            <?php endforeach; ?>
+          </select>
         </div>
-
-        <!-- Time In / Out -->
-        <div class="att-field-row">
-          <div class="att-field">
-            <label>Time In</label>
-            <input type="time" name="time_in" id="add_time_in"
-                   oninput="onAddTimeInChange(this.value)">
-          </div>
-          <div class="att-field">
-            <label>Time Out</label>
-            <input type="time" name="time_out" id="add_time_out">
-          </div>
-        </div>
-
-        <!-- Status — auto-suggested from shift -->
-        <div class="att-field">
-          <label>Status <span class="req">*</span></label>
-          <div style="position:relative;">
-            <select name="status" id="add_status" required>
-              <option value="PRESENT">Present</option>
-              <option value="LATE">Late</option>
-              <option value="ABSENT">Absent</option>
-              <option value="LEAVE">On Leave</option>
-              <option value="HALF_DAY">Half Day</option>
-              <option value="INCOMPLETE">Incomplete</option>
-              <option value="HOLIDAY">Holiday</option>
-            </select>
-            <span id="add-status-auto-badge" style="display:none;position:absolute;right:36px;top:50%;
-                  transform:translateY(-50%);font-size:10px;background:#d1fae5;color:#065f46;
-                  padding:2px 8px;border-radius:999px;font-weight:600;pointer-events:none;">
-              Auto
-            </span>
-          </div>
-          <small id="add-status-hint" style="font-size:11px;color:#9ca3af;display:none;margin-top:3px;"></small>
-        </div>
-
-        <!-- Notes -->
-        <div class="att-field">
-          <label>Notes (Optional)</label>
-          <textarea name="remarks" id="add_remarks" rows="2"
-                    placeholder="Add any additional notes or comments..."></textarea>
-        </div>
-
       </div>
 
-      <div class="att-modal-footer">
-        <button type="button" class="att-btn outline" onclick="closeAddModal()">Cancel</button>
-        <button type="submit" class="att-btn primary" id="addAttSubmitBtn">
-          <i class="fa fa-floppy-disk"></i> Save Attendance
-        </button>
+      <!-- Employee search -->
+      <div class="att-field">
+        <label>Search Employee</label>
+        <div class="att-emp-search-wrap">
+          <i class="fa fa-magnifying-glass"></i>
+          <input type="text" id="addEmpSearch" placeholder="Type name or employee number…"
+                 oninput="debounce(loadEmployeesForModal, 300)">
+        </div>
       </div>
-    </form>
+
+      <!-- Employee checklist -->
+      <div class="att-field">
+        <div class="att-emp-list-header">
+          <label>Select Employees
+            <span id="addEmpSelectedCount" class="att-emp-sel-count" style="display:none;">0 selected</span>
+          </label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button type="button" class="att-btn-link" onclick="selectAllAvailableEmployees()">Select All</button>
+            <button type="button" class="att-btn-link" onclick="clearEmployeeSelection()">Clear</button>
+          </div>
+        </div>
+        <div id="addEmpList" class="att-emp-checklist">
+          <div class="att-emp-loading"><i class="fa fa-spinner fa-spin"></i> Loading employees…</div>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="att-field">
+        <label>Notes (Optional)</label>
+        <textarea id="addEmpRemarks" rows="2" placeholder="Add any notes for this batch log-in…"
+                  style="padding:9px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;width:100%;resize:vertical;"></textarea>
+      </div>
+
+    </div><!-- /modal-body -->
+
+    <div class="att-modal-footer">
+      <button type="button" class="att-btn outline" onclick="closeAttModal()">Cancel</button>
+      <button type="button" class="att-btn primary" id="addAttSubmitBtn" onclick="submitLogEmployeeIn()">
+        <i class="fa fa-arrow-right-to-bracket"></i>
+        <span id="addAttBtnLabel">Log Time In</span>
+      </button>
+    </div>
+
   </div>
 </div>
 
 <script>
-// ── Employee shift data cache ─────────────────────────────────────────────────
-let _currentShift = null;
+// ── Employee list state ───────────────────────────────────────────────────────
+let _empListCache = [];
 
-async function onAddAttendanceEmployeeChange(sel) {
-    const empId   = sel.value;
-    const hint    = document.getElementById('add-shift-hint');
-    const hintTxt = document.getElementById('add-shift-hint-text');
-    _currentShift = null;
+// ── Open / Close ──────────────────────────────────────────────────────────────
+window.openAttModal = function() {
+    const modal = document.getElementById('addAttendanceModal');
+    modal.style.display = 'flex';
+    startLoginTimeLive();
+    loadEmployeesForModal();
+    document.getElementById('addAttError').style.display = 'none';
+};
 
-    if (!empId) { hint.style.display = 'none'; return; }
+window.closeAttModal = function() {
+    document.getElementById('addAttendanceModal').style.display = 'none';
+    stopLoginTimeLive();
+    document.getElementById('addEmpSearch').value = '';
+    document.getElementById('addEmpDeptFilter').value = '';
+    document.getElementById('addEmpPosFilter').value  = '';
+    document.getElementById('addEmpRemarks').value    = '';
+    document.getElementById('addAttError').style.display = 'none';
+    _empListCache = [];
+    renderEmployeeList([]);
+    updateAddSelectionCount();
+};
 
-    try {
-        const res  = await fetch(`<?= BASE_URL ?>actions/get-employee-shift.php?employee_id=${empId}`);
-        const data = await res.json();
-
-        if (!data.success || !data.start_time) {
-            hint.style.display = 'none'; return;
-        }
-        _currentShift = data;
-
-        const start      = formatTime12h(data.start_time);
-        const end        = data.end_time ? formatTime12h(data.end_time) : '—';
-        const empType    = data.employment_type === 'PART_TIME' ? ' · Part-Time' : ' · Full-Time';
-        const graceNote  = (data.employment_type !== 'PART_TIME' && data.grace_period_minutes > 0)
-            ? ` · ${data.grace_period_minutes}-min grace` : '';
-
-        hintTxt.textContent = `Shift: ${data.shift_name || 'Regular'} · ${start} – ${end}${graceNote}${empType}`;
-        hint.style.display  = 'block';
-
-        // Re-evaluate status if time_in already filled
-        const timeIn = document.getElementById('add_time_in').value;
-        if (timeIn) onAddTimeInChange(timeIn);
-
-    } catch (e) {
-        hint.style.display = 'none';
+// ── Live clock ────────────────────────────────────────────────────────────────
+let _clockInterval = null;
+function startLoginTimeLive() {
+    function tick() {
+        const now = new Date();
+        document.getElementById('loginTimeLive').textContent =
+            now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true});
     }
+    tick();
+    _clockInterval = setInterval(tick, 1000);
+}
+function stopLoginTimeLive() {
+    if (_clockInterval) { clearInterval(_clockInterval); _clockInterval = null; }
 }
 
-/**
- * Computes the suggested attendance status based on:
- *  - The employee's employment_type (FULL_TIME / PART_TIME)
- *  - The shift's start_time and half_day_time
- *
- * FULL_TIME rules:
- *   time_in <= start_time            → PRESENT
- *   time_in  > start_time AND < 9:00 → LATE
- *   time_in >= 9:00                  → HALF_DAY
- *
- * PART_TIME rules:
- *   time_in <= start_time            → PRESENT
- *   time_in  > start_time            → LATE   (no half-day rule)
- */
-function onAddTimeInChange(timeInVal) {
-    if (!timeInVal || !_currentShift?.start_time) return;
+// ── Load employees via AJAX ───────────────────────────────────────────────────
+window.loadEmployeesForModal = function() {
+    const search = document.getElementById('addEmpSearch').value.trim();
+    const dept   = document.getElementById('addEmpDeptFilter').value;
+    const pos    = document.getElementById('addEmpPosFilter').value;
+    const list   = document.getElementById('addEmpList');
+    list.innerHTML = '<div class="att-emp-loading"><i class="fa fa-spinner fa-spin"></i> Loading…</div>';
 
-    const toMins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const url = `<?= BASE_URL ?>actions/get-active-employees.php?search=${encodeURIComponent(search)}&dept_id=${encodeURIComponent(dept)}&pos_id=${encodeURIComponent(pos)}`;
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            _empListCache = data.employees || [];
+            renderEmployeeList(_empListCache);
+        })
+        .catch(() => {
+            list.innerHTML = '<div class="att-emp-loading" style="color:#dc2626;">Failed to load employees.</div>';
+        });
+};
 
-    const shiftStartMins = toMins(_currentShift.start_time);
-    const timeInMins     = toMins(timeInVal);
-    const isPartTime     = _currentShift.employment_type === 'PART_TIME';
+function renderEmployeeList(employees) {
+    const list = document.getElementById('addEmpList');
+    if (!employees || employees.length === 0) {
+        list.innerHTML = '<div class="att-emp-loading">No employees found.</div>';
+        updateAddSelectionCount();
+        return;
+    }
 
-    const statusSel   = document.getElementById('add_status');
-    const autoBadge   = document.getElementById('add-status-auto-badge');
-    const statusHint  = document.getElementById('add-status-hint');
+    list.innerHTML = employees.map(emp => {
+        const empId  = emp.employee_id;
+        const name   = escHtml(emp.full_name);
+        const empNo  = escHtml(emp.employee_no || '—');
+        const dept   = escHtml(emp.department_name || '');
+        const pos    = escHtml(emp.position_name  || '');
+        const logged = emp.already_logged;
+        const active = emp.needs_timeout;
 
-    let suggestedStatus, hintMsg, hintColor;
+        let badgeHtml = '';
+        let disabled  = '';
+        let rowClass  = 'att-emp-item';
 
-    if (isPartTime) {
-        // ── PART-TIME: only PRESENT / LATE, no half-day ──────────────────────
-        if (timeInMins <= shiftStartMins) {
-            suggestedStatus = 'PRESENT';
-            hintMsg  = `On time (shift starts ${formatTime12h(_currentShift.start_time)})`;
-            hintColor = '#059669';
-        } else {
-            const minsLate  = timeInMins - shiftStartMins;
-            suggestedStatus = 'LATE';
-            hintMsg  = `${minsLate} min${minsLate > 1 ? 's' : ''} late`;
-            hintColor = '#d97706';
+        if (active) {
+            // Has time_in, no time_out — active check-in, cannot add again
+            badgeHtml = '<span class="att-emp-item-badge active">Active</span>';
+            disabled  = 'disabled';
+            rowClass += ' att-emp-item--disabled';
+        } else if (logged) {
+            // Already has any record today (ABSENT, LEAVE, etc.)
+            const stBadge = emp.current_status
+                ? escHtml(emp.current_status.charAt(0) + emp.current_status.slice(1).toLowerCase())
+                : 'Recorded';
+            badgeHtml = `<span class="att-emp-item-badge recorded">${stBadge}</span>`;
+            disabled  = 'disabled';
+            rowClass += ' att-emp-item--disabled';
         }
+
+        return `
+        <label class="${rowClass}">
+          <input type="checkbox" class="add-emp-check" value="${empId}"
+                 ${disabled} onchange="updateAddSelectionCount()">
+          <div class="att-av" style="flex-shrink:0;">${name.charAt(0)}${(emp.full_name.split(' ')[1]||'').charAt(0)}</div>
+          <div class="att-emp-item-info">
+            <div class="att-emp-item-name">${name} <span class="att-empno-small">${empNo}</span> ${badgeHtml}</div>
+            <div class="att-emp-item-meta">${dept}${dept && pos ? ' · ' : ''}${pos}</div>
+          </div>
+        </label>`;
+    }).join('');
+
+    updateAddSelectionCount();
+}
+
+function updateAddSelectionCount() {
+    const checked = document.querySelectorAll('.add-emp-check:checked');
+    const label   = document.getElementById('addEmpSelectedCount');
+    const btn     = document.getElementById('addAttBtnLabel');
+    if (checked.length > 0) {
+        label.textContent = `${checked.length} selected`;
+        label.style.display = 'inline-block';
+        btn.textContent = `Log Time In (${checked.length})`;
     } else {
-        // ── FULL-TIME: PRESENT / LATE / HALF_DAY ─────────────────────────────
-        // Half-day threshold: use shift's half_day_time if set, otherwise 9:00 AM
-        const halfDayMins = _currentShift.half_day_time
-            ? toMins(_currentShift.half_day_time)
-            : 9 * 60; // default 9:00 AM
-
-        if (timeInMins <= shiftStartMins) {
-            suggestedStatus = 'PRESENT';
-            hintMsg   = `On time (shift starts ${formatTime12h(_currentShift.start_time)})`;
-            hintColor = '#059669';
-        } else if (timeInMins < halfDayMins) {
-            // After shift start but before half-day threshold → LATE
-            const minsLate  = timeInMins - shiftStartMins;
-            suggestedStatus = 'LATE';
-            hintMsg   = `${minsLate} min${minsLate > 1 ? 's' : ''} late (before ${formatTime12h(_currentShift.half_day_time || '09:00')})`;
-            hintColor = '#d97706';
-        } else {
-            // At or after half-day threshold → HALF_DAY
-            suggestedStatus = 'HALF_DAY';
-            hintMsg   = `At or after ${formatTime12h(_currentShift.half_day_time || '09:00')} — Half Day`;
-            hintColor = '#dc2626';
-        }
+        label.style.display = 'none';
+        btn.textContent = 'Log Time In';
     }
-
-    statusSel.value             = suggestedStatus;
-    autoBadge.style.display     = 'inline-block';
-    statusHint.style.display    = 'block';
-    statusHint.textContent      = '⚡ Auto-suggested: ' + hintMsg;
-    statusHint.style.color      = hintColor;
 }
 
-function formatTime12h(time24) {
-    if (!time24) return '';
-    const [h, m] = time24.split(':').map(Number);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const h12  = h > 12 ? h - 12 : (h === 0 ? 12 : h);
-    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
-}
+window.selectAllAvailableEmployees = function() {
+    document.querySelectorAll('.add-emp-check:not([disabled])').forEach(cb => cb.checked = true);
+    updateAddSelectionCount();
+};
 
-// ── Form submit ───────────────────────────────────────────────────────────────
-async function submitAddAttendance(e) {
-    e.preventDefault();
-    const form   = document.getElementById('addAttForm');
-    const btn    = document.getElementById('addAttSubmitBtn');
-    const errBox = document.getElementById('addAttError');
+window.clearEmployeeSelection = function() {
+    document.querySelectorAll('.add-emp-check').forEach(cb => cb.checked = false);
+    updateAddSelectionCount();
+};
+
+// ── Submit ────────────────────────────────────────────────────────────────────
+window.submitLogEmployeeIn = function() {
+    const checked = document.querySelectorAll('.add-emp-check:checked');
+    const errBox  = document.getElementById('addAttError');
+    const btn     = document.getElementById('addAttSubmitBtn');
 
     errBox.style.display = 'none';
+
+    if (checked.length === 0) {
+        errBox.textContent   = 'Please select at least one employee to log in.';
+        errBox.style.display = 'block';
+        return;
+    }
+
     btn.disabled  = true;
-    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Saving…';
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Logging in…';
 
-    const fd = new FormData(form);
+    const fd = new FormData();
+    checked.forEach(cb => fd.append('employee_ids[]', cb.value));
+    fd.append('remarks', document.getElementById('addEmpRemarks').value.trim());
 
-    try {
-        const res = await fetch('<?= BASE_URL ?>actions/add-attendance.php',
-                                { method: 'POST', body: fd });
-        const ct  = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) {
-            throw new Error('Server returned unexpected response. Check PHP logs.');
-        }
-        const data = await res.json();
-
-        if (data.success) {
-            closeAddModal();
-            location.reload();
-        } else {
-            errBox.textContent   = data.message || 'Could not save attendance.';
+    fetch('<?= BASE_URL ?>actions/add-attendance.php', {method:'POST', body:fd})
+        .then(r => {
+            const ct = r.headers.get('content-type') || '';
+            if (!ct.includes('application/json')) return r.text().then(t => { throw new Error(t.substring(0, 200)); });
+            return r.json();
+        })
+        .then(data => {
+            if (data.success) {
+                closeAttModal();
+                location.reload();
+            } else {
+                errBox.textContent   = data.message || 'Could not log attendance.';
+                errBox.style.display = 'block';
+                btn.disabled  = false;
+                btn.innerHTML = '<i class="fa fa-arrow-right-to-bracket"></i> <span id="addAttBtnLabel">Log Time In</span>';
+            }
+        })
+        .catch(err => {
+            errBox.textContent   = 'Error: ' + (err.message || 'Network error.');
             errBox.style.display = 'block';
             btn.disabled  = false;
-            btn.innerHTML = '<i class="fa fa-floppy-disk"></i> Save Attendance';
-        }
-    } catch (err) {
-        errBox.textContent   = err.message || 'Network error. Please try again.';
-        errBox.style.display = 'block';
-        btn.disabled  = false;
-        btn.innerHTML = '<i class="fa fa-floppy-disk"></i> Save Attendance';
-    }
-}
-
-function closeAddModal() {
-    document.getElementById('addAttendanceModal').style.display = 'none';
-    document.getElementById('addAttForm').reset();
-    document.getElementById('add-shift-hint').style.display     = 'none';
-    document.getElementById('add-status-auto-badge').style.display = 'none';
-    document.getElementById('add-status-hint').style.display    = 'none';
-    document.getElementById('addAttError').style.display         = 'none';
-    _currentShift = null;
-}
+            btn.innerHTML = '<i class="fa fa-arrow-right-to-bracket"></i> <span id="addAttBtnLabel">Log Time In</span>';
+        });
+};
 </script>

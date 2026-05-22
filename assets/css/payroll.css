@@ -209,6 +209,25 @@
     padding-left: 8px;
 }
 
+.additions-title {
+    border-left: 4px solid #7c3aed;
+    padding-left: 8px;
+}
+
+/* TOTAL TAKE-HOME PAY — shown below post-deduction additions */
+.takehome-box {
+    margin-top: 8px;
+    background: #f5f3ff;
+    border: 2px solid #c4b5fd;
+    border-radius: 12px;
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 18px;
+    font-weight: bold;
+    color: #5b21b6;
+}
+
 /* CARD */
 .card {
     background: #f5f7f9;

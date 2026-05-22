@@ -89,6 +89,56 @@ if (!empty($deductions) && is_array($deductions)) {
     }
 }
 
+// ── New manual allowance adjustments ─────────────────────────────────────────
+// Sent as new_pa[n][label] + new_pa[n][amount]. Uses the reserved 'Adjustment'
+// allowance type (is_active=0) so these never appear in auto-generation.
+$newAllowances = $_POST['new_pa'] ?? [];
+if (!empty($newAllowances) && is_array($newAllowances)) {
+    $adjTypeRow = $pdo->query("
+        SELECT allowance_type_id FROM allowance_types
+        WHERE allowance_name = 'Adjustment' AND is_active = 0 LIMIT 1
+    ")->fetch();
+    if ($adjTypeRow) {
+        $adjTypeId = (int)$adjTypeRow['allowance_type_id'];
+        $insAdj = $pdo->prepare("
+            INSERT INTO payroll_allowances
+                (payroll_id, allowance_type_id, amount, is_adjustment, adjustment_label)
+            VALUES (?, ?, ?, 1, ?)
+        ");
+        foreach ($newAllowances as $item) {
+            $label  = trim($item['label'] ?? '');
+            $amount = max(0.0, (float)($item['amount'] ?? 0));
+            if ($label !== '' && $amount > 0) {
+                $insAdj->execute([$payrollId, $adjTypeId, $amount, $label]);
+            }
+        }
+    }
+}
+
+// ── New manual deduction adjustments ─────────────────────────────────────────
+$newDeductions = $_POST['new_pd'] ?? [];
+if (!empty($newDeductions) && is_array($newDeductions)) {
+    $adjTypeRow = $pdo->query("
+        SELECT deduction_type_id FROM deduction_types
+        WHERE deduction_name = 'Adjustment' AND is_active = 0 LIMIT 1
+    ")->fetch();
+    if ($adjTypeRow) {
+        $adjTypeId = (int)$adjTypeRow['deduction_type_id'];
+        $insAdj = $pdo->prepare("
+            INSERT INTO payroll_deductions
+                (payroll_id, deduction_type_id, amount, is_adjustment, adjustment_label)
+            VALUES (?, ?, ?, 1, ?)
+        ");
+        foreach ($newDeductions as $item) {
+            $label  = trim($item['label'] ?? '');
+            $amount = max(0.0, (float)($item['amount'] ?? 0));
+            if ($label !== '' && $amount > 0) {
+                $insAdj->execute([$payrollId, $adjTypeId, $amount, $label]);
+            }
+        }
+    }
+}
+
 // ── Recompute totals from DB rows (uses shared helper from payroll-utils.php) ─
 recalculatePayrollTotals($pdo, $payrollId);
 

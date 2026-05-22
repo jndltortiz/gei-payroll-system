@@ -78,9 +78,17 @@ function computePayroll() {
     document.querySelectorAll('#edit-allowances-container input[type="number"]').forEach(input => {
         totalAllowances += Number(input.value) || 0;
     });
+    // Include newly added one-time allowances
+    document.querySelectorAll('#edit-new-allowances input[type="number"]').forEach(input => {
+        totalAllowances += Number(input.value) || 0;
+    });
 
     let totalDeductions = 0;
     document.querySelectorAll('#edit-deductions-container input[type="number"]').forEach(input => {
+        totalDeductions += Number(input.value) || 0;
+    });
+    // Include newly added one-time deductions
+    document.querySelectorAll('#edit-new-deductions input[type="number"]').forEach(input => {
         totalDeductions += Number(input.value) || 0;
     });
 
@@ -111,29 +119,45 @@ window.openPayslip = function(el) {
         { name: 'SSS Loan',       is_gov: false, is_loan: true,  amount: Number(el.dataset.sssLoan || 0) },
     ].filter(row => Number(row.amount) !== 0);
 
-    // Earnings: Basic Salary always shown; allowances filtered to non-zero
-    const parsedAllowances = parseJsonData(el.dataset.allowances, fallbackAllowances);
+    // Separate post-deduction additions (Rice Subsidy, Laundry Allowance) per GEI payslip format.
+    // These appear AFTER deductions as additions to Net Pay → Total Take-Home Pay.
+    const POST_DED = /rice|laundry/i;
+    const allAllowances = parseJsonData(el.dataset.allowances, fallbackAllowances)
+        .filter(r => Number(r.amount) !== 0);
+    const postDedAllowances = allAllowances.filter(r =>  POST_DED.test(r.name));
+    const coreAllowances    = allAllowances.filter(r => !POST_DED.test(r.name))
+        .map(r => ({
+            ...r,
+            name: /additional assignment/i.test(r.name) ? r.name + ' (Overload)' : r.name
+        }));
+
     const earningsRows = [
         { name: 'Basic Salary', amount: basic },
-        ...parsedAllowances.filter(r => Number(r.amount) !== 0)
+        ...coreAllowances
     ];
 
     // Deductions: filter zero-value rows before grouping
     const allDeductions = parseJsonData(el.dataset.deductions, fallbackDeductions)
         .filter(r => Number(r.amount) !== 0);
 
-    let gross = Number(el.dataset.gross || 0);
-    if (!gross) {
-        gross = earningsRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    // storedGross includes rice/laundry; coreGross excludes them for display
+    const postDedTotal = postDedAllowances.reduce((s, r) => s + Number(r.amount), 0);
+    let storedGross = Number(el.dataset.gross || 0);
+    if (!storedGross) {
+        storedGross = earningsRows.reduce((s, r) => s + Number(r.amount), 0) + postDedTotal;
     }
+    const coreGross = storedGross - postDedTotal;
 
     let totalDed = Number(el.dataset.totalDeductions || 0);
     if (!totalDed && allDeductions.length) {
         totalDed = allDeductions.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     }
 
-    let net = Number(el.dataset.net || 0);
-    if (!net) net = gross - totalDed;
+    // storedNet = finalTakeHome; intermediateNet = net before post-deduction additions
+    let storedNet = Number(el.dataset.net || 0);
+    if (!storedNet) storedNet = storedGross - totalDed;
+    const intermediateNet = storedNet - postDedTotal;
+    const finalTakeHome   = storedNet;
 
     document.getElementById("ps-name").innerText     = el.dataset.name || '';
     document.getElementById("ps-position").innerText = el.dataset.position || '';
@@ -144,11 +168,25 @@ window.openPayslip = function(el) {
     if (periodLabel) periodLabel.innerText = el.dataset.periodLabel || "-";
 
     renderPayslipRows("ps-earnings-rows", earningsRows, "No earnings");
-    document.getElementById("ps-gross").innerText = peso(gross);
+    document.getElementById("ps-gross").innerText = peso(coreGross);
 
     renderGroupedDeductionRows("ps-deductions-rows", allDeductions);
     document.getElementById("ps-totalded").innerText = peso(totalDed);
-    document.getElementById("ps-net").innerText      = peso(net);
+    document.getElementById("ps-net").innerText      = peso(intermediateNet);
+
+    // Post-deduction additions section (Rice Subsidy, Laundry Allowance)
+    const postDedSection = document.getElementById("ps-postded-section");
+    const takeHomeBox    = document.getElementById("ps-takehome-box");
+    if (postDedTotal > 0) {
+        renderPayslipRows("ps-postded-rows", postDedAllowances, "");
+        document.getElementById("ps-postded-total").innerText = peso(postDedTotal);
+        document.getElementById("ps-takehome").innerText      = peso(finalTakeHome);
+        if (postDedSection) postDedSection.style.display = '';
+        if (takeHomeBox)    takeHomeBox.style.display    = '';
+    } else {
+        if (postDedSection) postDedSection.style.display = 'none';
+        if (takeHomeBox)    takeHomeBox.style.display    = 'none';
+    }
 
     const statusEl = document.getElementById("ps-status");
     if (statusEl) statusEl.innerText = el.dataset.payrollStatus || '—';
@@ -219,27 +257,53 @@ window.downloadPayslipPDF = function() {
 }
 
 window.openEdit = function(el) {
-    document.getElementById("edit-empid").value        = el.dataset.empid;
-    document.getElementById("edit-payrollid").value   = el.dataset.payrollId;
-    document.getElementById("edit-name").innerText    = el.dataset.name     || '';
-    document.getElementById("edit-position").innerText = el.dataset.position || '';
-    document.getElementById("edit-dept").innerText    = el.dataset.dept     || '';
-    document.getElementById("edit-basic").value       = el.dataset.basic    || 0;
+    document.getElementById("edit-empid").value         = el.dataset.empid;
+    document.getElementById("edit-payrollid").value     = el.dataset.payrollId;
+    document.getElementById("edit-name").innerText      = el.dataset.name     || '';
+    document.getElementById("edit-position").innerText  = el.dataset.position || '';
+    document.getElementById("edit-dept").innerText      = el.dataset.dept     || '';
+    document.getElementById("edit-basic").value         = el.dataset.basic    || 0;
 
-    const allowances      = parseJsonData(el.dataset.allowances, []);
-    const deductions      = parseJsonData(el.dataset.deductions, []);
+    // Clear previous one-time adjustment rows
+    document.getElementById('edit-new-allowances').innerHTML = '';
+    document.getElementById('edit-new-deductions').innerHTML = '';
+
+    const allAllowances   = parseJsonData(el.dataset.allowances, []);
+    const allDeductions   = parseJsonData(el.dataset.deductions, []);
     const totalAllowances = Number(el.dataset.totalAllowances || 0);
+
+    // Separate adjustments (already-saved manual entries) from standard rows
+    const stdAllowances = allAllowances.filter(r => !r.is_adjustment);
+    const adjAllowances = allAllowances.filter(r =>  r.is_adjustment);
+    const stdDeductions = allDeductions.filter(r => !r.is_adjustment);
+    const adjDeductions = allDeductions.filter(r =>  r.is_adjustment);
 
     // ── Allowances ────────────────────────────────────────────────────────────
     const allowContainer = document.getElementById('edit-allowances-container');
-    if (allowances.length) {
-        allowContainer.innerHTML = allowances.map(row => `
+    if (stdAllowances.length) {
+        let html = stdAllowances.map(row => `
             <div>
                 <label>${escHtml(row.name)}</label>
                 <input type="number" name="pa[${Number(row.type_id)}]"
                        value="${Number(row.amount || 0).toFixed(2)}"
                        step="0.01" min="0">
             </div>`).join('');
+        // Render already-saved adjustments as read-only info rows
+        if (adjAllowances.length) {
+            html += `<p style="grid-column:1/-1;font-size:11px;font-weight:700;text-transform:uppercase;
+                                color:#059669;letter-spacing:.5px;margin:10px 0 4px;
+                                border-bottom:1px dashed #d1fae5;padding-bottom:3px;">Existing Adjustments</p>`;
+            html += adjAllowances.map(row => `
+                <div>
+                    <label style="color:#059669;">
+                        <i class="fa fa-sparkles" style="font-size:10px;"></i>
+                        ${escHtml(row.name)}
+                        <span class="row-tag" style="background:#d1fae5;color:#065f46;font-size:9px;">Adj</span>
+                    </label>
+                    <span style="font-size:13px;font-weight:600;color:#059669;padding:8px 0;display:block;">${peso(row.amount)}</span>
+                </div>`).join('');
+        }
+        allowContainer.innerHTML = html;
     } else if (totalAllowances > 0) {
         allowContainer.innerHTML = `<p class="edit-empty" style="grid-column:1/-1;color:#b45309;">
             <i class="fa fa-triangle-exclamation"></i>
@@ -251,12 +315,12 @@ window.openEdit = function(el) {
 
     // ── Deductions — grouped by category ─────────────────────────────────────
     const dedContainer = document.getElementById('edit-deductions-container');
-    if (!deductions.length) {
+    if (!stdDeductions.length && !adjDeductions.length) {
         dedContainer.innerHTML = '<p class="edit-empty" style="grid-column:1/-1;">No deductions on this record.</p>';
     } else {
-        const govDeds   = deductions.filter(d => d.is_gov);
-        const loanDeds  = deductions.filter(d => d.is_loan);
-        const otherDeds = deductions.filter(d => !d.is_gov && !d.is_loan);
+        const govDeds   = stdDeductions.filter(d => d.is_gov);
+        const loanDeds  = stdDeductions.filter(d => d.is_loan);
+        const otherDeds = stdDeductions.filter(d => !d.is_gov && !d.is_loan);
 
         function buildDedInputs(items) {
             return items.map(row => `
@@ -282,6 +346,19 @@ window.openEdit = function(el) {
         if (govDeds.length)   html += groupHeader('Government Contributions') + buildDedInputs(govDeds);
         if (loanDeds.length)  html += groupHeader('Loans')                    + buildDedInputs(loanDeds);
         if (otherDeds.length) html += groupHeader('Other Deductions')         + buildDedInputs(otherDeds);
+        // Render already-saved deduction adjustments as read-only info rows
+        if (adjDeductions.length) {
+            html += groupHeader('Existing Adjustments');
+            html += adjDeductions.map(row => `
+                <div>
+                    <label style="color:#dc2626;">
+                        <i class="fa fa-sparkles" style="font-size:10px;"></i>
+                        ${escHtml(row.name)}
+                        <span class="row-tag" style="background:#fee2e2;color:#991b1b;font-size:9px;">Adj</span>
+                    </label>
+                    <span style="font-size:13px;font-weight:600;color:#dc2626;padding:8px 0;display:block;">${peso(row.amount)}</span>
+                </div>`).join('');
+        }
         dedContainer.innerHTML = html;
     }
 
@@ -289,6 +366,51 @@ window.openEdit = function(el) {
     document.body.style.overflow = "hidden";
     computePayroll();
 }
+
+// ── One-time allowance / deduction adjustment rows ────────────────────────────
+window.addAllowanceAdjustment = function() {
+    const container = document.getElementById('edit-new-allowances');
+    const n = container.querySelectorAll('.adj-row').length;
+    const div = document.createElement('div');
+    div.className = 'adj-row';
+    div.style.cssText = 'display:grid;grid-template-columns:1fr 130px 36px;gap:8px;align-items:center;margin:6px 0;';
+    div.innerHTML = `
+        <input type="text"   name="new_pa[${n}][label]"  placeholder="Label (e.g. Reimbursement)"
+               style="padding:8px 10px;border:1.5px solid #6ee7b7;border-radius:8px;font-size:13px;width:100%;" required>
+        <input type="number" name="new_pa[${n}][amount]" placeholder="0.00"
+               step="0.01" min="0"
+               style="padding:8px 10px;border:1.5px solid #6ee7b7;border-radius:8px;font-size:13px;width:100%;"
+               oninput="computePayroll()">
+        <button type="button" onclick="this.closest('.adj-row').remove();computePayroll();"
+                title="Remove"
+                style="border:none;background:#fef2f2;color:#ef4444;border-radius:6px;
+                       width:36px;height:36px;cursor:pointer;font-size:14px;">
+            <i class="fa fa-xmark"></i>
+        </button>`;
+    container.appendChild(div);
+};
+
+window.addDeductionAdjustment = function() {
+    const container = document.getElementById('edit-new-deductions');
+    const n = container.querySelectorAll('.adj-row').length;
+    const div = document.createElement('div');
+    div.className = 'adj-row';
+    div.style.cssText = 'display:grid;grid-template-columns:1fr 130px 36px;gap:8px;align-items:center;margin:6px 0;';
+    div.innerHTML = `
+        <input type="text"   name="new_pd[${n}][label]"  placeholder="Label (e.g. Cash Advance)"
+               style="padding:8px 10px;border:1.5px solid #fca5a5;border-radius:8px;font-size:13px;width:100%;" required>
+        <input type="number" name="new_pd[${n}][amount]" placeholder="0.00"
+               step="0.01" min="0"
+               style="padding:8px 10px;border:1.5px solid #fca5a5;border-radius:8px;font-size:13px;width:100%;"
+               oninput="computePayroll()">
+        <button type="button" onclick="this.closest('.adj-row').remove();computePayroll();"
+                title="Remove"
+                style="border:none;background:#fef2f2;color:#ef4444;border-radius:6px;
+                       width:36px;height:36px;cursor:pointer;font-size:14px;">
+            <i class="fa fa-xmark"></i>
+        </button>`;
+    container.appendChild(div);
+};
 
 window.closeEdit = function() {
     document.getElementById("editModal").style.display = "none";

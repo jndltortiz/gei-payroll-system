@@ -65,32 +65,42 @@ $allowanceDetails = [];
 $deductionDetails = [];
 if (!empty($records)) {
     $detailStmt = $pdo->prepare("
-        SELECT pr.payroll_id, at2.allowance_name AS name, pa.amount
+        SELECT pr.payroll_id,
+               at2.allowance_type_id                        AS type_id,
+               COALESCE(pa.adjustment_label, at2.allowance_name) AS name,
+               pa.amount,
+               COALESCE(pa.is_adjustment, 0)                AS is_adjustment
         FROM payroll_records pr
         JOIN payroll_allowances pa ON pr.payroll_id = pa.payroll_id
         JOIN allowance_types at2 ON pa.allowance_type_id = at2.allowance_type_id
         WHERE pr.period_id = ?
-        ORDER BY at2.allowance_name
+        ORDER BY pa.is_adjustment, at2.allowance_name
     ");
     $detailStmt->execute([$periodId]);
     foreach ($detailStmt->fetchAll() as $d) {
         $allowanceDetails[$d['payroll_id']][] = [
-            'name' => $d['name'],
-            'amount' => (float)$d['amount'],
+            'type_id'       => (int)$d['type_id'],
+            'name'          => $d['name'],
+            'amount'        => (float)$d['amount'],
+            'is_adjustment' => (bool)$d['is_adjustment'],
         ];
     }
 
     $detailStmt = $pdo->prepare("
         SELECT pr.payroll_id,
-               dt.deduction_name                    AS name,
-               COALESCE(dt.is_absence_deduction, 0) AS is_absence,
+               dt.deduction_type_id                             AS type_id,
+               COALESCE(pd.adjustment_label, dt.deduction_name) AS name,
+               COALESCE(dt.is_absence_deduction, 0)             AS is_absence,
+               COALESCE(dt.is_government, 0)                    AS is_gov,
+               COALESCE(dt.is_loan, 0)                          AS is_loan,
+               COALESCE(pd.is_adjustment, 0)                    AS is_adjustment,
                pd.amount,
                pd.absence_days
         FROM payroll_records pr
         JOIN payroll_deductions pd ON pr.payroll_id = pd.payroll_id
         JOIN deduction_types dt ON pd.deduction_type_id = dt.deduction_type_id
         WHERE pr.period_id = ?
-        ORDER BY dt.deduction_name
+        ORDER BY COALESCE(dt.is_government,0) DESC, COALESCE(dt.is_loan,0) DESC, dt.deduction_name
     ");
     $detailStmt->execute([$periodId]);
     foreach ($detailStmt->fetchAll() as $d) {
@@ -101,8 +111,12 @@ if (!empty($records)) {
             $name .= ' (' . $label . ')';
         }
         $deductionDetails[$d['payroll_id']][] = [
-            'name'   => $name,
-            'amount' => (float)$d['amount'],
+            'type_id'       => (int)$d['type_id'],
+            'name'          => $name,
+            'amount'        => (float)$d['amount'],
+            'is_gov'        => (bool)$d['is_gov'],
+            'is_loan'       => (bool)$d['is_loan'],
+            'is_adjustment' => (bool)$d['is_adjustment'],
         ];
     }
 }
@@ -437,12 +451,10 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
                     data-position="<?= htmlspecialchars($r['position_name'] ?? '') ?>"
                     data-dept="<?= htmlspecialchars($r['department_name'] ?? '') ?>"
                     data-empid="<?= $r['employee_id'] ?>"
-                    data-basic="<?= $r['basic_pay'] ?>" data-assign="<?= $r['addl_assign'] ?>"
-                    data-rice="<?= $r['rice_sub'] ?>" data-laundry="<?= $r['laundry'] ?>"
-                    data-peraa-premium="<?= $r['peraa_p'] ?>" data-peraa-loan="<?= $r['peraa_l'] ?>"
-                    data-hdmf-premium="<?= $r['hdmf_p'] ?>" data-hdmf-loan="<?= $r['hdmf_l'] ?>"
-                    data-philhealth="<?= $r['philhealth'] ?>"
-                    data-sss-premium="<?= $r['sss_p'] ?>" data-sss-loan="<?= $r['sss_l'] ?>">
+                    data-basic="<?= $r['basic_pay'] ?>"
+                    data-total-allowances="<?= $r['total_allowances'] ?>"
+                    data-allowances="<?= $allowanceJson ?>"
+                    data-deductions="<?= $deductionJson ?>">
                     <i class="fa fa-pen"></i>
                 </button>
                 <?php endif; ?>

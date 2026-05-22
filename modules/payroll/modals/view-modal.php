@@ -76,10 +76,29 @@
             </div>
         </div>
 
-        <!-- NET PAY -->
+        <!-- NET PAY (before post-deduction additions) -->
         <div class="net-box">
             <span>NET PAY</span>
             <strong id="ps-net">-</strong>
+        </div>
+
+        <!-- POST-DEDUCTION ADDITIONS (Rice Subsidy, Laundry — shown only when present) -->
+        <div id="ps-postded-section" class="payslip-section" style="display:none;">
+            <h4 class="additions-title">ADDITIONAL ALLOWANCES</h4>
+            <div class="card">
+                <div id="ps-postded-rows"></div>
+                <hr>
+                <div class="row total">
+                    <strong>Total Additions</strong>
+                    <strong id="ps-postded-total">-</strong>
+                </div>
+            </div>
+        </div>
+
+        <!-- TOTAL TAKE-HOME PAY (shown when post-deduction additions exist) -->
+        <div id="ps-takehome-box" class="takehome-box" style="display:none;">
+            <span>TOTAL TAKE-HOME PAY</span>
+            <strong id="ps-takehome">-</strong>
         </div>
 
         <!-- EMPLOYER CONTRIBUTIONS — admin/principal view only; hidden on print -->
