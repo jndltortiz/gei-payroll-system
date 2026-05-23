@@ -75,7 +75,7 @@ function buildPrincipalReviewContent(loan, activeLoans) {
       <!-- App ID + status badge -->
       <div class="review-app-id" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
         <span>Application ID: <strong>${esc(loan.account_reference || 'LA-' + String(loan.loan_id).padStart(7,'0'))}</strong></span>
-        <span class="pla-badge pla-badge--pending">Awaiting Your Approval</span>
+        <span class="pla-badge pla-badge--pending">Awaiting Verification</span>
       </div>
 
       <!-- Employee card -->
@@ -94,7 +94,7 @@ function buildPrincipalReviewContent(loan, activeLoans) {
       <!-- Loan details grid (matches screenshot layout) -->
       <div class="review-grid">
         <div><small>LOAN TYPE</small><strong>${esc(loan.loan_name)}</strong></div>
-        <div><small>MONTHLY DEDUCTION</small><strong class="text-teal">${peso(loan.monthly_deduction)}</strong></div>
+        <div><small>MONTHLY AMORTIZATION</small><strong class="text-teal">${peso(loan.monthly_deduction)}</strong></div>
         <div><small>AMOUNT REQUESTED</small><strong style="font-size:1.25rem">${peso(loan.total_amount)}</strong></div>
         <div><small>PERCENTAGE OF SALARY</small><strong>${pct}%</strong></div>
         <div><small>REQUESTED TERMS</small><strong>${term} months</strong></div>
@@ -107,7 +107,7 @@ function buildPrincipalReviewContent(loan, activeLoans) {
                  </div>
                </div>`
             : ''}
-        <div><small>FIRST PAYMENT</small><strong>${firstPay}</strong></div>
+        <div><small>FIRST DEDUCTION DATE</small><strong>${firstPay}</strong></div>
       </div>
 
       <!-- Financial Impact Assessment -->
@@ -135,7 +135,7 @@ function buildPrincipalReviewContent(loan, activeLoans) {
         </div>
         <div class="elig-item ${pctSalClass}">
           <i class="fa ${pctSalIcon}"></i>
-          Monthly deduction is ${pct}% of salary${parseFloat(pct) > 20 ? ' — exceeds recommended 20%' : ''}
+          Monthly amortization is ${pct}% of salary${parseFloat(pct) > 20 ? ' — exceeds recommended 20%' : ''}
         </div>
       </div>
 
@@ -156,12 +156,16 @@ function buildPrincipalReviewContent(loan, activeLoans) {
       <div id="principal-review-flash" style="display:none" class="loan-flash"></div>
 
       <!-- Action buttons -->
-      <div class="loan-modal-footer" style="margin:0;padding-top:16px;">
+      <div class="loan-modal-footer" style="margin:0;padding-top:16px;flex-wrap:wrap;gap:8px;">
         <button class="btn-deny" onclick="openDenyReason(${loan.loan_id},'${esc(loan.employee_name)}')">
-          <i class="fa fa-times"></i> Deny Application
+          <i class="fa fa-times"></i> Reject Record
+        </button>
+        <button class="btn-outline" onclick="openReturnForCorrection(${loan.loan_id},'${esc(loan.employee_name)}')"
+                style="color:#b45309;border-color:#f59e0b;background:#fffbeb;">
+          <i class="fa fa-rotate-left"></i> Return for Correction
         </button>
         <button class="btn-approve" onclick="openConfirmApprove(${loan.loan_id})">
-          <i class="fa fa-check"></i> Approve Loan
+          <i class="fa fa-check"></i> Approve for Payroll Deduction
         </button>
       </div>
     `;
@@ -217,12 +221,69 @@ async function confirmPrincipalDeny() {
             }, 1200);
         } else {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fa fa-times"></i> Confirm Denial';
+            btn.innerHTML = '<i class="fa fa-times"></i> Confirm Rejection';
         }
     } catch {
         showLoansFlash('deny-reason-flash', 'Network error. Please try again.', false);
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa fa-times"></i> Confirm Denial';
+        btn.innerHTML = '<i class="fa fa-times"></i> Confirm Rejection';
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RETURN FOR CORRECTION FLOW  (opens sub-modal for reason input)
+// ═══════════════════════════════════════════════════════════════
+let _returnLoanId = null;
+
+function openReturnForCorrection(loanId, empName) {
+    _returnLoanId = loanId;
+    document.getElementById('return-emp-name-display').textContent = empName;
+    document.getElementById('principal-return-reason').value = '';
+    document.getElementById('return-reason-error').style.display = 'none';
+    document.getElementById('return-reason-flash').style.display = 'none';
+    document.getElementById('returnForCorrectionOverlay').style.display = 'flex';
+}
+
+function closeReturnForCorrection() {
+    document.getElementById('returnForCorrectionOverlay').style.display = 'none';
+    _returnLoanId = null;
+}
+
+async function confirmPrincipalReturn() {
+    const reason = document.getElementById('principal-return-reason').value.trim();
+    if (!reason) {
+        document.getElementById('return-reason-error').style.display = 'block';
+        return;
+    }
+    document.getElementById('return-reason-error').style.display = 'none';
+
+    const btn = document.getElementById('confirm-return-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Processing…';
+
+    const fd = new FormData();
+    fd.append('action', 'return_for_correction');
+    fd.append('loan_id', _returnLoanId);
+    fd.append('return_reason', reason);
+
+    try {
+        const res  = await fetch(`${BASE_URL}actions/loans-action.php`, { method: 'POST', body: fd });
+        const data = await res.json();
+        showLoansFlash('return-reason-flash', data.message, data.success);
+        if (data.success) {
+            setTimeout(() => {
+                closeReturnForCorrection();
+                closePrincipalReview();
+                location.reload();
+            }, 1200);
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-rotate-left"></i> Return for Correction';
+        }
+    } catch {
+        showLoansFlash('return-reason-flash', 'Network error. Please try again.', false);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-rotate-left"></i> Return for Correction';
     }
 }
 
@@ -278,12 +339,12 @@ async function submitPrincipalApprove() {
             }, 1200);
         } else {
             btn.disabled = false;
-            btn.innerHTML = '<i class="fa fa-check"></i> Yes, Approve Loan';
+            btn.innerHTML = '<i class="fa fa-check"></i> Approve for Payroll Deduction';
         }
     } catch {
         showLoansFlash('confirm-approve-flash', 'Network error. Please try again.', false);
         btn.disabled = false;
-        btn.innerHTML = '<i class="fa fa-check"></i> Yes, Approve Loan';
+        btn.innerHTML = '<i class="fa fa-check"></i> Approve for Payroll Deduction';
     }
 }
 
@@ -322,7 +383,7 @@ function buildPrincipalDetailsContent(loan, schedule) {
         ? Math.round(paid / parseFloat(loan.total_amount) * 100) : 0;
     const init = loanInitials(loan.employee_name);
     const approver = loan.approved_by_name
-        ? `Approved by <strong>${esc(loan.approved_by_name)}</strong> on ${fmt(loan.approved_at)}`
+        ? `Verified by <strong>${esc(loan.approved_by_name)}</strong> on ${fmt(loan.approved_at)}`
         : '';
 
     const schedHtml = schedule.map(s => `
@@ -371,13 +432,14 @@ function buildPrincipalDetailsContent(loan, schedule) {
           <span>${pct}% paid</span>
         </div>
         <div>
-          <small>MONTHLY PAYMENT</small>
+          <small>MONTHLY AMORTIZATION</small>
           <strong>${peso(loan.monthly_deduction)}</strong>
+          <span>Auto-deduction: <strong>${peso(parseFloat(loan.monthly_deduction)/2)}/payroll</strong></span>
           <span>End: ${fmt(loan.end_date)}</span>
         </div>
       </div>
 
-      <div class="sched-label">PAYMENT SCHEDULE</div>
+      <div class="sched-label">MONTHLY AMORTIZATION SCHEDULE</div>
       <div class="sched-table-wrap">
         <table class="sched-table">
           <thead><tr><th>Month</th><th>Payment Date</th><th>Amount</th><th>Status</th></tr></thead>
@@ -395,10 +457,11 @@ function buildPrincipalDetailsContent(loan, schedule) {
 // ─── Close modals on overlay click ──────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     [
-        ['principalReviewOverlay',  closePrincipalReview],
-        ['principalDetailsOverlay', closePrincipalDetails],
-        ['denyReasonOverlay',       closeDenyReason],
-        ['confirmApproveOverlay',   closeConfirmApprove],
+        ['principalReviewOverlay',       closePrincipalReview],
+        ['principalDetailsOverlay',      closePrincipalDetails],
+        ['denyReasonOverlay',            closeDenyReason],
+        ['returnForCorrectionOverlay',   closeReturnForCorrection],
+        ['confirmApproveOverlay',        closeConfirmApprove],
     ].forEach(([id, fn]) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('click', e => { if (e.target === el) fn(); });

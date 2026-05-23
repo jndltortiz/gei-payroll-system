@@ -292,14 +292,17 @@ try {
         $employerPhilHealth = 0.0;
         $employerPagibig    = 0.0;
         $insD = $pdo->prepare("
-            INSERT INTO payroll_deductions (payroll_id, deduction_type_id, amount)
-            VALUES (?,?,?)
+            INSERT INTO payroll_deductions (payroll_id, deduction_type_id, amount, loan_id)
+            VALUES (?,?,?,?)
         ");
 
         // Fetch this employee's ACTIVE loans upfront for use in loan deductions.
         // loan_types.is_active is the Payroll Settings auto-deduct toggle.
+        // loan_types.deduction_type_id links each loan to its payroll deduction row (migration 011).
         $empLoanStmt = $pdo->prepare("
-            SELECT el.loan_id, el.monthly_deduction, el.balance_amount, lt.loan_name
+            SELECT el.loan_id, el.monthly_deduction, el.balance_amount, lt.loan_name,
+                   lt.deduction_type_id,
+                   (lt.loan_name LIKE '%PERAA%') AS is_peraa
             FROM employee_loans el
             JOIN loan_types lt ON el.loan_type_id = lt.loan_type_id
             WHERE el.employee_id = :eid
@@ -334,19 +337,30 @@ try {
         ]);
         $empActiveLoansList = $empLoanStmt->fetchAll();
 
-        // Build lookup: keyword → total monthly deduction + loan IDs to update balance
-        $loanAmounts = ['sss'=>0,'hdmf'=>0,'peraa'=>0,'rural'=>0];
-        $loanIds     = ['sss'=>[],'hdmf'=>[],'peraa'=>[],'rural'=>[]];
+        // Build lookup: deduction_type_id → [per-payroll amount, loan_id]
+        // monthly_deduction stores the MONTHLY AMORTIZATION; divide by periodDivisor
+        // for the per-payroll deduction amount. PAUSED loans are excluded (status='ACTIVE' above).
+        $loanByDedType = [];
         foreach ($empActiveLoansList as $el) {
-            $ln = strtolower($el['loan_name']);
-            $ma = (float)$el['monthly_deduction'];
-            $ma = min($ma, (float)$el['balance_amount']); // never deduct more than balance
-            if      (strpos($ln,'sss')   !== false) { $loanAmounts['sss']   += $ma; $loanIds['sss'][]   = [$el['loan_id'],$ma]; }
-            elseif  (strpos($ln,'rural') !== false) { $loanAmounts['rural'] += $ma; $loanIds['rural'][] = [$el['loan_id'],$ma]; }
-            elseif  (strpos($ln,'peraa') !== false) { $loanAmounts['peraa'] += $ma; $loanIds['peraa'][] = [$el['loan_id'],$ma]; }
-            elseif  (strpos($ln,'pag-ibig') !== false || strpos($ln,'hdmf') !== false) {
-                $loanAmounts['hdmf'] += $ma; $loanIds['hdmf'][] = [$el['loan_id'],$ma];
+            // PERAA loan: FULL_TIME employees only
+            if ($el['is_peraa'] && ($emp['employment_type'] ?? 'FULL_TIME') !== 'FULL_TIME') continue;
+
+            $dtId = (int)($el['deduction_type_id'] ?? 0);
+            if (!$dtId) {
+                // Fallback: loan type has no deduction_type_id mapping (run migration 011)
+                // — skip silently so the payroll still generates without breaking
+                continue;
             }
+
+            // Per-payroll amount = monthly amortization ÷ payrolls_per_month
+            $perPayroll = round((float)$el['monthly_deduction'] / $periodDivisor, 2);
+            // Never deduct more than the remaining balance
+            $perPayroll = min($perPayroll, (float)$el['balance_amount']);
+
+            if (!isset($loanByDedType[$dtId])) {
+                $loanByDedType[$dtId] = ['amount' => 0.0, 'loan_id' => (int)$el['loan_id']];
+            }
+            $loanByDedType[$dtId]['amount'] += $perPayroll;
         }
 
         foreach ($dtypes as $type) {
@@ -383,28 +397,20 @@ try {
                 }
             }
 
-            $amt  = 0;
-            $name = strtolower($type['deduction_name']);
+            $amt          = 0;
+            $loanIdForRow = null; // populated only for loan deductions (stored in payroll_deductions)
+            $name         = strtolower($type['deduction_name']);
 
             // ── LOAN CHECK: runs FIRST, regardless of is_government flag ─────────
-            // A deduction is a loan if:
-            //   (a) is_loan = 1, OR
-            //   (b) the name contains 'loan' (catches cases where is_government is
-            //       set incorrectly on loan deduction types)
+            // A deduction row is a loan if is_loan = 1 OR name contains 'loan'.
             $isLoanDeduction = $type['is_loan'] || strpos($name, 'loan') !== false;
 
             if ($isLoanDeduction) {
-                // PERAA loan — FULL_TIME only
-                if (strpos($name, 'peraa') !== false) {
-                    if (($emp['employment_type'] ?? 'FULL_TIME') !== 'FULL_TIME') continue;
-                    $amt = $loanAmounts['peraa'];
-                } elseif (strpos($name, 'sss') !== false) {
-                    $amt = $loanAmounts['sss'];
-                } elseif (strpos($name, 'hdmf') !== false || strpos($name, 'pag-ibig') !== false
-                          || strpos($name, 'pagibig') !== false) {
-                    $amt = $loanAmounts['hdmf'];
-                } elseif (strpos($name, 'rural') !== false) {
-                    $amt = $loanAmounts['rural'];
+                // Look up by deduction_type_id FK (migration 011).
+                $dtId = (int)$type['deduction_type_id'];
+                if (isset($loanByDedType[$dtId]) && $loanByDedType[$dtId]['amount'] > 0) {
+                    $amt          = $loanByDedType[$dtId]['amount'];
+                    $loanIdForRow = $loanByDedType[$dtId]['loan_id'];
                 }
                 // amt stays 0 if employee has no active loan of this type — correct
 
@@ -510,7 +516,7 @@ try {
             }
 
             if ($amt > 0) {
-                $insD->execute([$payrollId, $type['deduction_type_id'], $amt]);
+                $insD->execute([$payrollId, $type['deduction_type_id'], $amt, $loanIdForRow]);
                 $totalDeductions += $amt;
             }
         }
@@ -543,7 +549,7 @@ try {
                 $wtaxAmt = round($annualTax / $taxPeriods, 2);
             }
             if ($wtaxAmt > 0) {
-                $insD->execute([$payrollId, $wtaxDtypeRow['deduction_type_id'], $wtaxAmt]);
+                $insD->execute([$payrollId, $wtaxDtypeRow['deduction_type_id'], $wtaxAmt, null]);
                 $totalDeductions += $wtaxAmt;
             }
         }

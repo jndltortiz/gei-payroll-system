@@ -32,7 +32,7 @@ if (!$settings) {
 }
 
 // Helper: get assignment label for a type
-function getAssignmentLabel(PDO $pdo, string $table, string $idCol, int $id): string {
+function getAssignmentLabel(PDO $pdo, string $table, int $id): string {
     $assignTables = [
         'allowance_types' => ['allowance_assignments', 'allowance_type_id'],
         'deduction_types' => ['deduction_assignments', 'deduction_type_id'],
@@ -85,6 +85,17 @@ $loans = $pdo->query("
     GROUP BY lt.loan_type_id, lt.loan_name, lt.is_active
     ORDER BY lt.loan_type_id
 ")->fetchAll();
+
+// Migration 010: weekend pay date rule + attendance source columns
+$hasMig010 = false;
+try {
+    $hasMig010 = (bool)$pdo->query("
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME   = 'payroll_settings'
+          AND COLUMN_NAME  = 'weekend_pay_date_rule'
+    ")->fetchColumn();
+} catch (PDOException $_e) {}
 
 // Fetch government rate tables
 $sssRates    = $pdo->query("SELECT * FROM sss_contribution_table WHERE is_active = 1 ORDER BY min_salary LIMIT 6")->fetchAll();
@@ -290,9 +301,8 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <th class="ps-th-toggle">AUTO-DEDUCT</th>
                                 <th>LOAN TYPE</th>
                                 <th>ACTIVE LOANS</th>
-                                <th>TOTAL MONTHLY DEDUCTION</th>
+                                <th>DEDUCTION PER CUTOFF</th>
                                 <th>ELIGIBLE FOR</th>
-                                <th>ACTIONS</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -300,7 +310,7 @@ require_once __DIR__ . '/../../includes/head.php';
                                 $autoDeduct   = (bool)($loan['is_active'] ?? 1);
                                 $activeCount  = (int)$loan['active_loan_count'];
                                 $totalMonthly = (float)$loan['total_monthly_deduction'];
-                                $loanAssign   = getAssignmentLabel($pdo, 'loan_types', 'loan_type_id', $loan['loan_type_id']);
+                                $loanAssign   = getAssignmentLabel($pdo, 'loan_types', $loan['loan_type_id']);
                                 $assignStyle  = str_contains($loanAssign, 'All') ? 'all' : 'specific';
                             ?>
                             <tr data-loan-id="<?= $loan['loan_type_id'] ?>" class="<?= !$autoDeduct ? 'ps-row-muted' : '' ?>">
@@ -329,13 +339,12 @@ require_once __DIR__ . '/../../includes/head.php';
                                 </td>
                                 <td>
                                     <?php if ($activeCount > 0): ?>
-                                        <span class="ps-loan-total">₱ <?= number_format($totalMonthly, 2) ?> <span class="ps-loan-total-sub">/ cutoff</span></span>
+                                        <span class="ps-loan-total">₱ <?= number_format($totalMonthly, 2) ?></span>
                                     <?php else: ?>
                                         <span class="text-muted">—</span>
                                     <?php endif; ?>
                                 </td>
                                 <td><span class="ps-badge-<?= $assignStyle ?>"><?= htmlspecialchars($loanAssign) ?></span></td>
-                                <td></td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -344,6 +353,10 @@ require_once __DIR__ . '/../../includes/head.php';
                     <div class="ps-loan-footer">
                         To create new loan types, approve applications, or adjust individual repayment amounts, go to
                         <a href="<?= BASE_URL ?>modules/loans/index.php" class="ps-link-teal">Loans Management</a>.
+                    </div>
+                    <div class="ps-info-note mt-2">
+                        <i class="bi bi-info-circle"></i>
+                        Loan deductions are applied every payroll cutoff — not once per month. The amount shown is deducted each time a payroll is generated for an employee with an active loan.
                     </div>
                 </div>
             </div>
@@ -370,7 +383,7 @@ require_once __DIR__ . '/../../includes/head.php';
                         </thead>
                         <tbody id="deductionTableBody">
                             <?php foreach ($deductions as $ded):
-                                $dedAssign   = getAssignmentLabel($pdo, 'deduction_types', 'deduction_type_id', $ded['deduction_type_id']);
+                                $dedAssign   = getAssignmentLabel($pdo, 'deduction_types', $ded['deduction_type_id']);
                                 $assignStyle = str_contains($dedAssign, 'All') ? 'all' : 'specific';
                                 $isFixed     = ($ded['deduction_value_type'] ?? 'FIXED') === 'FIXED';
                                 $displayVal  = $isFixed
@@ -439,7 +452,7 @@ require_once __DIR__ . '/../../includes/head.php';
                         </thead>
                         <tbody id="allowanceTableBody">
                             <?php foreach ($allowances as $al):
-                                $alAssign    = getAssignmentLabel($pdo, 'allowance_types', 'allowance_type_id', $al['allowance_type_id']);
+                                $alAssign    = getAssignmentLabel($pdo, 'allowance_types', $al['allowance_type_id']);
                                 $assignStyle = str_contains($alAssign, 'All') ? 'all' : 'specific';
                             ?>
                             <tr data-al-id="<?= $al['allowance_type_id'] ?>">
@@ -509,6 +522,20 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <i class="bi bi-info-circle"></i>
                                 Working days affect pro-rated salary and per-day computations. Ensure this matches your institution's schedule.
                             </div>
+                            <?php if ($hasMig010): ?>
+                            <div class="ps-form-group mt-3">
+                                <label class="ps-form-label">Attendance Source</label>
+                                <select class="ps-form-select" name="attendance_source" id="attendanceSource">
+                                    <option value="REFERENCE" <?= ($settings['attendance_source'] ?? 'REFERENCE') === 'REFERENCE' ? 'selected' : '' ?>>Use attendance as reference only</option>
+                                    <option value="MANUAL"    <?= ($settings['attendance_source'] ?? 'REFERENCE') === 'MANUAL'    ? 'selected' : '' ?>>Manual review only</option>
+                                    <option value="AUTO"      <?= ($settings['attendance_source'] ?? 'REFERENCE') === 'AUTO'      ? 'selected' : '' ?>>Auto-include approved attendance</option>
+                                </select>
+                                <div class="ps-info-note mt-2">
+                                    <i class="bi bi-info-circle"></i>
+                                    Documents how attendance informs payroll editing. Does not affect automatic pay computation.
+                                </div>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -570,57 +597,20 @@ require_once __DIR__ . '/../../includes/head.php';
                                 </div>
                                 <div class="ps-cutoff-desc" id="cutoff2Desc">Day <?= $settings['cutoff2_start_day'] ?? 16 ?> to Day <?= $settings['cutoff2_end_day'] ?? 31 ?> of each month</div>
                             </div>
+                            <?php if ($hasMig010): ?>
+                            <div class="ps-cutoff-block mt-3">
+                                <div class="ps-cutoff-label">Weekend Pay Date Rule</div>
+                                <select class="ps-form-select mt-1" name="weekend_pay_date_rule" id="weekendRule">
+                                    <option value="ADVANCE" <?= ($settings['weekend_pay_date_rule'] ?? 'ADVANCE') === 'ADVANCE' ? 'selected' : '' ?>>Advance to previous working day (recommended)</option>
+                                    <option value="EXACT"   <?= ($settings['weekend_pay_date_rule'] ?? 'ADVANCE') === 'EXACT'   ? 'selected' : '' ?>>Exact date — no adjustment</option>
+                                </select>
+                                <div class="ps-cutoff-desc" id="weekendRuleDesc" style="min-height:1.4em;">Applies when creating new pay periods.</div>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <!-- ========== AUTOMATION SETTINGS ========== -->
-            <div class="ps-card" id="card-auto">
-                <div class="ps-card-header" data-toggle="card-auto-body">
-                    <div class="ps-card-title-wrap">
-                        <span class="ps-card-accent teal"></span>
-                        <div>
-                            <h2 class="ps-card-title">Automation Settings</h2>
-                            <p class="ps-card-sub">Control how payroll components are automatically applied during payroll generation.</p>
-                        </div>
-                    </div>
-                    <i class="bi bi-chevron-up ps-collapse-icon" id="icon-card-auto-body"></i>
-                </div>
-                <div class="ps-card-body d-none" id="card-auto-body">
-                    <div class="ps-toggle-row">
-                        <div>
-                            <div class="ps-setting-label">Auto-apply Allowances</div>
-                            <div class="ps-setting-sub">Automatically include all active allowances when generating payroll.</div>
-                        </div>
-                        <label class="ps-toggle-switch">
-                            <input type="checkbox" id="autoAllowances" <?= ($settings['auto_apply_allowances'] ?? 1) ? 'checked' : '' ?>>
-                            <span class="ps-toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div class="ps-toggle-row">
-                        <div>
-                            <div class="ps-setting-label">Auto-apply Deductions</div>
-                            <div class="ps-setting-sub">Automatically apply all active deductions and loan repayments.</div>
-                        </div>
-                        <label class="ps-toggle-switch">
-                            <input type="checkbox" id="autoDeductions" <?= ($settings['auto_apply_deductions'] ?? 1) ? 'checked' : '' ?>>
-                            <span class="ps-toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div class="ps-toggle-row" style="border-bottom:none;">
-                        <div>
-                            <div class="ps-setting-label">Allow Manual Override During Payroll Editing</div>
-                            <div class="ps-setting-sub">Permit payroll editors to modify auto-applied values before finalizing.</div>
-                        </div>
-                        <label class="ps-toggle-switch">
-                            <input type="checkbox" id="allowOverride" <?= ($settings['allow_manual_override'] ?? 1) ? 'checked' : '' ?>>
-                            <span class="ps-toggle-slider"></span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-
 
             <!-- ========== PAY PERIOD MANAGER ========== -->
             <div class="ps-card" id="card-periods">
@@ -638,9 +628,10 @@ require_once __DIR__ . '/../../includes/head.php';
 
                     <?php
                     $existingPeriods = $pdo->query("
-                        SELECT * FROM payroll_periods
-                        ORDER BY pay_period_start DESC
-                        LIMIT 24
+                        SELECT pp.*,
+                               (SELECT COUNT(*) FROM payroll_records pr WHERE pr.period_id = pp.period_id) AS record_count
+                        FROM payroll_periods pp
+                        ORDER BY pp.pay_period_start DESC
                     ")->fetchAll();
                     $statusColors = [
                         'OPEN'       => ['bg'=>'#d1fae5','color'=>'#065f46'],
@@ -648,24 +639,60 @@ require_once __DIR__ . '/../../includes/head.php';
                         'APPROVED'   => ['bg'=>'#dbeafe','color'=>'#1e40af'],
                         'RELEASED'   => ['bg'=>'#f3f4f6','color'=>'#374151'],
                     ];
+                    $statusCounts = ['ALL'=>count($existingPeriods),'OPEN'=>0,'PROCESSING'=>0,'APPROVED'=>0,'RELEASED'=>0];
+                    $periodYears  = [];
+                    foreach ($existingPeriods as $p) {
+                        $s = $p['status'];
+                        if (isset($statusCounts[$s])) $statusCounts[$s]++;
+                        $yr = substr($p['pay_period_start'], 0, 4);
+                        if ($yr && !in_array($yr, $periodYears, true)) $periodYears[] = $yr;
+                    }
+                    rsort($periodYears);
                     ?>
 
                     <div class="pp-toolbar">
                         <div class="pp-summary">
-                            <?php
-                            $openCount = count(array_filter($existingPeriods, fn($p) => $p['status']==='OPEN'));
-                            ?>
                             <span class="pp-summary-item">
-                                <strong><?= count($existingPeriods) ?></strong> total periods
+                                <strong><?= $statusCounts['ALL'] ?></strong> total
                             </span>
                             <span class="pp-summary-item pp-summary-item--open">
-                                <strong><?= $openCount ?></strong> open
+                                <strong><?= $statusCounts['OPEN'] ?></strong> open
                             </span>
                         </div>
                         <button type="button" class="ps-btn-primary" onclick="openCreatePeriodsModal()">
                             <i class="bi bi-plus-lg"></i> Create Pay Periods
                         </button>
                     </div>
+
+                    <!-- Period filter tabs -->
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+                        <div style="display:flex;gap:5px;flex-wrap:wrap;" id="ppStatusTabs">
+                            <?php foreach (['ALL'=>'All','OPEN'=>'Open','PROCESSING'=>'Processing','APPROVED'=>'Approved','RELEASED'=>'Released'] as $st => $label): ?>
+                            <button class="pp-st-tab<?= $st === 'ALL' ? ' active' : '' ?>"
+                                    data-status="<?= $st ?>"
+                                    onclick="filterPeriodStatus(this,'<?= $st ?>')">
+                                <?= $label ?>
+                                <span class="pp-st-count"><?= $statusCounts[$st] ?></span>
+                            </button>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php if (!empty($periodYears)): ?>
+                        <select id="ppYearFilter" onchange="filterPeriodYear(this.value)"
+                                style="height:30px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:12.5px;padding:0 10px;background:#fff;color:#374151;cursor:pointer;">
+                            <option value="">All Years</option>
+                            <?php foreach ($periodYears as $yr): ?>
+                            <option value="<?= $yr ?>"><?= $yr ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?php endif; ?>
+                    </div>
+                    <style>
+                    .pp-st-tab { display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:7px;border:1.5px solid #e2e8f0;background:#fff;font-size:12px;font-weight:600;color:#64748b;cursor:pointer;transition:all .15s;font-family:inherit; }
+                    .pp-st-tab:hover  { background:#f8fafc;border-color:#cbd5e1;color:#374151; }
+                    .pp-st-tab.active { background:#0d9488;border-color:#0d9488;color:#fff; }
+                    .pp-st-count { background:rgba(0,0,0,.12);border-radius:99px;font-size:10.5px;font-weight:700;padding:1px 6px; }
+                    .pp-st-tab.active .pp-st-count { background:rgba(255,255,255,.3); }
+                    </style>
 
                     <?php if (empty($existingPeriods)): ?>
                     <div class="pp-empty">
@@ -689,7 +716,7 @@ require_once __DIR__ . '/../../includes/head.php';
                         <?php foreach ($existingPeriods as $p):
                             $sc = $statusColors[$p['status']] ?? ['bg'=>'#f3f4f6','color'=>'#374151'];
                         ?>
-                        <tr>
+                        <tr data-status="<?= $p['status'] ?>" data-year="<?= substr($p['pay_period_start'],0,4) ?>">
                             <td><strong><?= htmlspecialchars($p['period_name']) ?></strong></td>
                             <td><?= date('M d, Y', strtotime($p['pay_period_start'])) ?></td>
                             <td><?= date('M d, Y', strtotime($p['pay_period_end'])) ?></td>
@@ -702,17 +729,31 @@ require_once __DIR__ . '/../../includes/head.php';
                             </td>
                             <td>
                                 <?php if ($p['status'] === 'OPEN'): ?>
-                                <button type="button" class="ps-action-btn ps-action-btn--danger"
-                                        onclick="deletePeriod(<?= $p['period_id'] ?>, '<?= htmlspecialchars($p['period_name']) ?>')"
-                                        title="Delete period">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                                <div class="ps-action-group">
+                                    <button type="button" class="ps-action-btn"
+                                            onclick="openEditPeriodModal(<?= $p['period_id'] ?>, '<?= htmlspecialchars(addslashes($p['period_name'])) ?>', '<?= $p['pay_date'] ?>', <?= (int)$p['record_count'] ?>)"
+                                            title="Edit period">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button type="button" class="ps-action-btn danger"
+                                            onclick="deletePeriod(<?= $p['period_id'] ?>, '<?= htmlspecialchars($p['period_name']) ?>')"
+                                            title="Delete period">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                                <?php elseif ($p['status'] === 'PROCESSING'): ?>
+                                <span style="font-size:12px;color:#92400e;font-weight:600;">In progress</span>
                                 <?php else: ?>
                                 <span style="font-size:12px;color:#94a3b8;">Locked</span>
                                 <?php endif; ?>
                             </td>
                         </tr>
                         <?php endforeach; ?>
+                        <tr id="ppNoResults" style="display:none;">
+                            <td colspan="6" style="text-align:center;padding:24px;color:#94a3b8;font-size:13px;">
+                                No periods match the selected filter.
+                            </td>
+                        </tr>
                         </tbody>
                     </table>
                     <?php endif; ?>
@@ -745,6 +786,7 @@ require_once __DIR__ . '/../../includes/head.php';
 
 <!-- ========== MODALS ========== -->
 <?php include __DIR__ . '/modals/modal-pay-periods.php'; ?>
+<?php include __DIR__ . '/modals/modal-edit-period.php'; ?>
 <?php include 'modals/modal-add-deduction.php'; ?>
 <?php include 'modals/modal-edit-deduction.php'; ?>
 <?php include 'modals/modal-add-allowance.php'; ?>
@@ -756,20 +798,18 @@ require_once __DIR__ . '/../../includes/head.php';
 
 <script>
 window.PAYROLL_SETTINGS = <?= json_encode([
-    'setting_id'                 => $settings['setting_id'],
-    'payroll_frequency'          => $settings['payroll_frequency'],
-    'working_days_per_week'      => $settings['working_days_per_week'] ?? 5,
-    'cutoff1_start_day'          => $settings['cutoff1_start_day'] ?? 1,
-    'cutoff1_end_day'            => $settings['cutoff1_end_day'] ?? 15,
-    'cutoff2_start_day'          => $settings['cutoff2_start_day'] ?? 16,
-    'cutoff2_end_day'            => $settings['cutoff2_end_day'] ?? 31,
-    'auto_apply_allowances'      => $settings['auto_apply_allowances'],
-    'auto_apply_deductions'      => $settings['auto_apply_deductions'],
-    'allow_manual_override'      => $settings['allow_manual_override'],
-    'use_government_tables'      => $settings['use_government_tables'],
-    'government_calc_mode'       => $settings['government_calc_mode'],
-    'attendance_affects_payroll' => $settings['attendance_affects_payroll'],
-    'enable_overtime_pay'        => $settings['enable_overtime_pay'],
+    'setting_id'              => $settings['setting_id'],
+    'payroll_frequency'       => $settings['payroll_frequency'],
+    'working_days_per_week'   => $settings['working_days_per_week'] ?? 5,
+    'cutoff1_start_day'       => $settings['cutoff1_start_day'] ?? 1,
+    'cutoff1_end_day'         => $settings['cutoff1_end_day'] ?? 15,
+    'cutoff2_start_day'       => $settings['cutoff2_start_day'] ?? 16,
+    'cutoff2_end_day'         => $settings['cutoff2_end_day'] ?? 31,
+    'use_government_tables'   => $settings['use_government_tables'],
+    'government_calc_mode'    => $settings['government_calc_mode'],
+    'weekend_pay_date_rule'   => $hasMig010 ? ($settings['weekend_pay_date_rule'] ?? 'ADVANCE') : 'ADVANCE',
+    'attendance_source'       => $hasMig010 ? ($settings['attendance_source'] ?? 'REFERENCE') : 'REFERENCE',
+    'has_mig010'              => $hasMig010,
 ]) ?>;
 
 window.DEPARTMENTS   = <?= json_encode($departments) ?>;

@@ -65,6 +65,32 @@ $stmt = $pdo->prepare("
 $stmt->execute($params);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// Build set of employees who have approved leave today
+// Tries leave_request_dates (per-day table) first; falls back to date-range.
+$onLeaveToday = [];
+try {
+    $lvStmt = $pdo->prepare("
+        SELECT DISTINCT lr.employee_id
+        FROM leave_requests lr
+        JOIN leave_request_dates lrd ON lr.request_id = lrd.request_id
+        WHERE lrd.leave_date = :lv_today AND lr.status = 'APPROVED'
+    ");
+    $lvStmt->execute([':lv_today' => $today]);
+    $onLeaveToday = $lvStmt->fetchAll(PDO::FETCH_COLUMN, 0);
+} catch (PDOException $lvEx) {
+    try {
+        $lv2 = $pdo->prepare("
+            SELECT DISTINCT employee_id FROM leave_requests
+            WHERE :lv_today BETWEEN start_date AND end_date AND status = 'APPROVED'
+        ");
+        $lv2->execute([':lv_today' => $today]);
+        $onLeaveToday = $lv2->fetchAll(PDO::FETCH_COLUMN, 0);
+    } catch (PDOException $lv2Ex) {
+        $onLeaveToday = [];
+    }
+}
+$onLeaveSet = array_flip($onLeaveToday);
+
 $employees = [];
 foreach ($rows as $r) {
     $employees[] = [
@@ -76,6 +102,7 @@ foreach ($rows as $r) {
         'already_logged'  => $r['attendance_id'] !== null,
         'needs_timeout'   => $r['time_in'] !== null && $r['time_out'] === null,
         'current_status'  => $r['attendance_status'] ?? null,
+        'on_leave'        => isset($onLeaveSet[$r['employee_id']]),
     ];
 }
 

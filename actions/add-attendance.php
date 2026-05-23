@@ -70,6 +70,38 @@ foreach ($employeeIds as $empId) {
         continue;
     }
 
+    // ── Approved leave guard ──────────────────────────────────────────────────
+    // Employees on approved leave for today cannot be logged in.
+    $hasLeave = false;
+    try {
+        $lv = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM leave_requests lr
+            JOIN leave_request_dates lrd ON lr.request_id = lrd.request_id
+            WHERE lr.employee_id = ? AND lrd.leave_date = ? AND lr.status = 'APPROVED'
+        ");
+        $lv->execute([$empId, $date]);
+        $hasLeave = (bool)$lv->fetchColumn();
+    } catch (PDOException $lvEx) {
+        // leave_request_dates table not available — fall back to date-range check
+        try {
+            $lv2 = $pdo->prepare("
+                SELECT COUNT(*) FROM leave_requests
+                WHERE employee_id = ? AND ? BETWEEN start_date AND end_date AND status = 'APPROVED'
+            ");
+            $lv2->execute([$empId, $date]);
+            $hasLeave = (bool)$lv2->fetchColumn();
+        } catch (PDOException $lv2Ex) {
+            $hasLeave = false;
+        }
+    }
+
+    if ($hasLeave) {
+        $skipped++;
+        $errors[] = "Employee #{$empId} has approved leave for today and cannot be logged in.";
+        continue;
+    }
+
     // ── Status determination ──────────────────────────────────────────────────
     $status  = 'PRESENT';
     $empRemarks = $remarks;

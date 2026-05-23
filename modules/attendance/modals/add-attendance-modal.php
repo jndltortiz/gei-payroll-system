@@ -182,7 +182,12 @@ function renderEmployeeList(employees) {
         let disabled  = '';
         let rowClass  = 'att-emp-item';
 
-        if (active) {
+        if (emp.on_leave && !logged) {
+            // Employee has approved leave today but no attendance record yet
+            badgeHtml = '<span class="att-emp-item-badge on-leave">On Leave</span>';
+            disabled  = 'disabled';
+            rowClass += ' att-emp-item--disabled';
+        } else if (active) {
             // Has time_in, no time_out — active check-in, cannot add again
             badgeHtml = '<span class="att-emp-item-badge active">Active</span>';
             disabled  = 'disabled';

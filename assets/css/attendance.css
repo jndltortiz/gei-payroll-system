@@ -927,8 +927,9 @@
     padding: 2px 8px;
     border-radius: 20px;
 }
-.att-emp-item-badge.active   { background: #dbeafe; color: #1d4ed8; }
-.att-emp-item-badge.recorded { background: #f1f5f9; color: #475569; }
+.att-emp-item-badge.active    { background: #dbeafe; color: #1d4ed8; }
+.att-emp-item-badge.recorded  { background: #f1f5f9; color: #475569; }
+.att-emp-item-badge.on-leave  { background: #ede9fe; color: #6d28d9; }
 
 /* ── Edit modal — old values snapshot ────────────────────────────────────── */
 .att-edit-old-values {
@@ -990,4 +991,86 @@
     .att-summary-cards { grid-template-columns: repeat(2, 1fr); }
     .att-page-header   { flex-direction: column; gap: 12px; }
     .att-modal-box--lg { width: 95%; }
+}
+
+/* ── DTR Backup Files panel (below main card) ────────────────────────────── */
+.att-dtr-outer {
+    margin-top: 24px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+}
+.att-dtr-outer .att-dtr-section-title {
+    padding: 14px 18px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+.att-dtr-outer .att-dtr-list { padding: 8px 0; }
+.att-dtr-outer .att-dtr-item { padding: 12px 18px; }
+.att-dtr-outer .att-dtr-empty { padding: 28px 18px; }
+
+/* ── DTR Backup Files section (History tab) ──────────────────────────────── */
+.att-dtr-section {
+    margin-top: 24px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    overflow: hidden;
+}
+.att-dtr-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #f8fafc;
+    font-size: 13px;
+    font-weight: 700;
+    color: #374151;
+    border-bottom: 1px solid #e2e8f0;
+}
+.att-dtr-count {
+    margin-left: auto;
+    background: #1d4ed8;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+}
+.att-dtr-list {
+    display: flex;
+    flex-direction: column;
+}
+.att-dtr-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #f1f5f9;
+    transition: background 0.1s;
+}
+.att-dtr-item:last-child { border-bottom: none; }
+.att-dtr-item:hover      { background: #f8fafc; }
+.att-dtr-info   { flex: 1; min-width: 0; }
+.att-dtr-filename {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1e293b;
+    word-break: break-all;
+}
+.att-dtr-meta {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 2px;
+    line-height: 1.5;
+}
+.att-dtr-empty {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 16px;
 }

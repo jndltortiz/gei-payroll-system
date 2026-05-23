@@ -10,6 +10,59 @@ require_once __DIR__ . '/../includes/auth.php';
 header('Content-Type: application/json');
 requireLogin();
 
+/**
+ * Advance a date to the previous Friday if it falls on a Saturday or Sunday.
+ * Returns the date unchanged on any other weekday.
+ */
+function advancePayDate(string $dateStr): string {
+    $ts  = strtotime($dateStr);
+    $dow = (int)date('N', $ts); // ISO 8601: 1=Mon … 7=Sun
+    if ($dow === 6) return date('Y-m-d', strtotime('-1 day',  $ts)); // Sat → Fri
+    if ($dow === 7) return date('Y-m-d', strtotime('-2 days', $ts)); // Sun → Fri
+    return $dateStr;
+}
+
+// ── Update handler (edit OPEN period name / pay date) ───────────────────────
+if (($_POST['action'] ?? '') === 'update') {
+    $periodId   = (int)($_POST['period_id']  ?? 0);
+    $periodName = trim($_POST['period_name'] ?? '');
+    $payDate    = trim($_POST['pay_date']    ?? '');
+
+    if (!$periodId || !$periodName || !$payDate) {
+        echo json_encode(['success' => false, 'message' => 'Missing required fields.']);
+        exit;
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $payDate)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid pay date format.']);
+        exit;
+    }
+
+    $rowStmt = $pdo->prepare("SELECT status FROM payroll_periods WHERE period_id = ?");
+    $rowStmt->execute([$periodId]);
+    $periodRow = $rowStmt->fetch();
+
+    if (!$periodRow) {
+        echo json_encode(['success' => false, 'message' => 'Period not found.']);
+        exit;
+    }
+    if ($periodRow['status'] !== 'OPEN') {
+        echo json_encode(['success' => false, 'message' => 'Only OPEN periods can be edited.']);
+        exit;
+    }
+
+    $pdo->prepare("UPDATE payroll_periods SET period_name = ?, pay_date = ? WHERE period_id = ? AND status = 'OPEN'")
+        ->execute([$periodName, $payDate, $periodId]);
+
+    $uid = $_SESSION['user']['user_id'] ?? null;
+    if ($uid) {
+        $pdo->prepare("INSERT INTO audit_logs (user_id, action, table_name, record_id, description) VALUES (?,?,?,?,?)")
+            ->execute([$uid, 'UPDATE', 'payroll_periods', $periodId, "Edited pay period #{$periodId}: name/pay_date"]);
+    }
+
+    echo json_encode(['success' => true, 'message' => 'Pay period updated.']);
+    exit;
+}
+
 // ── Delete handler ──────────────────────────────────────────────────────────
 if (($_POST['action'] ?? '') === 'delete') {
     $periodId = (int)($_POST['period_id'] ?? 0);
@@ -60,12 +113,13 @@ if ($createFor === 'month' && ($month < 1 || $month > 12)) {
     exit;
 }
 
-// Load cutoff settings
-$settings = $pdo->query("SELECT * FROM payroll_settings LIMIT 1")->fetch();
-$c1Start  = (int)($settings['cutoff1_start_day'] ?? 1);
-$c1End    = (int)($settings['cutoff1_end_day']   ?? 15);
-$c2Start  = (int)($settings['cutoff2_start_day'] ?? 16);
-$c2End    = (int)($settings['cutoff2_end_day']   ?? 31);
+// Load cutoff settings (including weekend_pay_date_rule if migration 010 has run)
+$settings    = $pdo->query("SELECT * FROM payroll_settings LIMIT 1")->fetch();
+$c1Start     = (int)($settings['cutoff1_start_day']   ?? 1);
+$c1End       = (int)($settings['cutoff1_end_day']     ?? 15);
+$c2Start     = (int)($settings['cutoff2_start_day']   ?? 16);
+$c2End       = (int)($settings['cutoff2_end_day']     ?? 31);
+$weekendRule = $settings['weekend_pay_date_rule']      ?? 'ADVANCE';
 
 // Months to create for
 $months = $createFor === 'year'
@@ -99,16 +153,18 @@ try {
         $period2End = min($c2End, $lastDay);
 
         // Period 1: e.g. "May 1–15, 2026"
-        $p1Start = sprintf('%04d-%02d-%02d', $year, $m, $c1Start);
-        $p1End   = sprintf('%04d-%02d-%02d', $year, $m, $period1End);
-        $p1Name  = "{$mName} {$c1Start}–{$period1End}, {$year}";
-        $p1Pay   = sprintf('%04d-%02d-%02d', $year, $m, $period1End); // pay on last day of period
+        $p1Start   = sprintf('%04d-%02d-%02d', $year, $m, $c1Start);
+        $p1End     = sprintf('%04d-%02d-%02d', $year, $m, $period1End);
+        $p1Name    = "{$mName} {$c1Start}–{$period1End}, {$year}";
+        $p1PayRaw  = sprintf('%04d-%02d-%02d', $year, $m, $period1End);
+        $p1Pay     = $weekendRule === 'ADVANCE' ? advancePayDate($p1PayRaw) : $p1PayRaw;
 
         // Period 2: e.g. "May 16–31, 2026"
-        $p2Start = sprintf('%04d-%02d-%02d', $year, $m, $c2Start);
-        $p2End   = sprintf('%04d-%02d-%02d', $year, $m, $period2End);
-        $p2Name  = "{$mName} {$c2Start}–{$period2End}, {$year}";
-        $p2Pay   = sprintf('%04d-%02d-%02d', $year, $m, $period2End);
+        $p2Start   = sprintf('%04d-%02d-%02d', $year, $m, $c2Start);
+        $p2End     = sprintf('%04d-%02d-%02d', $year, $m, $period2End);
+        $p2Name    = "{$mName} {$c2Start}–{$period2End}, {$year}";
+        $p2PayRaw  = sprintf('%04d-%02d-%02d', $year, $m, $period2End);
+        $p2Pay     = $weekendRule === 'ADVANCE' ? advancePayDate($p2PayRaw) : $p2PayRaw;
 
         // Create period 1
         $checkStmt->execute([$p1Start, $p1End]);

@@ -138,6 +138,29 @@ try {
         }
     }
 
+    // Migration 010: save weekend_pay_date_rule + attendance_source if columns exist
+    $hasMig010 = false;
+    try {
+        $hasMig010 = (bool)$pdo->query("
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME   = 'payroll_settings'
+              AND COLUMN_NAME  = 'weekend_pay_date_rule'
+        ")->fetchColumn();
+    } catch (PDOException $_e) {}
+
+    if ($hasMig010) {
+        $weekendRule   = in_array($body['weekend_pay_date_rule'] ?? '', ['EXACT','ADVANCE'])
+                         ? $body['weekend_pay_date_rule'] : 'ADVANCE';
+        $attendanceSrc = in_array($body['attendance_source'] ?? '', ['MANUAL','REFERENCE','AUTO'])
+                         ? $body['attendance_source'] : 'REFERENCE';
+        $pdo->prepare("
+            UPDATE payroll_settings
+            SET weekend_pay_date_rule = ?, attendance_source = ?
+            WHERE setting_id = ?
+        ")->execute([$weekendRule, $attendanceSrc, $exists ?: $pdo->lastInsertId()]);
+    }
+
     // Audit log
     $userId = $_SESSION['user']['user_id'] ?? null;
     if ($userId) {

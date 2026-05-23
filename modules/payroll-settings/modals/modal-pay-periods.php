@@ -30,10 +30,16 @@ $curYear   = (int)date('Y');
 
       <div class="modal-body" style="padding:18px 20px;">
 
-        <p style="font-size:13px;color:#64748b;margin:0 0 14px;">
-          Periods are created using your current cutoff settings:
+        <p style="font-size:13px;color:#64748b;margin:0 0 10px;">
+          Periods are created using your <strong>saved</strong> cutoff configuration:
           <strong>Days <?= $c1s ?>–<?= $c1e ?></strong> and
           <strong>Days <?= $c2s ?>–<?= $c2e ?></strong> of each month.
+          <?php if (!empty($settings['weekend_pay_date_rule']) && $settings['weekend_pay_date_rule'] === 'ADVANCE'): ?>
+          Pay dates that fall on a weekend will be advanced to the previous Friday.
+          <?php endif; ?>
+        </p>
+        <p style="font-size:12px;color:#94a3b8;margin:0 0 14px;font-style:italic;">
+          To use different cutoff days, save Payroll Settings first before creating periods.
         </p>
 
         <!-- Create For -->

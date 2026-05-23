@@ -93,7 +93,7 @@ function markClean() {
 
 function initDirtyTracking() {
     const track = ['payrollFrequency','workingDays','cutoff1Start','cutoff1End','cutoff2Start','cutoff2End',
-                   'autoAllowances','autoDeductions','allowOverride'];
+                   'weekendRule','attendanceSource'];
     track.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', markDirty);
@@ -106,7 +106,47 @@ function initCutoffDescriptions() {
         const el = document.getElementById(id);
         if (el) el.addEventListener('change', updateCutoffDesc);
     });
+    ['cutoff1End','cutoff2End','weekendRule'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', updateWeekendPreview);
+    });
     updateCutoffDesc();
+    updateWeekendPreview();
+}
+
+function updateWeekendPreview() {
+    const ruleEl = document.getElementById('weekendRule');
+    const descEl = document.getElementById('weekendRuleDesc');
+    if (!ruleEl || !descEl) return;
+
+    if (ruleEl.value === 'EXACT') {
+        descEl.textContent = 'Pay date will be set to the exact cutoff end date.';
+        return;
+    }
+
+    // Preview: compute this month's 2nd cutoff end and see if it needs advancing
+    const c2e     = parseInt(document.getElementById('cutoff2End')?.value || 31, 10);
+    const now     = new Date();
+    const yr      = now.getFullYear();
+    const mo      = now.getMonth(); // 0-indexed
+    const lastDay = new Date(yr, mo + 1, 0).getDate();
+    const day     = Math.min(c2e, lastDay);
+    const dt      = new Date(yr, mo, day);
+    const dow     = dt.getDay(); // 0=Sun, 6=Sat
+    const days    = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const fmt     = d => d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+
+    let msg = `This month: cutoff ends ${fmt(dt)} (${days[dow]})`;
+    if (dow === 6) {
+        const fri = new Date(dt); fri.setDate(fri.getDate() - 1);
+        msg += ` → pay date advances to ${fmt(fri)} (Friday).`;
+    } else if (dow === 0) {
+        const fri = new Date(dt); fri.setDate(fri.getDate() - 2);
+        msg += ` → pay date advances to ${fmt(fri)} (Friday).`;
+    } else {
+        msg += ` — no adjustment needed.`;
+    }
+    descEl.textContent = msg;
 }
 
 function updateCutoffDesc() {
@@ -522,10 +562,9 @@ function submitPayrollSettings() {
         cutoff1_end_day:        document.getElementById('cutoff1End')?.value,
         cutoff2_start_day:      document.getElementById('cutoff2Start')?.value,
         cutoff2_end_day:        document.getElementById('cutoff2End')?.value,
-        auto_apply_allowances:  document.getElementById('autoAllowances')?.checked ? 1 : 0,
-        auto_apply_deductions:  document.getElementById('autoDeductions')?.checked ? 1 : 0,
-        allow_manual_override:  document.getElementById('allowOverride')?.checked  ? 1 : 0,
-        government_calc_mode:   document.getElementById('btnGovMode')?.dataset.mode || 'STANDARD',
+        government_calc_mode:    document.getElementById('btnGovMode')?.dataset.mode || 'STANDARD',
+        weekend_pay_date_rule:   document.getElementById('weekendRule')?.value       || 'ADVANCE',
+        attendance_source:       document.getElementById('attendanceSource')?.value  || 'REFERENCE',
         // Manual gov rates (if manual mode)
         sss_rate:  document.getElementById('sssRate')?.value,
         sss_type:  document.getElementById('sssType')?.value,
@@ -696,5 +735,99 @@ async function deletePeriod(id, name) {
         }
     } catch {
         alert('Network error. Please try again.');
+    }
+}
+
+// ─── Period Status + Year Filter ─────────────────────────────
+
+let _ppActiveStatus = 'ALL';
+let _ppActiveYear   = '';
+
+function filterPeriodStatus(btn, status) {
+    _ppActiveStatus = status;
+    document.querySelectorAll('#ppStatusTabs .pp-st-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    applyPeriodFilters();
+}
+
+function filterPeriodYear(year) {
+    _ppActiveYear = year;
+    applyPeriodFilters();
+}
+
+function applyPeriodFilters() {
+    const rows = document.querySelectorAll('.pp-table tbody tr[data-status]');
+    let visible = 0;
+    rows.forEach(row => {
+        const showSt = _ppActiveStatus === 'ALL' || row.dataset.status === _ppActiveStatus;
+        const showYr = !_ppActiveYear  || row.dataset.year  === _ppActiveYear;
+        const show   = showSt && showYr;
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+    const noResults = document.getElementById('ppNoResults');
+    if (noResults) noResults.style.display = (visible === 0 && rows.length > 0) ? '' : 'none';
+}
+
+// ─── Edit Pay Period ──────────────────────────────────────────
+
+let _editPeriodModal = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const epEl = document.getElementById('modalEditPeriod');
+    if (epEl && window.bootstrap) _editPeriodModal = new bootstrap.Modal(epEl);
+});
+
+function openEditPeriodModal(id, name, payDate, recordCount) {
+    if (!_editPeriodModal) return;
+    document.getElementById('epId').value      = id;
+    document.getElementById('epName').value    = name;
+    document.getElementById('epPayDate').value = payDate;
+
+    const noteEl = document.getElementById('epRecordNote');
+    const textEl = document.getElementById('epRecordNoteText');
+    if (recordCount > 0) {
+        textEl.textContent = `This period has ${recordCount} payroll record(s). Only the name and pay date can be changed.`;
+        noteEl.style.display = '';
+    } else {
+        noteEl.style.display = 'none';
+    }
+
+    const btn = document.getElementById('epSaveBtn');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-floppy"></i> Save Changes'; }
+
+    _editPeriodModal.show();
+}
+
+async function submitEditPeriod() {
+    const name    = document.getElementById('epName')?.value.trim();
+    const payDate = document.getElementById('epPayDate')?.value;
+    const id      = document.getElementById('epId')?.value;
+    const btn     = document.getElementById('epSaveBtn');
+
+    if (!name || !payDate) { showToast('Name and pay date are required.', 'error'); return; }
+
+    btn.disabled  = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving…';
+
+    try {
+        const fd = new FormData();
+        fd.append('action',      'update');
+        fd.append('period_id',   id);
+        fd.append('period_name', name);
+        fd.append('pay_date',    payDate);
+        const res  = await fetch(`${PS_BASE_URL}actions/create-payroll-periods.php`, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            showToast(data.message || 'Failed to update period.', 'error');
+            btn.disabled  = false;
+            btn.innerHTML = '<i class="bi bi-floppy"></i> Save Changes';
+        }
+    } catch {
+        showToast('Network error. Please try again.', 'error');
+        btn.disabled  = false;
+        btn.innerHTML = '<i class="bi bi-floppy"></i> Save Changes';
     }
 }

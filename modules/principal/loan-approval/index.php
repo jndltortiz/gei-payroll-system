@@ -166,8 +166,8 @@ require_once __DIR__ . '/../../../includes/head.php';
   <!-- PAGE HEADER -->
   <div class="loans-header">
     <div>
-      <h1>Loan Approvals</h1>
-      <p>Review and approve employee loan applications</p>
+      <h1>Loan Verification</h1>
+      <p>Review and verify submitted employee loan documents</p>
     </div>
   </div>
 
@@ -175,12 +175,12 @@ require_once __DIR__ . '/../../../includes/head.php';
   <div class="loans-stats pla-stats">
     <div class="stat-card">
       <div class="stat-num <?= $awaitingCount > 0 ? 'text-warning' : '' ?>"><?= $awaitingCount ?></div>
-      <div class="stat-label">Awaiting Your Approval</div>
+      <div class="stat-label">Awaiting Verification</div>
       <div class="stat-icon stat-icon--yellow"><i class="fa fa-clock"></i></div>
     </div>
     <div class="stat-card">
       <div class="stat-num text-success"><?= $approvedThisMonth ?></div>
-      <div class="stat-label">Approved This Month</div>
+      <div class="stat-label">Verified This Month</div>
       <div class="stat-icon stat-icon--green"><i class="fa fa-circle-check"></i></div>
     </div>
     <div class="stat-card">
@@ -200,8 +200,8 @@ require_once __DIR__ . '/../../../includes/head.php';
   <div class="pla-alert-banner">
     <i class="fa fa-circle-info"></i>
     <div>
-      <strong><?= $awaitingCount ?> loan application<?= $awaitingCount > 1 ? 's' : '' ?> awaiting your approval</strong>
-      <span>Total pending amount: <strong><?= pesos((float)$pendingAmount) ?></strong> &bull; Please review and approve/deny applications</span>
+      <strong><?= $awaitingCount ?> submitted loan document<?= $awaitingCount > 1 ? 's' : '' ?> awaiting verification</strong>
+      <span>Total pending amount: <strong><?= pesos((float)$pendingAmount) ?></strong> &bull; Please review and verify or reject the submitted documents</span>
     </div>
   </div>
   <?php endif; ?>
@@ -210,7 +210,7 @@ require_once __DIR__ . '/../../../includes/head.php';
   <div class="loans-tabs">
     <a href="?tab=pending&type_id=<?= $typeFilter ?>&search=<?= urlencode($search) ?>"
        class="loans-tab <?= $tab==='pending'?'active':'' ?>">
-      Pending Approval
+      Pending Verification
       <?php if ($awaitingCount > 0): ?>
       <span class="tab-badge"><?= $awaitingCount ?></span>
       <?php endif; ?>
@@ -222,7 +222,7 @@ require_once __DIR__ . '/../../../includes/head.php';
     </a>
     <a href="?tab=history&type_id=<?= $typeFilter ?>&search=<?= urlencode($search) ?>"
        class="loans-tab <?= $tab==='history'?'active':'' ?>">
-      History
+      Loan History &amp; Audit
     </a>
   </div>
 
@@ -244,7 +244,7 @@ require_once __DIR__ . '/../../../includes/head.php';
     </select>
     <?php if ($tab === 'history'): ?>
     <div class="status-pills">
-      <?php foreach (['all'=>'All','DENIED'=>'Denied','COMPLETED'=>'Completed'] as $v => $l): ?>
+      <?php foreach (['all'=>'All','COMPLETED'=>'Completed','DENIED'=>'Rejected','CANCELLED'=>'Cancelled','ARCHIVED'=>'Archived'] as $v => $l): ?>
       <a href="?tab=history&hist_status=<?= $v ?>&type_id=<?= $typeFilter ?>&search=<?= urlencode($search) ?>"
          class="status-pill <?= $histStatus===$v?'active':'' ?>"><?= $l ?></a>
       <?php endforeach; ?>
@@ -266,7 +266,7 @@ require_once __DIR__ . '/../../../includes/head.php';
   <?php if (empty($pendingLoans)): ?>
   <div class="loans-empty">
     <i class="fa fa-inbox"></i>
-    <p>No pending loan applications. All caught up!</p>
+    <p>No submitted loan documents pending verification. All caught up!</p>
   </div>
   <?php else: ?>
   <div class="app-list">
@@ -293,19 +293,19 @@ require_once __DIR__ . '/../../../includes/head.php';
         </div>
         <div class="app-amount"><?= pesos((float)$loan['total_amount']) ?></div>
         <div class="app-terms">
-          <?= $termMonths ?> months &bull; <?= pesos((float)$loan['monthly_deduction']) ?>/month
+          <?= $termMonths ?> months &bull; <?= pesos((float)$loan['monthly_deduction']) ?>/month amortization
         </div>
         <div class="app-submitted">
-          Applied <?= date('M d, Y', strtotime($loan['created_at'])) ?>
+          Submitted <?= date('M d, Y', strtotime($loan['created_at'])) ?>
         </div>
         <?php if ($loan['reason']): ?>
         <div class="app-reason"><?= htmlspecialchars($loan['reason']) ?></div>
         <?php endif; ?>
       </div>
       <div class="app-card-right">
-        <span class="pla-badge pla-badge--pending">Awaiting Your Approval</span>
+        <span class="pla-badge pla-badge--pending">Awaiting Verification</span>
         <button class="btn-primary btn-sm" onclick="openPrincipalReview(<?= $loan['loan_id'] ?>)">
-          <i class="fa fa-eye"></i> Review &amp; Approve
+          <i class="fa fa-eye"></i> Review &amp; Verify
         </button>
       </div>
     </div>
@@ -324,9 +324,9 @@ require_once __DIR__ . '/../../../includes/head.php';
       <span class="pla-as-sub">Across <?= $totalActive ?> active loans</span>
     </div>
     <div class="pla-as-card">
-      <span class="pla-as-label">Monthly Collections</span>
+      <span class="pla-as-label">Monthly Amortization</span>
       <span class="pla-as-value text-teal"><?= pesos((float)$totalMonthlyDed) ?></span>
-      <span class="pla-as-sub">Total monthly deductions</span>
+      <span class="pla-as-sub">Total monthly amortization</span>
     </div>
     <div class="pla-as-card">
       <span class="pla-as-label">Active Loans</span>
@@ -348,7 +348,7 @@ require_once __DIR__ . '/../../../includes/head.php';
           <th>Loan Type</th>
           <th>Original Amount</th>
           <th>Outstanding</th>
-          <th>Monthly Payment</th>
+          <th>Monthly Amortization</th>
           <th>Remaining</th>
           <th>Next Payment</th>
           <th>Actions</th>

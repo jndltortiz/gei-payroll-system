@@ -118,12 +118,21 @@ $empStmt = $pdo->prepare("
 $empStmt->execute([':cs3' => $cutoffStart, ':ce3' => $cutoffEnd]);
 $empRows = $empStmt->fetchAll(PDO::FETCH_ASSOC);
 
+// ── Migration 007 detection — graceful column fallback ────────────────────────
+$hasMig007 = (bool)$pdo->query("
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME   = 'attendance_records'
+      AND COLUMN_NAME  = 'overtime_minutes'
+")->fetchColumn();
+
 // ── HISTORY tab ───────────────────────────────────────────────────────────────
 $hDateFrom = $_GET['hfrom'] ?? date('Y-m-01');
 $hDateTo   = $_GET['hto']   ?? $dateToday;
 $hDept     = $_GET['hdept'] ?? '';
 $hStatus   = $_GET['hst']   ?? '';
 $hMethod   = $_GET['hmth']  ?? '';
+$hRv       = $_GET['hrv']   ?? '';
 $hSearch   = trim($_GET['hs'] ?? '');
 
 $hPage   = max(1, (int)($_GET['hpage'] ?? 1));
@@ -135,6 +144,7 @@ $hParams = [':hfrom' => $hDateFrom, ':hto' => $hDateTo];
 if ($hDept   !== '') { $hWhere .= " AND e.department_id = :hdept";       $hParams[':hdept'] = $hDept; }
 if ($hStatus !== '') { $hWhere .= " AND ar.attendance_status = :hst";    $hParams[':hst']   = $hStatus; }
 if ($hMethod !== '') { $hWhere .= " AND ar.attendance_source = :hmth";   $hParams[':hmth']  = $hMethod; }
+if ($hasMig007 && $hRv !== '') { $hWhere .= " AND ar.review_status = :hrv"; $hParams[':hrv'] = $hRv; }
 if ($hSearch !== '') {
     $hWhere .= " AND (e.first_name LIKE :hs OR e.last_name LIKE :hs OR e.employee_no LIKE :hs)";
     $hParams[':hs'] = '%' . $hSearch . '%';
@@ -149,16 +159,6 @@ $hTotal = $pdo->prepare("
 $hTotal->execute($hParams);
 $hTotal = $hTotal->fetchColumn();
 $hPages = max(1, ceil($hTotal / $hLimit));
-
-// ── Migration 007 detection — graceful column fallback ────────────────────────
-// If migration 007 has not been run yet, use placeholder SELECTs so the page
-// still loads; new features simply show default values.
-$hasMig007 = (bool)$pdo->query("
-    SELECT COUNT(*) FROM information_schema.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME   = 'attendance_records'
-      AND COLUMN_NAME  = 'overtime_minutes'
-")->fetchColumn();
 
 // Rebuild history query with the right column list
 $hOtCol  = $hasMig007 ? 'ar.overtime_minutes,'  : '0 AS overtime_minutes,';
@@ -187,6 +187,108 @@ $hRows = $hStmt->fetchAll(PDO::FETCH_ASSOC);
 // ── Shared data ───────────────────────────────────────────────────────────────
 $depts     = $pdo->query("SELECT department_id, department_name FROM departments ORDER BY department_name")->fetchAll();
 $positions = $pdo->query("SELECT position_id, position_name FROM positions ORDER BY position_name")->fetchAll();
+
+// ── DTR Attachments — all recent uploads, no date filter ────────────────────
+$dtrFiles = [];
+if ($hasMig007) {
+    try {
+        $hasDeptColDtr = (bool)$pdo->query("
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='dtr_attachments' AND COLUMN_NAME='department_id'
+        ")->fetchColumn();
+
+        $dtrDeptCol   = $hasDeptColDtr ? 'da.department_id, dept.department_name AS dtr_dept_name,' : "NULL AS department_id, NULL AS dtr_dept_name,";
+        $dtrDeptJoin  = $hasDeptColDtr ? "LEFT JOIN departments dept ON da.department_id = dept.department_id" : "";
+
+        $dtrStmt = $pdo->query("
+            SELECT da.attachment_id, da.cutoff_start, da.cutoff_end,
+                   da.file_name, da.file_path, da.file_type, da.notes, da.created_at,
+                   {$dtrDeptCol}
+                   COALESCE(
+                       CONCAT(emp.first_name, ' ', emp.last_name),
+                       u.username,
+                       'System'
+                   ) AS uploaded_by_name
+            FROM dtr_attachments da
+            LEFT JOIN users    u   ON da.uploaded_by  = u.user_id
+            LEFT JOIN employees emp ON u.employee_id  = emp.employee_id
+            {$dtrDeptJoin}
+            ORDER BY da.created_at DESC
+            LIMIT 50
+        ");
+        $dtrFiles = $dtrStmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $dtrEx) {
+        $dtrFiles = [];
+    }
+}
+
+// ── Correction Requests tab ───────────────────────────────────────────────────
+$corrPendingCount = 0;
+$corrRows         = [];
+$corrTotal        = 0;
+$corrTotalPages   = 1;
+$hasCorrTable     = false;
+
+try {
+    $hasCorrTable = (bool)$pdo->query("
+        SELECT COUNT(*) FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'attendance_corrections'
+    ")->fetchColumn();
+} catch (PDOException $_e) {}
+
+if ($hasCorrTable) {
+    $corrPendingCount = (int)$pdo->query("
+        SELECT COUNT(*) FROM attendance_corrections WHERE status = 'PENDING'
+    ")->fetchColumn();
+
+    $cStatus  = $_GET['cst']     ?? '';
+    $cSearch  = trim($_GET['cs'] ?? '');
+    $cFrom    = $_GET['cfrom']   ?? '';
+    $cTo      = $_GET['cto']     ?? '';
+    $cPage    = max(1, (int)($_GET['cpage'] ?? 1));
+    $cLimit   = 15;
+    $cOffset  = ($cPage - 1) * $cLimit;
+
+    $cWhere  = "WHERE 1=1";
+    $cParams = [];
+    if ($cStatus !== '') { $cWhere .= " AND ac.status = :cst";   $cParams[':cst']  = $cStatus; }
+    if ($cFrom   !== '') { $cWhere .= " AND ac.attendance_date >= :cfrom"; $cParams[':cfrom'] = $cFrom; }
+    if ($cTo     !== '') { $cWhere .= " AND ac.attendance_date <= :cto";   $cParams[':cto']   = $cTo; }
+    if ($cSearch !== '') {
+        $cWhere .= " AND (e.first_name LIKE :cs OR e.last_name LIKE :cs OR e.employee_no LIKE :cs)";
+        $cParams[':cs'] = '%' . $cSearch . '%';
+    }
+
+    $cCntStmt = $pdo->prepare("
+        SELECT COUNT(*) FROM attendance_corrections ac
+        JOIN employees e ON ac.employee_id = e.employee_id
+        $cWhere
+    ");
+    $cCntStmt->execute($cParams);
+    $corrTotal      = (int)$cCntStmt->fetchColumn();
+    $corrTotalPages = max(1, ceil($corrTotal / $cLimit));
+
+    $cStmt = $pdo->prepare("
+        SELECT ac.correction_id, ac.attendance_id, ac.attendance_date, ac.issue_type,
+               ac.explanation, ac.attachment_path, ac.attachment_name,
+               ac.status, ac.admin_note, ac.created_at,
+               e.first_name, e.last_name, e.employee_no,
+               d.department_name
+        FROM attendance_corrections ac
+        JOIN employees e ON ac.employee_id = e.employee_id
+        LEFT JOIN departments d ON e.department_id = d.department_id
+        $cWhere
+        ORDER BY
+            CASE ac.status WHEN 'PENDING' THEN 0 ELSE 1 END ASC,
+            ac.created_at DESC
+        LIMIT :lim OFFSET :off
+    ");
+    foreach ($cParams as $k => $v) $cStmt->bindValue($k, $v);
+    $cStmt->bindValue(':lim',  $cLimit,  PDO::PARAM_INT);
+    $cStmt->bindValue(':off',  $cOffset, PDO::PARAM_INT);
+    $cStmt->execute();
+    $corrRows = $cStmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
 // ── Labels ────────────────────────────────────────────────────────────────────
 $stLabels = [
@@ -271,6 +373,15 @@ require_once __DIR__ . '/../../includes/head.php';
                 <button class="att-tab <?= $tab==='history'?'active':'' ?>" onclick="switchTab('history')">
                     <i class="fa fa-clock-rotate-left"></i> Attendance History
                 </button>
+                <?php if ($hasCorrTable): ?>
+                <button class="att-tab <?= $tab==='corrections'?'active':'' ?>" onclick="switchTab('corrections')"
+                        style="<?= $tab!=='corrections' && $corrPendingCount>0 ? 'color:#dc2626;' : '' ?>">
+                    <i class="fa fa-flag"></i> Correction Requests
+                    <?php if ($corrPendingCount > 0): ?>
+                    <span style="background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px;margin-left:2px;"><?= $corrPendingCount ?></span>
+                    <?php endif; ?>
+                </button>
+                <?php endif; ?>
             </div>
 
             <!-- ── TODAY TAB ───────────────────────────────────────────────── -->
@@ -554,6 +665,16 @@ require_once __DIR__ . '/../../includes/head.php';
                             <option value="FACIAL_RECOGNITION"<?= $hMethod==='FACIAL_RECOGNITION'?'selected':'' ?>>Face ID</option>
                             <option value="AUTO"              <?= $hMethod==='AUTO'              ?'selected':'' ?>>Auto-tagged</option>
                         </select>
+                        <?php if ($hasMig007): ?>
+                        <select name="hrv" onchange="this.form.submit()">
+                            <option value="">All Review Status</option>
+                            <option value="PENDING"   <?= $hRv==='PENDING'   ?'selected':'' ?>>Pending Review</option>
+                            <option value="REVIEWED"  <?= $hRv==='REVIEWED'  ?'selected':'' ?>>Reviewed</option>
+                            <option value="APPROVED"  <?= $hRv==='APPROVED'  ?'selected':'' ?>>Verified</option>
+                            <option value="FLAGGED"   <?= $hRv==='FLAGGED'   ?'selected':'' ?>>Needs Correction</option>
+                            <option value="CORRECTED" <?= $hRv==='CORRECTED' ?'selected':'' ?>>Corrected</option>
+                        </select>
+                        <?php endif; ?>
                     </div>
                 </form>
 
@@ -660,6 +781,7 @@ require_once __DIR__ . '/../../includes/head.php';
                     'hdept' => $hDept,
                     'hst'   => $hStatus,
                     'hmth'  => $hMethod,
+                    'hrv'   => $hRv,
                     'hs'    => $hSearch,
                 ]);
                 ?>
@@ -676,9 +798,250 @@ require_once __DIR__ . '/../../includes/head.php';
                            href="?<?= $hLinkBase ?>&hpage=<?= min($hPages,$hPage+1) ?>">Next</a>
                     </div>
                 </div>
+
             </div><!-- /tabHistory -->
 
+            <?php if ($hasCorrTable): ?>
+            <!-- ── CORRECTIONS TAB ──────────────────────────────────────────── -->
+            <div id="tabCorrections" class="att-tab-pane <?= $tab!=='corrections'?'hidden':'' ?>">
+
+                <!-- Filters -->
+                <form method="GET" id="corrForm">
+                    <input type="hidden" name="tab" value="corrections">
+                    <div class="att-filters">
+                        <div class="att-search-box">
+                            <i class="fa fa-magnifying-glass"></i>
+                            <input type="text" name="cs" placeholder="Search employee name or no…"
+                                   value="<?= htmlspecialchars($cSearch ?? '') ?>"
+                                   oninput="debounce(()=>document.getElementById('corrForm').submit(),400)">
+                        </div>
+                        <select name="cst" onchange="this.form.submit()">
+                            <option value="">All Status</option>
+                            <option value="PENDING"   <?= ($cStatus??'')==='PENDING'   ?'selected':'' ?>>Pending</option>
+                            <option value="REVIEWED"  <?= ($cStatus??'')==='REVIEWED'  ?'selected':'' ?>>Reviewed</option>
+                            <option value="RESOLVED"  <?= ($cStatus??'')==='RESOLVED'  ?'selected':'' ?>>Resolved</option>
+                            <option value="DISMISSED" <?= ($cStatus??'')==='DISMISSED' ?'selected':'' ?>>Dismissed</option>
+                        </select>
+                        <input type="date" name="cfrom" value="<?= htmlspecialchars($cFrom??'') ?>"
+                               title="From date" style="padding:9px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;">
+                        <span style="font-size:12px;color:#6b7280;">to</span>
+                        <input type="date" name="cto" value="<?= htmlspecialchars($cTo??'') ?>"
+                               title="To date" style="padding:9px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;">
+                        <button type="submit" class="att-btn primary" style="padding:9px 14px;">
+                            <i class="fa fa-filter"></i> Apply
+                        </button>
+                        <?php if (($cStatus??'')!=='' || ($cSearch??'')!=='' || ($cFrom??'')!=='' || ($cTo??'')!==''): ?>
+                        <a href="?tab=corrections" style="font-size:12px;color:#6b7280;text-decoration:none;white-space:nowrap;">
+                            <i class="fa fa-rotate-left"></i> Reset
+                        </a>
+                        <?php endif; ?>
+                    </div>
+                </form>
+
+                <p class="att-period-note">
+                    <i class="fa fa-circle-info"></i>
+                    <?= $corrTotal ?> request<?= $corrTotal!==1?'s':'' ?> found
+                    <?php if (($cStatus??'') === '' && $corrPendingCount > 0): ?>
+                    &nbsp;·&nbsp; <strong style="color:#dc2626;"><?= $corrPendingCount ?> pending</strong>
+                    <?php endif; ?>
+                </p>
+
+                <?php if (empty($corrRows)): ?>
+                <div class="att-no-data">
+                    <i class="fa fa-flag" style="font-size:28px;color:#cbd5e1;display:block;margin-bottom:8px;"></i>
+                    No correction requests found.
+                </div>
+                <?php else: ?>
+                <div style="overflow-x:auto;">
+                <table class="att-table">
+                    <thead>
+                        <tr>
+                            <th>Employee</th>
+                            <th>Attendance Date</th>
+                            <th>Issue Type</th>
+                            <th style="max-width:280px;">Explanation</th>
+                            <th>Proof</th>
+                            <th style="text-align:center;">Status</th>
+                            <th>Submitted</th>
+                            <th style="text-align:center;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php
+                    $corrIssueLabels = [
+                        'MISSING_TIME_IN'  => 'Missing Time In',
+                        'MISSING_TIME_OUT' => 'Missing Time Out',
+                        'WRONG_STATUS'     => 'Wrong Status',
+                        'LATE_INCORRECT'   => 'Late Incorrectly Marked',
+                        'OTHER'            => 'Other',
+                    ];
+                    $corrStatusMap = [
+                        'PENDING'   => ['Pending',   'rv-pending',   '#f97316'],
+                        'REVIEWED'  => ['Reviewed',  'rv-reviewed',  '#2563eb'],
+                        'RESOLVED'  => ['Resolved',  'rv-approved',  '#059669'],
+                        'DISMISSED' => ['Dismissed', 'rv-flagged',   '#dc2626'],
+                    ];
+                    foreach ($corrRows as $cr):
+                        [$cLabel, $cCls] = $corrStatusMap[$cr['status']] ?? ['Unknown', 'rv-pending'];
+                        $issueLabel = $corrIssueLabels[$cr['issue_type']] ?? $cr['issue_type'];
+                        $initials   = strtoupper(substr($cr['first_name'],0,1) . substr($cr['last_name'],0,1));
+                        $cjson      = json_encode([
+                            'id'          => (int)$cr['correction_id'],
+                            'name'        => $cr['first_name'] . ' ' . $cr['last_name'],
+                            'empNo'       => $cr['employee_no'] ?? '',
+                            'date'        => $cr['attendance_date'],
+                            'issue'       => $issueLabel,
+                            'explanation' => $cr['explanation'],
+                            'adminNote'   => $cr['admin_note'] ?? '',
+                            'status'      => $cr['status'],
+                        ]);
+                    ?>
+                    <tr style="<?= $cr['status']==='PENDING' ? 'background:#fffbeb;' : '' ?>">
+                        <td>
+                            <div class="att-emp-cell">
+                                <div class="att-av"><?= $initials ?></div>
+                                <div>
+                                    <div style="font-weight:600;"><?= htmlspecialchars($cr['first_name'].' '.$cr['last_name']) ?></div>
+                                    <?php if ($cr['employee_no']): ?><div class="att-empno"><?= htmlspecialchars($cr['employee_no']) ?></div><?php endif; ?>
+                                    <?php if ($cr['department_name']): ?><span class="att-role-tag"><?= htmlspecialchars($cr['department_name']) ?></span><?php endif; ?>
+                                </div>
+                            </div>
+                        </td>
+                        <td style="white-space:nowrap;font-weight:600;">
+                            <?= date('M j, Y', strtotime($cr['attendance_date'])) ?>
+                            <div style="font-size:10px;color:#94a3b8;"><?= date('D', strtotime($cr['attendance_date'])) ?></div>
+                        </td>
+                        <td>
+                            <span class="att-method-tag"><?= htmlspecialchars($issueLabel) ?></span>
+                        </td>
+                        <td style="max-width:280px;">
+                            <div style="font-size:12px;color:#374151;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;">
+                                <?= htmlspecialchars($cr['explanation']) ?>
+                            </div>
+                            <?php if ($cr['admin_note']): ?>
+                            <div style="font-size:11px;color:#0f766e;margin-top:4px;font-style:italic;">
+                                <i class="fa fa-reply"></i> <?= htmlspecialchars($cr['admin_note']) ?>
+                            </div>
+                            <?php endif; ?>
+                        </td>
+                        <td style="text-align:center;">
+                            <?php if ($cr['attachment_path'] && file_exists(__DIR__ . '/../../' . $cr['attachment_path'])): ?>
+                            <a href="<?= BASE_URL . htmlspecialchars($cr['attachment_path']) ?>" target="_blank"
+                               class="att-action-btn" title="<?= htmlspecialchars($cr['attachment_name'] ?? 'View proof') ?>">
+                                <i class="fa fa-paperclip"></i> View
+                            </a>
+                            <?php else: ?>
+                            <span style="color:#94a3b8;font-size:12px;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="text-align:center;">
+                            <span class="att-rv-badge <?= $cCls ?>"><?= $cLabel ?></span>
+                        </td>
+                        <td style="white-space:nowrap;font-size:12px;color:#64748b;">
+                            <?= date('M j, Y', strtotime($cr['created_at'])) ?><br>
+                            <?= date('g:i A', strtotime($cr['created_at'])) ?>
+                        </td>
+                        <td style="text-align:center;">
+                            <button class="att-action-btn" onclick="openCorrResolveModal(<?= htmlspecialchars($cjson, ENT_QUOTES) ?>)">
+                                <i class="fa fa-pen-to-square"></i> Resolve
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="att-pagination">
+                    <span>Showing <?= $corrTotal>0?$cOffset+1:0 ?>–<?= min($cOffset+$cLimit,$corrTotal) ?> of <?= $corrTotal ?></span>
+                    <div class="att-pg-btns">
+                        <?php
+                        $cBase = http_build_query(array_filter(['tab'=>'corrections','cst'=>$cStatus??'','cs'=>$cSearch??'','cfrom'=>$cFrom??'','cto'=>$cTo??'']));
+                        ?>
+                        <a class="att-pg <?= $cPage<=1?'disabled':'' ?>" href="?<?= $cBase ?>&cpage=<?= max(1,$cPage-1) ?>">
+                            <i class="fa fa-chevron-left" style="font-size:10px;"></i> Prev
+                        </a>
+                        <?php foreach (range(max(1,$cPage-2),min($corrTotalPages,$cPage+2)) as $pg): ?>
+                        <a class="att-pg <?= $pg===$cPage?'active':'' ?>" href="?<?= $cBase ?>&cpage=<?= $pg ?>"><?= $pg ?></a>
+                        <?php endforeach; ?>
+                        <a class="att-pg <?= $cPage>=$corrTotalPages?'disabled':'' ?>" href="?<?= $cBase ?>&cpage=<?= min($corrTotalPages,$cPage+1) ?>">
+                            Next <i class="fa fa-chevron-right" style="font-size:10px;"></i>
+                        </a>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+            </div><!-- /tabCorrections -->
+            <?php endif; ?>
+
         </div><!-- /att-main-card -->
+
+        <?php if ($hasMig007): ?>
+        <!-- ── DTR BACKUP FILES (always visible, below tabs) ──────────────── -->
+        <div class="att-dtr-outer">
+            <div class="att-dtr-section-title">
+                <i class="fa fa-paperclip"></i>
+                DTR Backup Files
+                <?php if (!empty($dtrFiles)): ?>
+                <span class="att-dtr-count"><?= count($dtrFiles) ?></span>
+                <?php endif; ?>
+                <button class="att-btn outline" onclick="openDtrModal()"
+                        style="margin-left:auto;font-size:12px;padding:6px 14px;border-color:#3b82f6;color:#1d4ed8;">
+                    <i class="fa fa-file-arrow-up"></i> Upload DTR
+                </button>
+            </div>
+
+            <?php if (!empty($dtrFiles)): ?>
+            <div class="att-dtr-list">
+            <?php foreach ($dtrFiles as $df):
+                $ftIcon = match($df['file_type']) {
+                    'EXCEL' => 'fa-file-excel',
+                    'PDF'   => 'fa-file-pdf',
+                    'IMAGE' => 'fa-file-image',
+                    default => 'fa-file',
+                };
+                $ftColor = match($df['file_type']) {
+                    'EXCEL' => '#16a34a',
+                    'PDF'   => '#dc2626',
+                    'IMAGE' => '#7c3aed',
+                    default => '#6b7280',
+                };
+            ?>
+            <div class="att-dtr-item">
+                <i class="fa <?= $ftIcon ?>" style="color:<?= $ftColor ?>;font-size:22px;flex-shrink:0;"></i>
+                <div class="att-dtr-info">
+                    <div class="att-dtr-filename"><?= htmlspecialchars($df['file_name']) ?></div>
+                    <div class="att-dtr-meta">
+                        <strong>Period:</strong>
+                        <?= date('M j, Y', strtotime($df['cutoff_start'])) ?>
+                        <?= $df['cutoff_start'] !== $df['cutoff_end'] ? ' – ' . date('M j, Y', strtotime($df['cutoff_end'])) : '' ?>
+                        <?php if (!empty($df['dtr_dept_name'])): ?>
+                        &nbsp;·&nbsp; <span class="att-dept-tag" style="font-size:10px;"><?= htmlspecialchars($df['dtr_dept_name']) ?></span>
+                        <?php endif; ?>
+                        &nbsp;·&nbsp; Uploaded by <?= htmlspecialchars($df['uploaded_by_name'] ?? 'System') ?>
+                        on <?= date('M j, Y g:i A', strtotime($df['created_at'])) ?>
+                        <?php if ($df['notes']): ?>
+                        <br><em><?= htmlspecialchars($df['notes']) ?></em>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <a href="<?= BASE_URL ?>actions/download-dtr.php?id=<?= $df['attachment_id'] ?>"
+                   target="_blank" class="att-btn outline"
+                   style="font-size:12px;padding:6px 12px;white-space:nowrap;flex-shrink:0;">
+                    <i class="fa fa-download"></i> Download
+                </a>
+            </div>
+            <?php endforeach; ?>
+            </div>
+            <?php else: ?>
+            <div class="att-dtr-empty">
+                <i class="fa fa-folder-open" style="opacity:0.25;font-size:24px;"></i>
+                <span>No DTR backup files uploaded yet. Use the <strong>Upload DTR</strong> button above to add a file.</span>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -714,6 +1077,75 @@ require_once __DIR__ . '/../../includes/head.php';
 <?php include __DIR__ . '/modals/add-attendance-modal.php'; ?>
 <?php include __DIR__ . '/modals/edit-attendance-modal.php'; ?>
 <?php include __DIR__ . '/modals/timeout-modal.php'; ?>
+<?php if ($hasMig007) include __DIR__ . '/modals/dtr-upload-modal.php'; ?>
+
+<?php if ($hasCorrTable): ?>
+<!-- ── Correction Resolve Modal ───────────────────────────────────────────── -->
+<div id="corrResolveModal" class="att-modal" style="display:none;">
+  <div class="att-modal-box" style="max-width:500px;">
+    <div class="att-modal-header" style="background:#1e3a5f;">
+      <div>
+        <h3><i class="fa fa-flag"></i> Resolve Correction Request</h3>
+        <p style="font-size:12px;opacity:.8;margin-top:2px;">Review the employee's issue and mark a resolution.</p>
+      </div>
+      <button type="button" class="att-modal-close" onclick="closeCorrResolveModal()"><i class="fa fa-times"></i></button>
+    </div>
+    <div class="att-modal-body">
+      <!-- Employee + request info (read-only) -->
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;">
+        <div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Request Details</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+          <div><div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Employee</div><div style="font-size:13px;font-weight:600;color:#0f172a;" id="crName">—</div></div>
+          <div><div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Date</div><div style="font-size:13px;font-weight:600;color:#0f172a;" id="crDate">—</div></div>
+          <div><div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Issue Type</div><div style="font-size:13px;font-weight:600;color:#0f172a;" id="crIssue">—</div></div>
+          <div><div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Current Status</div><div id="crStatus">—</div></div>
+          <div style="grid-column:span 2;"><div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Employee Explanation</div><div style="font-size:13px;color:#374151;line-height:1.5;" id="crExplanation">—</div></div>
+        </div>
+      </div>
+
+      <!-- Resolution decision -->
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;">Resolution</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border:2px solid #e2e8f0;border-radius:8px;cursor:pointer;transition:.15s;" id="optReviewed" onclick="selectCorrOpt(this,'REVIEWED')">
+            <input type="radio" name="corrStatus" value="REVIEWED" style="margin-top:2px;accent-color:#2563eb;">
+            <div><div style="font-size:13px;font-weight:600;color:#1e293b;"><i class="fa fa-eye" style="color:#2563eb;margin-right:4px;"></i>Mark Reviewed</div><div style="font-size:11px;color:#64748b;">Acknowledged — admin has reviewed, may need further action.</div></div>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border:2px solid #e2e8f0;border-radius:8px;cursor:pointer;transition:.15s;" id="optResolved" onclick="selectCorrOpt(this,'RESOLVED')">
+            <input type="radio" name="corrStatus" value="RESOLVED" style="margin-top:2px;accent-color:#059669;">
+            <div><div style="font-size:13px;font-weight:600;color:#1e293b;"><i class="fa fa-circle-check" style="color:#059669;margin-right:4px;"></i>Resolved</div><div style="font-size:11px;color:#64748b;">Issue addressed — attendance has been corrected or confirmed.</div></div>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border:2px solid #e2e8f0;border-radius:8px;cursor:pointer;transition:.15s;" id="optDismissed" onclick="selectCorrOpt(this,'DISMISSED')">
+            <input type="radio" name="corrStatus" value="DISMISSED" style="margin-top:2px;accent-color:#dc2626;">
+            <div><div style="font-size:13px;font-weight:600;color:#1e293b;"><i class="fa fa-ban" style="color:#dc2626;margin-right:4px;"></i>Dismiss</div><div style="font-size:11px;color:#64748b;">Request is invalid or not actionable — close without changes.</div></div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Admin note -->
+      <div>
+        <label style="display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:5px;">
+          Admin Note <span style="color:#94a3b8;font-weight:400;">(optional — visible to admin only)</span>
+        </label>
+        <textarea id="crAdminNote" rows="2" placeholder="Add a note about the resolution or reason for dismissal…"
+                  style="width:100%;padding:9px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;"></textarea>
+      </div>
+
+      <div id="crError" style="display:none;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:13px;"></div>
+    </div>
+    <div class="att-modal-footer">
+      <button type="button" class="att-btn outline" onclick="closeCorrResolveModal()">Cancel</button>
+      <button type="button" class="att-btn primary" id="crSaveBtn" onclick="submitCorrResolve()" disabled>
+        <i class="fa fa-save"></i> Save Resolution
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast for correction resolve -->
+<div id="corrToast" style="position:fixed;bottom:24px;right:24px;z-index:2000;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.18);display:none;"></div>
+<?php endif; ?>
+
 <script src="<?= BASE_URL ?>assets/js/attendance.js"></script>
 <script>
 // Auto-Absent modal helpers (inline — simple enough)
@@ -724,6 +1156,87 @@ window.openAutoAbsentModal = function() {
 window.closeAutoAbsentModal = function() {
     document.getElementById('autoAbsentModal').style.display = 'none';
 };
+// ── Correction Resolve Modal ──────────────────────────────────────────────────
+<?php if ($hasCorrTable): ?>
+let _crId = null, _crChoice = null;
+
+window.openCorrResolveModal = function(data) {
+    _crId = data.id; _crChoice = null;
+    document.getElementById('crName').textContent        = data.name + (data.empNo ? ' (' + data.empNo + ')' : '');
+    document.getElementById('crDate').textContent        = data.date;
+    document.getElementById('crIssue').textContent       = data.issue;
+    document.getElementById('crExplanation').textContent = data.explanation;
+    document.getElementById('crAdminNote').value         = data.adminNote || '';
+    document.getElementById('crError').style.display     = 'none';
+
+    const rvMap = { PENDING:'rv-pending', REVIEWED:'rv-reviewed', RESOLVED:'rv-approved', DISMISSED:'rv-flagged' };
+    const rvLbl = { PENDING:'Pending', REVIEWED:'Reviewed', RESOLVED:'Resolved', DISMISSED:'Dismissed' };
+    document.getElementById('crStatus').innerHTML = `<span class="att-rv-badge ${rvMap[data.status]||'rv-pending'}">${rvLbl[data.status]||data.status}</span>`;
+
+    ['optReviewed','optResolved','optDismissed'].forEach(id => {
+        document.getElementById(id).style.borderColor = '#e2e8f0';
+        document.getElementById(id).style.background  = '#fff';
+        document.getElementById(id).querySelector('input').checked = false;
+    });
+    document.getElementById('crSaveBtn').disabled = true;
+    document.getElementById('corrResolveModal').style.display = 'flex';
+};
+
+window.closeCorrResolveModal = function() {
+    document.getElementById('corrResolveModal').style.display = 'none';
+    _crId = null; _crChoice = null;
+};
+
+window.selectCorrOpt = function(el, val) {
+    ['optReviewed','optResolved','optDismissed'].forEach(id => {
+        document.getElementById(id).style.borderColor = '#e2e8f0';
+        document.getElementById(id).style.background  = '#fff';
+    });
+    el.style.borderColor = '#2563eb';
+    el.style.background  = '#eff6ff';
+    el.querySelector('input').checked = true;
+    _crChoice = val;
+    document.getElementById('crSaveBtn').disabled = false;
+};
+
+window.submitCorrResolve = function() {
+    if (!_crId || !_crChoice) return;
+    const btn    = document.getElementById('crSaveBtn');
+    const errBox = document.getElementById('crError');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Saving…';
+    errBox.style.display = 'none';
+
+    const fd = new FormData();
+    fd.append('correction_id', _crId);
+    fd.append('status',        _crChoice);
+    fd.append('admin_note',    document.getElementById('crAdminNote').value.trim());
+
+    fetch('<?= BASE_URL ?>actions/admin-resolve-correction.php', { method:'POST', body:fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                closeCorrResolveModal();
+                const t = document.getElementById('corrToast');
+                t.textContent = data.message; t.style.background = '#059669';
+                t.style.display = 'block';
+                setTimeout(() => { t.style.display = 'none'; location.reload(); }, 1600);
+            } else {
+                errBox.textContent = data.message || 'Failed to save.';
+                errBox.style.display = 'block';
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa fa-save"></i> Save Resolution';
+            }
+        })
+        .catch(() => {
+            errBox.textContent = 'Network error. Please try again.';
+            errBox.style.display = 'block';
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-save"></i> Save Resolution';
+        });
+};
+<?php endif; ?>
+
 window.runAutoAbsent = function() {
     const btn    = document.getElementById('autoAbsentBtn');
     const result = document.getElementById('autoAbsentResult');
