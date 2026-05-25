@@ -20,6 +20,11 @@ foreach ($allPeriods as $p) {
 }
 $periodIsEditable = $selectedPeriod && $selectedPeriod['status'] === 'OPEN';
 
+// ── Period groupings for the optgroup selector ────────────────────────────────
+$activeStatuses = ['OPEN', 'PROCESSING', 'APPROVED'];
+$activePeriods  = array_values(array_filter($allPeriods, fn($p) => in_array($p['status'], $activeStatuses)));
+$historyPeriods = array_values(array_filter($allPeriods, fn($p) => $p['status'] === 'RELEASED'));
+
 // ── Filters ──────────────────────────────────────────────────────────────────
 $search      = trim($_GET['search']   ?? '');
 $deptFilter  = (int)($_GET['dept_id'] ?? 0);
@@ -39,7 +44,8 @@ if ($selectedId) {
 
     if ($search !== '') {
         $where .= " AND (e.first_name LIKE :s OR e.last_name LIKE :s
-                    OR CONCAT(e.first_name,' ',e.last_name) LIKE :s)";
+                    OR CONCAT(e.first_name,' ',e.last_name) LIKE :s
+                    OR e.employee_no LIKE :s)";
         $params[':s'] = "%$search%";
     }
     if ($deptFilter) {
@@ -58,6 +64,7 @@ if ($selectedId) {
                COALESCE(pr.employer_sss_share, 0)        AS employer_sss_share,
                COALESCE(pr.employer_philhealth_share, 0) AS employer_philhealth_share,
                COALESCE(pr.employer_pagibig_share, 0)    AS employer_pagibig_share,
+               COALESCE(e.employee_no, CONCAT('EMP-', LPAD(e.employee_id, 5, '0'))) AS employee_no,
                CONCAT(e.first_name,' ',e.last_name) AS employee_name,
                p.position_name, d.department_name,
 
@@ -116,11 +123,20 @@ if ($selectedId) {
     }
 }
 
+// ── Alert counts ──────────────────────────────────────────────────────────────
+$alertNegative = 0;
+$alertZeroBasic = 0;
+foreach ($records as $r) {
+    if ((float)$r['net_pay']   < 0) $alertNegative++;
+    if ((float)$r['basic_pay'] == 0) $alertZeroBasic++;
+}
+
 $allowanceDetails = [];
 $deductionDetails = [];
 if ($selectedId && !empty($records)) {
     $detailStmt = $pdo->prepare("
         SELECT pr.payroll_id,
+               pa.payroll_allowance_id,
                at2.allowance_type_id                        AS type_id,
                COALESCE(pa.adjustment_label, at2.allowance_name) AS name,
                pa.amount,
@@ -134,6 +150,7 @@ if ($selectedId && !empty($records)) {
     $detailStmt->execute([$selectedId]);
     foreach ($detailStmt->fetchAll() as $d) {
         $allowanceDetails[$d['payroll_id']][] = [
+            'row_id'        => (int)$d['payroll_allowance_id'],
             'type_id'       => (int)$d['type_id'],
             'name'          => $d['name'],
             'amount'        => (float)$d['amount'],
@@ -143,6 +160,7 @@ if ($selectedId && !empty($records)) {
 
     $detailStmt = $pdo->prepare("
         SELECT pr.payroll_id,
+               pd.payroll_deduction_id,
                dt.deduction_type_id                             AS type_id,
                COALESCE(pd.adjustment_label, dt.deduction_name) AS name,
                COALESCE(dt.is_absence_deduction, 0)             AS is_absence,
@@ -166,6 +184,7 @@ if ($selectedId && !empty($records)) {
             $name .= ' (' . $label . ')';
         }
         $deductionDetails[$d['payroll_id']][] = [
+            'row_id'        => (int)$d['payroll_deduction_id'],
             'type_id'       => (int)$d['type_id'],
             'name'          => $name,
             'amount'        => (float)$d['amount'],
@@ -192,7 +211,6 @@ if ($selectedId) {
     }
 }
 
-// FIX: define $recordCount properly so it's available in PHP conditionals
 $recordCount = count($records);
 
 $pageTitle = 'Payroll Management';
@@ -214,9 +232,6 @@ require_once __DIR__ . '/../../includes/head.php';
             <small>Generate payroll, edit allowances and deductions per period, then submit for approval.</small>
         </div>
         <div class="actions">
-            <button class="btn-outline" id="btnExport" onclick="window.print()">
-                <i class="fa fa-file-export"></i> Export
-            </button>
             <?php if ($selectedId): ?>
             <a href="<?= BASE_URL ?>modules/payroll/batch-detail.php?period_id=<?= $selectedId ?>"
                class="btn-outline" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;">
@@ -239,12 +254,24 @@ require_once __DIR__ . '/../../includes/head.php';
                 <?php if (empty($allPeriods)): ?>
                     <option value="">No pay periods found</option>
                 <?php else: ?>
-                    <?php foreach ($allPeriods as $p): ?>
-                    <option value="<?= $p['period_id'] ?>" <?= $p['period_id'] == $selectedId ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($p['period_name']) ?>
-                        (<?= ucfirst(strtolower($p['status'])) ?>)
-                    </option>
-                    <?php endforeach; ?>
+                    <?php if (!empty($activePeriods)): ?>
+                    <optgroup label="Active Payrolls">
+                        <?php foreach ($activePeriods as $p): ?>
+                        <option value="<?= $p['period_id'] ?>" <?= $p['period_id'] == $selectedId ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($p['period_name']) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </optgroup>
+                    <?php endif; ?>
+                    <?php if (!empty($historyPeriods)): ?>
+                    <optgroup label="Released / Payroll History">
+                        <?php foreach ($historyPeriods as $p): ?>
+                        <option value="<?= $p['period_id'] ?>" <?= $p['period_id'] == $selectedId ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($p['period_name']) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </optgroup>
+                    <?php endif; ?>
                 <?php endif; ?>
             </select>
         </div>
@@ -255,12 +282,28 @@ require_once __DIR__ . '/../../includes/head.php';
         <?php endif; ?>
     </div>
 
+    <?php if ($selectedPeriod && $selectedPeriod['status'] === 'RELEASED'): ?>
+    <!-- HISTORY MODE NOTICE -->
+    <div class="payroll-history-notice">
+        <i class="fa fa-clock-rotate-left"></i>
+        <div>
+            <strong>Viewing Historical Record</strong> — <?= htmlspecialchars($selectedPeriod['period_name'] ?? '') ?>
+            <?php if ($selectedPeriod['pay_date']): ?>
+            · Pay date: <?= date('M j, Y', strtotime($selectedPeriod['pay_date'])) ?>
+            <?php endif; ?>
+        </div>
+        <span style="margin-left:auto;font-size:11px;opacity:0.8;">
+            This payroll has been released and is locked for audit purposes. Records are preserved and cannot be edited.
+        </span>
+    </div>
+    <?php endif; ?>
+
     <!-- FILTER BAR -->
     <form class="filter-bar" method="GET" action="">
         <input type="hidden" name="period_id" value="<?= $selectedId ?>">
         <div class="filter-search">
             <i class="fa fa-search filter-search-icon"></i>
-            <input type="text" name="search" placeholder="Search employee…"
+            <input type="text" name="search" placeholder="Search employee or ID…"
                    value="<?= htmlspecialchars($search) ?>">
         </div>
         <select name="dept_id">
@@ -340,6 +383,25 @@ require_once __DIR__ . '/../../includes/head.php';
     </div>
     <?php endif; ?>
 
+    <!-- ALERTS STRIP — shown when payroll data has issues -->
+    <?php if ($recordCount > 0 && ($alertNegative > 0 || $alertZeroBasic > 0)): ?>
+    <div class="payroll-alerts-strip">
+        <i class="fa fa-triangle-exclamation" style="font-size:15px;flex-shrink:0;"></i>
+        <strong>Payroll Warnings:</strong>
+        <?php if ($alertNegative > 0): ?>
+        <span class="alert-chip alert-chip--red">
+            <?= $alertNegative ?> employee<?= $alertNegative > 1 ? 's' : '' ?> with negative net pay
+        </span>
+        <?php endif; ?>
+        <?php if ($alertZeroBasic > 0): ?>
+        <span class="alert-chip alert-chip--yellow">
+            <?= $alertZeroBasic ?> employee<?= $alertZeroBasic > 1 ? 's' : '' ?> with ₱0 basic pay
+        </span>
+        <?php endif; ?>
+        <span style="font-size:12px;color:#9a3412;margin-left:4px;">Review highlighted rows before submitting.</span>
+    </div>
+    <?php endif; ?>
+
     <!-- TABLE -->
     <div class="table-wrapper">
         <table class="payroll-table">
@@ -375,14 +437,20 @@ require_once __DIR__ . '/../../includes/head.php';
                     </td>
                 </tr>
             <?php else: ?>
-            <?php $periodName = htmlspecialchars($selectedPeriod['period_name'] ?? ''); ?>
+            <?php
+            $periodName    = htmlspecialchars($selectedPeriod['period_name'] ?? '');
+            $batchPayrollNo = htmlspecialchars($selectedPeriod['payroll_number'] ?? '');
+            ?>
             <?php foreach ($records as $row): ?>
                 <?php
                 $allowanceJson = htmlspecialchars(json_encode($allowanceDetails[$row['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
                 $deductionJson = htmlspecialchars(json_encode($deductionDetails[$row['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
+                $isNegative    = (float)$row['net_pay'] < 0;
+                $employeeNo    = htmlspecialchars($row['employee_no'] ?? '');
                 ?>
-                <tr data-payroll-id="<?= $row['payroll_id'] ?>">
+                <tr data-payroll-id="<?= $row['payroll_id'] ?>"<?= $isNegative ? ' class="row--negative-net"' : '' ?>>
                     <td>
+                        <div class="emp-no-label"><?= $employeeNo ?></div>
                         <strong><?= htmlspecialchars($row['employee_name']) ?></strong><br>
                         <small style="color:#9ca3af"><?= htmlspecialchars($row['position_name'] ?? '') ?></small>
                     </td>
@@ -391,7 +459,11 @@ require_once __DIR__ . '/../../includes/head.php';
                     <td data-col="allowances">₱<?= number_format($row['total_allowances'], 2) ?></td>
                     <td data-col="gross"><strong>₱<?= number_format($row['gross_pay'], 2) ?></strong></td>
                     <td data-col="deductions">₱<?= number_format($row['total_deductions'], 2) ?></td>
-                    <td data-col="net"><strong>₱<?= number_format($row['net_pay'], 2) ?></strong></td>
+                    <td data-col="net"><?php if ($isNegative): ?>
+                        <strong style="color:#dc2626;">₱<?= number_format($row['net_pay'], 2) ?> <i class="fa fa-triangle-exclamation" style="font-size:11px;" title="Negative net pay"></i></strong>
+                    <?php else: ?>
+                        <strong>₱<?= number_format($row['net_pay'], 2) ?></strong>
+                    <?php endif; ?></td>
                     <td>
                         <span class="badge badge--<?= strtolower($row['payroll_status']) ?>">
                             <?= $row['payroll_status'] ?>
@@ -405,6 +477,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             data-position="<?= htmlspecialchars($row['position_name'] ?? '') ?>"
                             data-dept="<?= htmlspecialchars($row['department_name'] ?? '') ?>"
                             data-empid="<?= $row['employee_id'] ?>"
+                            data-empno="<?= $employeeNo ?>"
                             data-basic="<?= $row['basic_pay'] ?>"
                             data-assign="<?= $row['addl_assign'] ?>"
                             data-rice="<?= $row['rice_subsidy'] ?>"
@@ -416,6 +489,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             data-philhealth="<?= $row['philhealth'] ?>"
                             data-sss-premium="<?= $row['sss_premium'] ?>"
                             data-sss-loan="<?= $row['sss_loan'] ?>"
+                            data-payrollno="<?= $batchPayrollNo ?>"
                             data-period-label="<?= $periodName ?>"
                             data-allowances="<?= $allowanceJson ?>"
                             data-deductions="<?= $deductionJson ?>"
@@ -438,6 +512,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             data-position="<?= htmlspecialchars($row['position_name'] ?? '') ?>"
                             data-dept="<?= htmlspecialchars($row['department_name'] ?? '') ?>"
                             data-empid="<?= $row['employee_id'] ?>"
+                            data-empno="<?= $employeeNo ?>"
                             data-basic="<?= $row['basic_pay'] ?>"
                             data-total-allowances="<?= $row['total_allowances'] ?>"
                             data-allowances="<?= $allowanceJson ?>"
@@ -467,25 +542,28 @@ require_once __DIR__ . '/../../includes/head.php';
             <span>Total Net Pay</span>
             <strong id="total-net">₱<?= number_format($totalNet, 2) ?></strong>
         </div>
+        <?php if ($recordCount > 0): ?>
+        <div class="total-item" style="border-left:1px solid #e5e7eb;padding-left:24px;">
+            <span>Employees</span>
+            <strong style="font-size:18px;"><?= $recordCount ?></strong>
+        </div>
+        <?php endif; ?>
 
         <div class="payroll-flow-actions">
         <?php if ($selectedPeriod): ?>
 
           <?php if ($selectedPeriod['status'] === 'OPEN' && $recordCount > 0): ?>
-            <!-- STEP 1: Admin submits to Principal -->
             <button class="btn-primary"
                     onclick="confirmPayrollAction('submit', <?= $selectedId ?>)">
               <i class="fa fa-paper-plane"></i> Submit for Principal Approval
             </button>
 
           <?php elseif ($selectedPeriod['status'] === 'PROCESSING'): ?>
-            <!-- Awaiting Principal — show status only, no action for admin here -->
             <div class="processing-notice">
               <i class="fa fa-clock"></i> Awaiting Principal Approval
             </div>
 
           <?php elseif ($selectedPeriod['status'] === 'APPROVED'): ?>
-            <!-- STEP 3: Admin releases and prints payslips -->
             <div class="approved-notice">
               <i class="fa fa-circle-check" style="color:#059669"></i> Approved — ready to release
             </div>
@@ -498,7 +576,6 @@ require_once __DIR__ . '/../../includes/head.php';
             </button>
 
           <?php elseif ($selectedPeriod['status'] === 'RELEASED'): ?>
-            <!-- STEP 4: Released — archive/print only -->
             <div class="released-notice">
               <i class="fa fa-circle-check" style="color:#7c3aed"></i> Released
             </div>
@@ -511,7 +588,7 @@ require_once __DIR__ . '/../../includes/head.php';
         </div>
     </div>
 
-    <!-- Payroll action confirmation modal (inline, no class dependency) -->
+    <!-- Payroll action confirmation modal -->
     <div id="payrollConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);
          z-index:1000;align-items:center;justify-content:center;">
       <div style="background:#fff;border-radius:14px;padding:24px;width:420px;max-width:95%;
@@ -590,7 +667,6 @@ function showFlash(msg, ok) {
 let _pcmAction = null, _pcmPeriodId = null;
 
 const _pcmConfig = {
-    // FIX: was incorrectly pointing to payroll-submit-approval.php (file doesn't exist)
     submit: {
         title: 'Submit for Principal Approval',
         desc:  'This will lock the payroll from further edits and send it to the Principal for review. Continue?',
@@ -598,7 +674,6 @@ const _pcmConfig = {
         url: BASE_URL + 'actions/payroll-save.php',
         field: 'period_id'
     },
-    // approve and return intentionally omitted — Principal role only, not available to Admin
     release: {
         title: 'Release Payroll',
         desc:  'Mark this payroll as released? This confirms salaries have been distributed to employees.',
@@ -639,7 +714,6 @@ async function executePayrollAction() {
 
     const fd = new FormData();
     fd.append(cfg.field, _pcmPeriodId);
-    // payroll-approve.php needs an 'action' param; payroll-save.php does not
     if (_pcmAction !== 'submit') fd.append('action', _pcmAction);
     const notes = document.getElementById('pcm-notes').value.trim();
     if (notes) fd.append('notes', notes);
@@ -665,18 +739,14 @@ async function executePayrollAction() {
 window.openGenerateModal  = () => document.getElementById('generateModal').style.display = 'flex';
 window.closeGenerateModal = () => document.getElementById('generateModal').style.display = 'none';
 
-// Single consolidated listener — handles validation AND AJAX in one place.
-// Must be registered after DOMContentLoaded so the modal HTML is in the DOM.
 document.addEventListener('DOMContentLoaded', () => {
     const genForm = document.getElementById('generateForm');
     if (!genForm) return;
 
     genForm.addEventListener('submit', async function (e) {
-        // Always stop the form from doing a real page navigation
         e.preventDefault();
         e.stopImmediatePropagation();
 
-        // ── Client-side validation ────────────────────────────────────────
         const scope = document.querySelector('input[name="scope"]:checked')?.value;
         if (scope === 'department' && !document.getElementById('deptSelect')?.value) {
             alert('Please select a department.'); return;
@@ -689,7 +759,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!checked) { alert('Please select at least one employee.'); return; }
         }
 
-        // ── AJAX submit ───────────────────────────────────────────────────
         const btn = genForm.querySelector('[type="submit"]');
         btn.disabled = true;
         btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Generating…';

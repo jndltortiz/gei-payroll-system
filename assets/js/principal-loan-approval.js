@@ -83,6 +83,7 @@ function buildPrincipalReviewContent(loan, activeLoans) {
         <div class="emp-avatar">${init}</div>
         <div>
           <strong>${esc(loan.employee_name)}</strong>
+          <span style="font-size:11px;color:#94a3b8;font-weight:600;">${empId(loan.employee_id)}</span>
           <span>${esc(loan.position_name||'')} &bull; ${esc(loan.department_name||'')}</span>
           <div class="review-emp-meta">
             <span>Employed since: <strong>${fmt(loan.hire_date)}</strong></span>
@@ -365,7 +366,7 @@ function openPrincipalDetails(loanId) {
                     `<p style="color:red">${esc(data.message)}</p>`;
                 return;
             }
-            buildPrincipalDetailsContent(data.loan, data.schedule);
+            buildPrincipalDetailsContent(data.loan, data.schedule, data.payment_log || []);
         })
         .catch(() => {
             document.getElementById('principalDetailsBody').innerHTML =
@@ -377,14 +378,38 @@ function closePrincipalDetails() {
     document.getElementById('principalDetailsOverlay').style.display = 'none';
 }
 
-function buildPrincipalDetailsContent(loan, schedule) {
-    const paid = parseFloat(loan.total_amount) - parseFloat(loan.balance_amount);
-    const pct  = parseFloat(loan.total_amount) > 0
+function buildPrincipalDetailsContent(loan, schedule, paymentLog) {
+    const paid   = parseFloat(loan.total_amount) - parseFloat(loan.balance_amount);
+    const pct    = parseFloat(loan.total_amount) > 0
         ? Math.round(paid / parseFloat(loan.total_amount) * 100) : 0;
-    const init = loanInitials(loan.employee_name);
+    const init   = loanInitials(loan.employee_name);
+    const status = (loan.status || 'ACTIVE').toUpperCase();
+    const monthly = parseFloat(loan.monthly_deduction) || 0;
+    const auto    = monthly / 2;
+
     const approver = loan.approved_by_name
         ? `Verified by <strong>${esc(loan.approved_by_name)}</strong> on ${fmt(loan.approved_at)}`
-        : '';
+        : '<span style="color:#94a3b8">Not yet verified</span>';
+
+    // Next deduction date estimate
+    const paysMade = monthly > 0 ? Math.floor(paid / monthly) : 0;
+    let nextDedDate = '—';
+    if (loan.start_date && status === 'ACTIVE') {
+        const nd = new Date(loan.start_date);
+        nd.setMonth(nd.getMonth() + paysMade);
+        nextDedDate = nd.toLocaleDateString('en-PH', {year:'numeric',month:'short',day:'numeric'});
+    }
+
+    const statusBadgeClass = {
+        ACTIVE: 'pla-badge--active', PAUSED: 'pla-badge--pending',
+        COMPLETED: 'pla-badge--completed', PENDING: 'pla-badge--pending',
+    }[status] || 'pla-badge--muted';
+    const statusLabel = {
+        ACTIVE: 'Verified for Payroll Deduction', PAUSED: 'Paused',
+        COMPLETED: 'Completed', PENDING: 'Pending Principal Review',
+        RETURNED: 'Returned for Correction', DENIED: 'Rejected',
+        CANCELLED: 'Cancelled', ARCHIVED: 'Archived',
+    }[status] || status;
 
     const schedHtml = schedule.map(s => `
       <tr>
@@ -400,54 +425,82 @@ function buildPrincipalDetailsContent(loan, schedule) {
         </span></td>
       </tr>`).join('');
 
+    const payLogHtml = (paymentLog && paymentLog.length)
+        ? paymentLog.map(p => `
+          <tr>
+            <td>${fmt(p.payment_date)}</td>
+            <td>${peso(p.amount)}</td>
+            <td><span style="font-size:11px;background:#f1f5f9;padding:2px 6px;border-radius:4px;">${esc(p.payment_channel||'MANUAL')}</span></td>
+            <td style="font-size:12px;color:#64748b">${esc(p.receipt_number||'—')}</td>
+            <td style="font-size:12px;color:#64748b">${esc(p.notes||'—')}</td>
+            <td style="font-size:12px;color:#94a3b8">${esc(p.recorded_by_name||'—')}</td>
+          </tr>`).join('')
+        : `<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:14px">No payment records yet.</td></tr>`;
+
     document.getElementById('principalDetailsBody').innerHTML = `
-      <div class="detail-loan-id">
-        Loan ID: <strong>${esc(loan.account_reference || 'LN-' + String(loan.loan_id).padStart(7,'0'))}</strong>
-        <span class="pla-badge pla-badge--active" style="margin-left:8px;">Active</span>
+      <div class="detail-loan-id" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+        <span>Loan Record: <strong>${esc(loan.account_reference || 'LN-' + String(loan.loan_id).padStart(7,'0'))}</strong></span>
+        <span class="pla-badge ${statusBadgeClass}">${esc(statusLabel)}</span>
       </div>
 
       <div class="review-emp-card">
         <div class="emp-avatar">${init}</div>
         <div>
           <strong>${esc(loan.employee_name)}</strong>
-          <span>${esc(loan.loan_name)}</span>
+          <span style="font-size:11px;color:#94a3b8;font-weight:600;">${empId(loan.employee_id)}</span>
+          <span>${esc(loan.position_name||'')}${loan.position_name && loan.department_name ? ' &bull; ' : ''}${esc(loan.department_name||'')}</span>
           <small style="color:#94a3b8;font-size:11px;">${approver}</small>
+          ${loan.return_reason ? `<div style="margin-top:6px;padding:6px 10px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;font-size:12px;color:#92400e;"><i class="fa fa-rotate-left"></i> <strong>Returned for correction:</strong> ${esc(loan.return_reason)}</div>` : ''}
         </div>
       </div>
 
-      <div class="detail-stats">
-        <div>
-          <small>ORIGINAL AMOUNT</small>
-          <strong>${peso(loan.total_amount)}</strong>
-          <span>Start: ${fmt(loan.start_date)}</span>
-          <span>Term: ~${schedule.length} months</span>
-        </div>
-        <div>
-          <small>AMOUNT PAID</small>
-          <strong class="text-teal">${peso(paid)}</strong>
-          <span>Outstanding: <strong style="color:#ef4444">${peso(loan.balance_amount)}</strong></span>
-          <div class="progress-bar-wrap" style="margin-top:6px">
-            <div class="progress-bar-fill" style="width:${pct}%"></div>
-          </div>
-          <span>${pct}% paid</span>
-        </div>
-        <div>
-          <small>MONTHLY AMORTIZATION</small>
-          <strong>${peso(loan.monthly_deduction)}</strong>
-          <span>Auto-deduction: <strong>${peso(parseFloat(loan.monthly_deduction)/2)}/payroll</strong></span>
-          <span>End: ${fmt(loan.end_date)}</span>
-        </div>
+      <!-- Full loan details grid -->
+      <div class="review-grid" style="margin-bottom:14px;">
+        <div><small>LOAN TYPE</small><strong>${esc(loan.loan_name)}</strong></div>
+        <div><small>PROVIDER</small><strong>${esc(loan.provider_name||'—')}</strong></div>
+        <div><small>EXTERNAL REF #</small><strong>${esc(loan.account_reference||'—')}</strong></div>
+        <div><small>INTEREST RATE</small><strong>${parseFloat(loan.interest_rate||0)}% p.a.</strong></div>
+        <div><small>ORIGINAL AMOUNT</small><strong>${peso(loan.total_amount)}</strong></div>
+        <div><small>TOTAL PAYABLE</small><strong>${peso(loan.total_payable||loan.total_amount)}</strong></div>
+        <div><small>AMOUNT PAID</small><strong class="text-teal">${peso(paid)}</strong></div>
+        <div><small>REMAINING BALANCE</small><strong style="color:#ef4444">${peso(loan.balance_amount)}</strong></div>
+        <div><small>MONTHLY AMORTIZATION</small><strong>${peso(monthly)}</strong></div>
+        <div><small>AUTO-DEDUCTION / PAYROLL</small><strong style="color:#0369a1">${peso(auto)}</strong></div>
+        <div><small>START DATE</small><strong>${fmt(loan.start_date)}</strong></div>
+        <div><small>END DATE</small><strong>${fmt(loan.end_date)}</strong></div>
+        <div><small>NEXT DEDUCTION DATE (EST.)</small><strong>${nextDedDate}</strong></div>
+        ${loan.reason ? `<div class="review-grid-full"><small>NOTES / PURPOSE</small><p style="margin-top:4px;font-size:13px;color:#374151">${esc(loan.reason)}</p></div>` : ''}
       </div>
 
-      <div class="sched-label">MONTHLY AMORTIZATION SCHEDULE</div>
+      <!-- Repayment progress -->
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:6px;">
+          <span>${peso(paid)} paid</span><span>${peso(loan.total_amount)} total</span>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" style="width:${pct}%"></div>
+        </div>
+        <div style="font-size:12px;color:#059669;font-weight:600;margin-top:4px;">${pct}% paid off — ${schedule.length} month term</div>
+      </div>
+
+      <!-- Payment history -->
+      <div class="sched-label" style="margin-top:14px">PAYMENT HISTORY &amp; AUDIT LOG</div>
       <div class="sched-table-wrap">
         <table class="sched-table">
-          <thead><tr><th>Month</th><th>Payment Date</th><th>Amount</th><th>Status</th></tr></thead>
+          <thead><tr><th>Date</th><th>Amount</th><th>Channel</th><th>Receipt #</th><th>Notes</th><th>Recorded By</th></tr></thead>
+          <tbody>${payLogHtml}</tbody>
+        </table>
+      </div>
+
+      <!-- Amortization schedule -->
+      <div class="sched-label" style="margin-top:14px">MONTHLY AMORTIZATION SCHEDULE</div>
+      <div class="sched-table-wrap">
+        <table class="sched-table">
+          <thead><tr><th>Month</th><th>Due Date</th><th>Amortization</th><th>Status</th></tr></thead>
           <tbody>${schedHtml}</tbody>
         </table>
       </div>
 
-      <!-- Principal: read-only, no edit actions -->
       <div class="loan-modal-footer" style="margin:0;padding-top:16px;justify-content:flex-end;">
         <button class="btn-outline" onclick="closePrincipalDetails()">Close</button>
       </div>

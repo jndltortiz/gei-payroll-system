@@ -63,11 +63,40 @@ if ($type === 'summary') {
     $deptStmt->execute([$periodId]);
     $departments = $deptStmt->fetchAll();
 
+    // Previous RELEASED period for comparison
+    $prevStmt = $pdo->prepare("
+        SELECT pp.period_id, pp.period_name, pp.pay_period_start,
+               COUNT(pr.payroll_id)      AS emp_count,
+               SUM(pr.gross_pay)         AS total_gross,
+               SUM(pr.total_deductions)  AS total_deductions,
+               SUM(pr.net_pay)           AS total_net
+        FROM payroll_periods pp
+        JOIN payroll_records pr ON pr.period_id = pp.period_id
+        WHERE pp.status = 'RELEASED'
+          AND pp.pay_period_start < ?
+        GROUP BY pp.period_id, pp.period_name, pp.pay_period_start
+        ORDER BY pp.pay_period_start DESC
+        LIMIT 1
+    ");
+    $prevStmt->execute([$period['pay_period_start']]);
+    $prevPeriod = $prevStmt->fetch() ?: null;
+
+    // Alert counts for this period
+    $alertStmt = $pdo->prepare("
+        SELECT SUM(net_pay < 0)   AS neg_net_count,
+               SUM(basic_pay = 0) AS zero_basic_count
+        FROM payroll_records WHERE period_id = ?
+    ");
+    $alertStmt->execute([$periodId]);
+    $alerts = $alertStmt->fetch();
+
     echo json_encode([
         'success'     => true,
         'period'      => $period,
         'totals'      => $totals,
         'departments' => $departments,
+        'prev_period' => $prevPeriod,
+        'alerts'      => $alerts,
     ]);
     exit;
 }

@@ -42,6 +42,11 @@
                 <small>EMPLOYEE ID: </small>
                 <strong id="ps-empid">-</strong>
             </div>
+
+            <div>
+                <small>PAYROLL #: </small>
+                <strong id="ps-payroll-no">—</strong>
+            </div>
         </div>
 
         <!-- EARNINGS -->

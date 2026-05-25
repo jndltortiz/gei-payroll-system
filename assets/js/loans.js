@@ -1,9 +1,10 @@
 /* loans.js — GEI HR System — Loan Records Management */
 'use strict';
 
-const peso = v => '₱' + (parseFloat(v)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
-const esc  = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-const fmt  = d => d ? new Date(d).toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}) : '—';
+const peso  = v => '₱' + (parseFloat(v)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc   = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const fmt   = d => d ? new Date(d).toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}) : '—';
+const empId = id => 'EMP-' + String(id || 0).padStart(4, '0');
 
 // ─── Add Loan Record ──────────────────────────────────────────────────────────
 function openAddLoan()  { document.getElementById('addLoanOverlay').style.display='flex'; }
@@ -359,6 +360,7 @@ function buildDetailsContent(loan, schedule, paymentLog) {
         <div class="emp-avatar">${init}</div>
         <div>
           <strong>${esc(loan.employee_name)}</strong>
+          <span style="font-size:11px;color:#94a3b8;font-weight:600;">${empId(loan.employee_id)}</span>
           <span>${esc(loan.loan_name)} — ${esc(loan.provider_name||'')}</span>
           <small style="color:#94a3b8;font-size:11px;">${approver}</small>
           ${loan.return_reason ? `<div style="margin-top:6px;padding:6px 10px;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;font-size:12px;color:#92400e;"><i class="fa fa-rotate-left"></i> <strong>Returned for correction:</strong> ${esc(loan.return_reason)}</div>` : ''}

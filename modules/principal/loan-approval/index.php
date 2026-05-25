@@ -31,7 +31,7 @@ function buildSearchWhere(string $base, int $typeFilter, string $search, array &
 {
     $w = $base;
     if ($typeFilter) { $w .= " AND el.loan_type_id = :t"; $params[':t'] = $typeFilter; }
-    if ($search)     { $w .= " AND (e.first_name LIKE :q OR e.last_name LIKE :q OR CONCAT(e.first_name,' ',e.last_name) LIKE :q)";
+    if ($search)     { $w .= " AND (e.first_name LIKE :q OR e.last_name LIKE :q OR CONCAT(e.first_name,' ',e.last_name) LIKE :q OR CAST(el.employee_id AS CHAR) LIKE :q)";
                        $params[':q'] = "%$search%"; }
     return $w;
 }
@@ -87,8 +87,8 @@ $totalMonthlyDed  = $pdo->query("SELECT COALESCE(SUM(monthly_deduction),0) FROM 
 
 // ── HISTORY tab ──────────────────────────────────────────────────
 $histParams = [];
-$histBase   = "el.status IN ('DENIED','COMPLETED')";
-if ($histStatus !== 'all' && in_array($histStatus, ['DENIED','COMPLETED'])) {
+$histBase   = "el.status IN ('DENIED','COMPLETED','CANCELLED','ARCHIVED')";
+if ($histStatus !== 'all' && in_array($histStatus, ['DENIED','COMPLETED','CANCELLED','ARCHIVED'])) {
     $histBase = "el.status = :hs"; $histParams[':hs'] = $histStatus;
 }
 $histWhere = buildSearchWhere($histBase, $typeFilter, $search, $histParams);
@@ -123,6 +123,9 @@ function loanProgress(float $total, float $balance): int {
 }
 function remainingMonths(float $balance, float $monthly): int {
     return ($monthly > 0 && $balance > 0) ? (int)ceil($balance / $monthly) : 0;
+}
+function formatEmpId(int $id): string {
+    return 'EMP-' . str_pad($id, 4, '0', STR_PAD_LEFT);
 }
 
 $pageTitle = 'Loan Approvals';
@@ -282,6 +285,7 @@ require_once __DIR__ . '/../../../includes/head.php';
         <div class="emp-avatar"><?= $initials ?></div>
         <div class="app-emp-info">
           <strong><?= htmlspecialchars($loan['employee_name']) ?></strong>
+          <span style="font-size:11px;color:#94a3b8;font-weight:600;"><?= formatEmpId((int)$loan['employee_id']) ?></span>
           <span><?= htmlspecialchars($loan['department_name'] ?? '') ?></span>
           <span><?= htmlspecialchars($loan['position_name'] ?? '') ?></span>
         </div>
@@ -370,6 +374,7 @@ require_once __DIR__ . '/../../../includes/head.php';
             <div class="emp-avatar emp-avatar--sm"><?= $initials ?></div>
             <div>
               <span style="font-weight:600"><?= htmlspecialchars($loan['employee_name']) ?></span>
+              <small style="display:block;color:#94a3b8;font-weight:600;font-size:10px;"><?= formatEmpId((int)$loan['employee_id']) ?></small>
               <small style="display:block;color:#64748b"><?= htmlspecialchars($loan['department_name']??'') ?></small>
             </div>
           </div>
@@ -420,12 +425,28 @@ require_once __DIR__ . '/../../../includes/head.php';
           <th>Status</th>
           <th>Date Actioned</th>
           <th>Notes</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
       <?php foreach ($historyLoans as $hl):
-        $initials = loanInitials($hl['employee_name']);
-        $actDate  = $hl['approved_at'] ? date('M d, Y', strtotime($hl['approved_at'])) : '—';
+        $initials  = loanInitials($hl['employee_name']);
+        $actDate   = $hl['approved_at'] ? date('M d, Y', strtotime($hl['approved_at'])) : '—';
+        $histNotes = $hl['denied_reason'] ?: ($hl['cancelled_reason'] ?? '') ?: '—';
+        $hlBadgeClass = match($hl['status']) {
+            'DENIED'    => 'pla-badge--denied',
+            'COMPLETED' => 'pla-badge--completed',
+            'CANCELLED' => 'pla-badge--muted',
+            'ARCHIVED'  => 'pla-badge--muted',
+            default     => 'pla-badge--muted',
+        };
+        $hlBadgeLabel = match($hl['status']) {
+            'DENIED'    => 'Rejected',
+            'COMPLETED' => 'Completed',
+            'CANCELLED' => 'Cancelled',
+            'ARCHIVED'  => 'Archived',
+            default     => ucfirst(strtolower($hl['status'])),
+        };
       ?>
       <tr>
         <td>
@@ -433,24 +454,21 @@ require_once __DIR__ . '/../../../includes/head.php';
             <div class="emp-avatar emp-avatar--sm"><?= $initials ?></div>
             <div>
               <span style="font-weight:600"><?= htmlspecialchars($hl['employee_name']) ?></span>
+              <small style="display:block;color:#94a3b8;font-weight:600;font-size:10px;"><?= formatEmpId((int)$hl['employee_id']) ?></small>
               <small style="display:block;color:#64748b"><?= htmlspecialchars($hl['department_name']??'') ?></small>
             </div>
           </div>
         </td>
         <td><?= htmlspecialchars($hl['loan_name']) ?></td>
         <td><?= pesos((float)$hl['total_amount']) ?></td>
-        <td>
-          <?php if ($hl['status'] === 'DENIED'): ?>
-            <span class="pla-badge pla-badge--denied">Denied</span>
-          <?php elseif ($hl['status'] === 'COMPLETED'): ?>
-            <span class="pla-badge pla-badge--completed">Completed</span>
-          <?php else: ?>
-            <span class="pla-badge pla-badge--muted"><?= $hl['status'] ?></span>
-          <?php endif; ?>
-        </td>
+        <td><span class="pla-badge <?= $hlBadgeClass ?>"><?= $hlBadgeLabel ?></span></td>
         <td><?= $actDate ?></td>
-        <td style="color:#64748b;font-size:12px">
-          <?= $hl['denied_reason'] ? htmlspecialchars($hl['denied_reason']) : '—' ?>
+        <td style="color:#64748b;font-size:12px"><?= htmlspecialchars($histNotes) ?></td>
+        <td>
+          <button class="btn-icon" title="View full loan details"
+                  onclick="openPrincipalDetails(<?= $hl['loan_id'] ?>)">
+            <i class="fa fa-eye"></i>
+          </button>
         </td>
       </tr>
       <?php endforeach; ?>

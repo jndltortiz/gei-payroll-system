@@ -18,7 +18,7 @@ if ($statusFilter !== 'all' && in_array($statusFilter, ['PENDING','RETURNED','DE
     $docWhere = "el.status = :s"; $docParams[':s'] = strtoupper($statusFilter);
 }
 if ($typeFilter) { $docWhere .= " AND el.loan_type_id = :t"; $docParams[':t'] = $typeFilter; }
-if ($search)     { $docWhere .= " AND (e.first_name LIKE :q OR e.last_name LIKE :q OR CONCAT(e.first_name,' ',e.last_name) LIKE :q)"; $docParams[':q'] = "%$search%"; }
+if ($search)     { $docWhere .= " AND (e.first_name LIKE :q OR e.last_name LIKE :q OR CONCAT(e.first_name,' ',e.last_name) LIKE :q OR CAST(el.employee_id AS CHAR) LIKE :q)"; $docParams[':q'] = "%$search%"; }
 
 $docStmt = $pdo->prepare("
     SELECT el.*, lt.loan_name,
@@ -44,7 +44,7 @@ $pendingAmount    = $pdo->query("SELECT COALESCE(SUM(total_amount),0) FROM emplo
 $actWhere  = "el.status IN ('ACTIVE','PAUSED')";
 $actParams = [];
 if ($typeFilter) { $actWhere .= " AND el.loan_type_id = :t"; $actParams[':t'] = $typeFilter; }
-if ($search)     { $actWhere .= " AND (e.first_name LIKE :q OR e.last_name LIKE :q OR CONCAT(e.first_name,' ',e.last_name) LIKE :q)"; $actParams[':q'] = "%$search%"; }
+if ($search)     { $actWhere .= " AND (e.first_name LIKE :q OR e.last_name LIKE :q OR CONCAT(e.first_name,' ',e.last_name) LIKE :q OR CAST(el.employee_id AS CHAR) LIKE :q)"; $actParams[':q'] = "%$search%"; }
 
 $actStmt = $pdo->prepare("
     SELECT el.*, lt.loan_name,
@@ -74,7 +74,7 @@ if ($histStatus !== 'all' && in_array($histStatus, ['COMPLETED','CANCELLED','DEN
     $histWhere = "el.status = :hs"; $histParams[':hs'] = $histStatus;
 }
 if ($typeFilter) { $histWhere .= " AND el.loan_type_id = :t"; $histParams[':t'] = $typeFilter; }
-if ($search)     { $histWhere .= " AND (e.first_name LIKE :q OR e.last_name LIKE :q OR CONCAT(e.first_name,' ',e.last_name) LIKE :q)"; $histParams[':q'] = "%$search%"; }
+if ($search)     { $histWhere .= " AND (e.first_name LIKE :q OR e.last_name LIKE :q OR CONCAT(e.first_name,' ',e.last_name) LIKE :q OR CAST(el.employee_id AS CHAR) LIKE :q)"; $histParams[':q'] = "%$search%"; }
 
 $histStmt = $pdo->prepare("
     SELECT el.*, lt.loan_name,
@@ -122,6 +122,9 @@ function loanProgress(float $total, float $balance): int {
 }
 function remainingMonths(float $balance, float $monthly): int {
     return ($monthly > 0 && $balance > 0) ? (int)ceil($balance / $monthly) : 0;
+}
+function formatEmpId(int $id): string {
+    return 'EMP-' . str_pad($id, 4, '0', STR_PAD_LEFT);
 }
 ?>
 <body>
@@ -243,6 +246,7 @@ function remainingMonths(float $balance, float $monthly): int {
           <div class="emp-avatar"><?= $initials ?></div>
           <div class="app-emp-info">
             <strong><?= htmlspecialchars($app['employee_name']) ?></strong>
+            <span style="font-size:11px;color:#94a3b8;font-weight:600;"><?= formatEmpId((int)$app['employee_id']) ?></span>
             <span><?= htmlspecialchars($app['department_name'] ?? '') ?></span>
             <span><?= htmlspecialchars($app['position_name'] ?? '') ?></span>
           </div>
@@ -351,7 +355,10 @@ function remainingMonths(float $balance, float $monthly): int {
           <td>
             <div style="display:flex;align-items:center;gap:10px">
               <div class="emp-avatar emp-avatar--sm"><?= $initials ?></div>
-              <span><?= htmlspecialchars($loan['employee_name']) ?></span>
+              <div>
+                <span style="font-weight:600;display:block"><?= htmlspecialchars($loan['employee_name']) ?></span>
+                <span style="font-size:10px;color:#94a3b8;font-weight:600;"><?= formatEmpId((int)$loan['employee_id']) ?></span>
+              </div>
             </div>
           </td>
           <td>
@@ -428,7 +435,10 @@ function remainingMonths(float $balance, float $monthly): int {
           <td>
             <div style="display:flex;align-items:center;gap:10px">
               <div class="emp-avatar emp-avatar--sm"><?= $initials ?></div>
-              <span><?= htmlspecialchars($loan['employee_name']) ?></span>
+              <div>
+                <span style="font-weight:600;display:block"><?= htmlspecialchars($loan['employee_name']) ?></span>
+                <span style="font-size:10px;color:#94a3b8;font-weight:600;"><?= formatEmpId((int)$loan['employee_id']) ?></span>
+              </div>
             </div>
           </td>
           <td>

@@ -1,6 +1,6 @@
-<?php /** modal-view.php — View service credit details */ ?>
+<?php /** modal-view.php — View service credit details + activity history */ ?>
 <div class="sc-modal-overlay" id="viewModal" style="display:none;">
-  <div class="sc-modal-box">
+  <div class="sc-modal-box sc-modal-box--lg">
     <div class="sc-modal-header">
       <h3><i class="fa fa-eye"></i> Service Credit Details</h3>
       <button onclick="closeModal('viewModal')"><i class="fa fa-times"></i></button>

@@ -12,11 +12,13 @@
             <span class="close" onclick="closeEdit()">&times;</span>
         </div>
 
-        <!-- POSITION + DEPT -->
-        <div class="info-banner">
-            <strong>Position:</strong> <span id="edit-position"></span>
-            &nbsp; | &nbsp;
-            <strong>Department:</strong> <span id="edit-dept"></span>
+        <!-- POSITION + DEPT + EMPLOYEE NO -->
+        <div class="info-banner" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+            <span><strong>ID:</strong> <code id="edit-empno-display" style="font-size:12px;color:#374151;"></code></span>
+            <span style="color:#d1d5db;">|</span>
+            <span><strong>Position:</strong> <span id="edit-position"></span></span>
+            <span style="color:#d1d5db;">|</span>
+            <span><strong>Dept:</strong> <span id="edit-dept"></span></span>
         </div>
 
         <!-- BASIC PAY (always present, not from allowance_types) -->

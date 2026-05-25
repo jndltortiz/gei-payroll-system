@@ -76,8 +76,9 @@ async function openSummaryModal(periodId) {
 
         const p     = data.period;
         const t     = data.totals;
-        const label = formatPeriodLabel(p.pay_period_start, p.pay_period_end);
-        document.getElementById('summaryTitle').textContent = 'Payroll Summary — ' + label;
+        const label    = formatPeriodLabel(p.pay_period_start, p.pay_period_end);
+        const batchNo  = p.payroll_number ? ` [${p.payroll_number}]` : '';
+        document.getElementById('summaryTitle').textContent = 'Payroll Summary — ' + label + batchNo;
 
         const deptRows = (data.departments || []).map(d => `
             <div class="pr-dept-row">
@@ -88,7 +89,66 @@ async function openSummaryModal(periodId) {
                 <span>₱${fmtNum(d.gross_total)}</span>
             </div>`).join('');
 
+        // Previous period comparison
+        const prev = data.prev_period;
+        let compHtml = '';
+        if (prev) {
+            const diffGross = parseFloat(t.total_gross) - parseFloat(prev.total_gross);
+            const diffNet   = parseFloat(t.total_net)   - parseFloat(prev.total_net);
+            const diffEmp   = parseInt(t.emp_count)     - parseInt(prev.emp_count);
+            function diffBadge(val) {
+                const sign = val >= 0 ? '+' : '';
+                const cls  = val >= 0 ? 'color:#059669;background:#d1fae5;' : 'color:#dc2626;background:#fee2e2;';
+                return `<span style="${cls}padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;margin-left:6px;">${sign}${val >= 0 || val < -999 ? '₱' + fmtNum(Math.abs(val)) : '₱' + fmtNum(Math.abs(val))}${typeof val === 'number' && !String(val).includes('.') && Math.abs(val) < 100 ? '' : ''}</span>`;
+            }
+            function numBadge(val) {
+                const sign = val >= 0 ? '+' : '';
+                const cls  = val >= 0 ? 'color:#059669;background:#d1fae5;' : 'color:#dc2626;background:#fee2e2;';
+                return `<span style="${cls}padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;margin-left:6px;">${sign}${val}</span>`;
+            }
+            const prevLabel = prev.period_name ||
+                formatPeriodLabel(prev.pay_period_start, prev.pay_period_start);
+            compHtml = `
+            <div class="pr-compare-box">
+              <div class="pr-compare-title"><i class="fa fa-arrow-right-arrow-left"></i> vs Previous Payroll <span style="font-weight:400;color:#94a3b8;">(${escH(prevLabel)})</span></div>
+              <div class="pr-compare-row">
+                <span>Gross Pay</span>
+                <span>₱${fmtNum(prev.total_gross)}
+                  <span style="${diffGross >= 0 ? 'color:#059669;' : 'color:#dc2626;'}font-size:11px;font-weight:700;margin-left:6px;">${diffGross >= 0 ? '+' : ''}₱${fmtNum(Math.abs(diffGross))}</span>
+                </span>
+              </div>
+              <div class="pr-compare-row">
+                <span>Net Pay</span>
+                <span>₱${fmtNum(prev.total_net)}
+                  <span style="${diffNet >= 0 ? 'color:#059669;' : 'color:#dc2626;'}font-size:11px;font-weight:700;margin-left:6px;">${diffNet >= 0 ? '+' : ''}₱${fmtNum(Math.abs(diffNet))}</span>
+                </span>
+              </div>
+              <div class="pr-compare-row">
+                <span>Employees</span>
+                <span>${prev.emp_count}
+                  <span style="${diffEmp >= 0 ? 'color:#059669;' : 'color:#dc2626;'}font-size:11px;font-weight:700;margin-left:6px;">${diffEmp >= 0 ? '+' : ''}${diffEmp}</span>
+                </span>
+              </div>
+            </div>`;
+        }
+
+        // Alert warnings
+        const alerts = data.alerts || {};
+        let alertHtml = '';
+        if (parseInt(alerts.neg_net_count || 0) > 0 || parseInt(alerts.zero_basic_count || 0) > 0) {
+            const chips = [];
+            if (parseInt(alerts.neg_net_count) > 0)
+                chips.push(`<span class="pr-alert-chip pr-alert-chip--red">${alerts.neg_net_count} employee${parseInt(alerts.neg_net_count) > 1 ? 's' : ''} with negative net pay</span>`);
+            if (parseInt(alerts.zero_basic_count) > 0)
+                chips.push(`<span class="pr-alert-chip pr-alert-chip--yellow">${alerts.zero_basic_count} employee${parseInt(alerts.zero_basic_count) > 1 ? 's' : ''} with zero basic pay</span>`);
+            alertHtml = `<div class="pr-alerts-strip" style="margin-bottom:14px;">
+                <i class="fa fa-triangle-exclamation"></i>
+                <strong>Warnings:</strong> ${chips.join(' ')}
+            </div>`;
+        }
+
         document.getElementById('summaryBody').innerHTML = `
+            ${alertHtml}
             <div class="pr-summary-grid">
                 <div class="pr-summary-card">
                     <small>PAY PERIOD</small>
@@ -111,6 +171,7 @@ async function openSummaryModal(periodId) {
                 <div>TOTAL NET PAYABLE</div>
                 <strong>₱${fmtNum(t.total_net)}</strong>
             </div>
+            ${compHtml}
             <div class="pr-dept-section">
                 <h4>Department Breakdown</h4>
                 ${deptRows || '<p style="color:#9ca3af;font-size:13px;">No breakdown available.</p>'}
@@ -145,12 +206,15 @@ async function openRegisterModal(periodId) {
         const data = await res.json();
         if (!data.success) throw new Error(data.message || 'Failed');
 
-        const label = formatPeriodLabel(data.period.pay_period_start, data.period.pay_period_end);
-        document.getElementById('registerTitle').textContent = 'Detailed Payroll Register — ' + label;
+        const label    = formatPeriodLabel(data.period.pay_period_start, data.period.pay_period_end);
+        const batchNo  = data.period.payroll_number ? ` [${data.period.payroll_number}]` : '';
+        document.getElementById('registerTitle').textContent = 'Detailed Payroll Register — ' + label + batchNo;
 
-        const rows = data.records.map(r => `
-            <tr>
+        const rows = data.records.map(r => {
+            const netCls = parseFloat(r.net_pay) < 0 ? 'style="color:#dc2626;"' : '';
+            return `<tr>
                 <td>
+                    <div style="font-size:10px;color:#9ca3af;font-family:monospace;">${escH(r.employee_no || '')}</div>
                     <strong>${escH(r.employee_name)}</strong>
                     <div style="font-size:11px;color:#9ca3af;">${escH(r.position_name || '')}</div>
                 </td>
@@ -167,8 +231,9 @@ async function openRegisterModal(periodId) {
                 <td class="reg-col-ded">₱${fmtNum(r.sss_p)}</td>
                 <td class="reg-col-ded">₱${fmtNum(r.sss_l)}</td>
                 <td class="reg-col-total-ded"><strong>₱${fmtNum(r.total_deductions)}</strong></td>
-                <td class="reg-col-net"><strong>₱${fmtNum(r.net_pay)}</strong></td>
-            </tr>`).join('');
+                <td class="reg-col-net"><strong ${netCls}>₱${fmtNum(r.net_pay)}</strong></td>
+            </tr>`;
+        }).join('');
 
         const t = data.totals;
         document.getElementById('registerBody').innerHTML = `

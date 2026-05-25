@@ -301,7 +301,7 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <th class="ps-th-toggle">AUTO-DEDUCT</th>
                                 <th>LOAN TYPE</th>
                                 <th>ACTIVE LOANS</th>
-                                <th>DEDUCTION PER CUTOFF</th>
+                                <th>MONTHLY AMORTIZATION</th>
                                 <th>ELIGIBLE FOR</th>
                             </tr>
                         </thead>
@@ -340,6 +340,9 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <td>
                                     <?php if ($activeCount > 0): ?>
                                         <span class="ps-loan-total">₱ <?= number_format($totalMonthly, 2) ?></span>
+                                        <small style="display:block;font-size:10px;color:#64748b;margin-top:2px;">
+                                            ₱ <?= number_format($totalMonthly / 2, 2) ?>/payroll (semi-monthly)
+                                        </small>
                                     <?php else: ?>
                                         <span class="text-muted">—</span>
                                     <?php endif; ?>
@@ -356,7 +359,7 @@ require_once __DIR__ . '/../../includes/head.php';
                     </div>
                     <div class="ps-info-note mt-2">
                         <i class="bi bi-info-circle"></i>
-                        Loan deductions are applied every payroll cutoff — not once per month. The amount shown is deducted each time a payroll is generated for an employee with an active loan.
+                        The column shows each employee's <strong>monthly amortization</strong> as agreed with the lending institution. For semi-monthly payroll (15th &amp; 30th), the actual per-payroll deduction is <strong>monthly ÷ 2</strong>. This halved amount is automatically applied each payroll run for active loans.
                     </div>
                 </div>
             </div>

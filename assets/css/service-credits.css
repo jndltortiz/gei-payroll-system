@@ -92,6 +92,7 @@
 }
 .sc-tab-badge--      { background: #f3f4f6; color: #6b7280; }
 .sc-tab-badge--gray  { background: #f3f4f6; color: #6b7280; }
+.sc-tab-badge--slate { background: #f1f5f9; color: #475569; }
 .sc-tab-badge--amber { background: #fef3c7; color: #b45309; }
 .sc-tab-badge--green { background: #d1fae5; color: #065f46; }
 .sc-tab-badge--blue  { background: #dbeafe; color: #1e40af; }
@@ -110,7 +111,7 @@
 /* ── Table card ───────────────────────────────────────────────── */
 .sc-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
 .sc-table-wrap { overflow-x: auto; }
-.sc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px; }
+.sc-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 700px; }
 .sc-table th {
     background: #f8fafc; font-size: 11px; text-transform: uppercase;
     letter-spacing: 0.5px; color: #94a3b8; padding: 12px 14px;
@@ -144,9 +145,22 @@
 .sc-badge--applied  { background: #dbeafe; color: #1e40af; }
 .sc-badge--released { background: #ede9fe; color: #5b21b6; }
 .sc-badge--rejected { background: #fee2e2; color: #991b1b; }
+.sc-badge--partial  { background: #cffafe; color: #0e7490; }
+.sc-badge--archived { background: #f1f5f9; color: #475569; }
 
 /* ── Row action buttons ───────────────────────────────────────── */
-.sc-action-group { display: flex; gap: 5px; align-items: center; }
+.sc-action-group { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+/* Labeled action buttons (Approve / Reject on PENDING rows) */
+.sc-action-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 11px; border-radius: 6px; border: 1.5px solid;
+    font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s;
+    white-space: nowrap; font-family: inherit;
+}
+.sc-action-btn--approve { border-color: #6ee7b7; color: #059669; background: #f0fdf4; }
+.sc-action-btn--approve:hover  { background: #d1fae5; }
+.sc-action-btn--reject  { border-color: #fca5a5; color: #ef4444; background: #fff5f5; }
+.sc-action-btn--reject:hover   { background: #fee2e2; }
 .sc-icon-btn {
     width: 30px; height: 30px; border-radius: 6px; border: 1px solid;
     display: inline-flex; align-items: center; justify-content: center;
@@ -162,6 +176,10 @@
 .sc-icon-btn--edit:hover     { background: #dbeafe; }
 .sc-icon-btn--resubmit { border-color: #fde68a; color: #d97706; }
 .sc-icon-btn--resubmit:hover { background: #fef3c7; }
+.sc-icon-btn--archive  { border-color: #cbd5e1; color: #64748b; }
+.sc-icon-btn--archive:hover  { background: #f1f5f9; }
+.sc-icon-btn--restore  { border-color: #a7f3d0; color: #059669; }
+.sc-icon-btn--restore:hover  { background: #d1fae5; }
 .sc-icon-btn--delete   { border-color: #fecaca; color: #ef4444; }
 .sc-icon-btn--delete:hover   { background: #fee2e2; }
 
@@ -188,11 +206,12 @@
     z-index: 1000; display: none; align-items: center; justify-content: center; padding: 20px;
 }
 .sc-modal-box {
-    background: #fff; border-radius: 14px; width: 100%; max-width: 540px;
+    background: #fff; border-radius: 14px; width: 100%; max-width: 560px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.15);
     display: flex; flex-direction: column; max-height: 90vh;
 }
 .sc-modal-box--sm { max-width: 440px; }
+.sc-modal-box--lg { max-width: 620px; }
 .sc-modal-header {
     display: flex; justify-content: space-between; align-items: center;
     padding: 16px 20px; border-bottom: 1px solid #f1f5f9; flex-shrink: 0;
@@ -226,42 +245,106 @@
 .sc-form-group select:focus,
 .sc-form-group textarea:focus { outline: none; border-color: #0f766e; }
 .sc-form-group small { font-size: 11px; color: #9ca3af; display: block; margin-top: 3px; }
-.sc-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .sc-char-count { font-size: 11px; color: #9ca3af; display: block; text-align: right; margin-top: 2px; }
 .req { color: #ef4444; }
-
-.sc-peso-input { position: relative; }
-.sc-peso-input span {
-    position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
-    color: #6b7280; font-weight: 600; font-size: 13px; pointer-events: none;
-}
-.sc-peso-input input { padding-left: 26px !important; }
 
 .sc-rate-hint {
     margin-top: 6px; padding: 7px 11px; background: #f0fdf9;
     border: 1px solid #a7f3d0; border-radius: 7px; font-size: 12px; color: #065f46;
     display: flex; align-items: center; gap: 6px;
 }
-.sc-auto-badge {
-    font-size: 10px; font-weight: 600; background: #d1fae5; color: #059669;
-    padding: 2px 8px; border-radius: 999px; display: inline-flex; align-items: center; gap: 3px;
-    margin-left: 6px; vertical-align: middle;
+
+/* ── Work dates table (create/edit modal) ─────────────────────── */
+.sc-dates-hdr {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
 }
+.sc-dates-hdr label { margin-bottom: 0; }
+.sc-dates-table-wrap { overflow-x: auto; margin-bottom: 6px; }
+.sc-dates-table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;
+}
+.sc-dates-table th {
+    background: #f8fafc; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.4px; color: #64748b; font-weight: 700;
+    padding: 8px 10px; text-align: left; border-bottom: 1px solid #e5e7eb;
+    white-space: nowrap;
+}
+.sc-dates-table th:nth-child(2),
+.sc-dates-table th:nth-child(3) { text-align: center; }
+.sc-dates-table th:last-child    { width: 36px; }
+.sc-dates-table td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; }
+.sc-dates-table tr:last-child td { border-bottom: none; }
+.sc-date-row td:nth-child(2),
+.sc-date-row td:nth-child(3) { text-align: center; }
+.sc-date-input {
+    width: 100%; padding: 6px 8px; border: 1.5px solid #e5e7eb; border-radius: 6px;
+    font-size: 13px; box-sizing: border-box; transition: border-color .15s;
+    font-family: inherit;
+}
+.sc-date-input:focus { outline: none; border-color: #0f766e; }
+.sc-date-input--sm  { max-width: 80px; text-align: center; }
+.sc-date-input--pay { max-width: 110px; text-align: right; }
+.sc-date-row-remove {
+    width: 26px; height: 26px; border: 1px solid #fca5a5; background: none;
+    border-radius: 5px; color: #ef4444; cursor: pointer; font-size: 10px;
+    display: flex; align-items: center; justify-content: center;
+}
+.sc-date-row-remove:hover { background: #fee2e2; }
+.sc-btn-add-date {
+    background: none; border: 1.5px dashed #0f766e; color: #0f766e;
+    border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+    transition: background .15s;
+}
+.sc-btn-add-date:hover { background: #f0fdf9; }
+.sc-date-totals {
+    display: flex; gap: 20px; padding: 8px 12px; background: #f0fdf9;
+    border: 1px solid #a7f3d0; border-radius: 7px; font-size: 13px; color: #065f46;
+    align-items: center;
+}
+.sc-date-totals strong { font-weight: 700; }
 
 /* ── View modal content ────────────────────────────────────────── */
-.sc-view-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.sc-view-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; gap: 10px; }
 .sc-view-emp    { font-size: 16px; font-weight: 700; color: #0f172a; }
-.sc-view-grid   { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
-.sc-view-item small  { display: block; font-size: 10px; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px; margin-bottom: 4px; }
-.sc-view-item strong { font-size: 15px; color: #0f172a; }
-.sc-view-remarks { font-size: 13px; color: #374151; padding: 10px 12px; background: #f8fafc; border-radius: 8px; margin-bottom: 12px; }
-.sc-view-meta   { display: flex; gap: 16px; font-size: 12px; color: #94a3b8; flex-wrap: wrap; }
-.sc-view-meta span { display: flex; align-items: center; gap: 5px; }
+.sc-view-remarks { font-size: 13px; color: #374151; padding: 10px 12px; background: #f8fafc; border-radius: 8px; margin-bottom: 14px; }
 .sc-view-rejection {
     display: flex; gap: 10px; padding: 10px 12px; background: #fef2f2;
-    border: 1px solid #fecaca; border-radius: 8px; font-size: 13px; color: #991b1b; margin-top: 12px;
+    border: 1px solid #fecaca; border-radius: 8px; font-size: 13px; color: #991b1b;
+    margin-bottom: 14px;
 }
 .sc-view-rejection i { flex-shrink: 0; margin-top: 2px; }
+.sc-view-meta-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    padding: 12px; background: #f8fafc; border-radius: 8px; margin-bottom: 14px;
+}
+.sc-view-meta-item {}
+.sc-view-meta-label { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; font-weight: 700; margin-bottom: 2px; }
+.sc-view-meta-val   { font-size: 13px; font-weight: 600; color: #0f172a; }
+
+/* ── Activity history in view modal ───────────────────────────── */
+.sc-view-history { margin-top: 14px; }
+.sc-history-list { display: flex; flex-direction: column; gap: 0; position: relative; padding-left: 24px; }
+.sc-history-list::before {
+    content: ''; position: absolute; left: 8px; top: 8px; bottom: 8px;
+    width: 1px; background: #e5e7eb;
+}
+.sc-history-item {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 6px 0; position: relative;
+}
+.sc-history-dot {
+    width: 18px; height: 18px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 8px; color: #fff; flex-shrink: 0;
+    margin-left: -24px; position: relative; z-index: 1;
+}
+.sc-history-body { flex: 1; }
+.sc-history-action { font-size: 12px; font-weight: 700; }
+.sc-history-who    { font-size: 12px; color: #374151; }
+.sc-history-when   { font-size: 11px; color: #94a3b8; }
 
 /* ── Reject / delete modals ────────────────────────────────────── */
 .sc-reject-info {
@@ -275,44 +358,43 @@
 /* ── Loading ───────────────────────────────────────────────────── */
 .sc-loading { text-align: center; padding: 30px; color: #94a3b8; font-size: 14px; }
 
-/* ── Multi-date rows (create / edit modal) ────────────────────── */
-.sc-date-row {
-    border: 1px solid #e5e7eb; border-radius: 8px;
-    padding: 10px 12px; margin-bottom: 8px; background: #fafafa;
+/* ── Principal portal pending card sub-components ─────────────── */
+.sc-pr-grid {
+    display: grid; grid-template-columns: repeat(4,1fr); gap: 0;
+    border-top: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9;
+    margin: 0 0 10px;
 }
-.sc-date-row-fields {
-    display: grid;
-    grid-template-columns: 1fr 78px 130px 28px;
-    gap: 8px; align-items: end;
+.sc-pr-cell {
+    padding: 10px 14px; border-right: 1px solid #f1f5f9;
 }
-.sc-date-row-col { display: flex; flex-direction: column; }
-.sc-small-label {
-    font-size: 10px; font-weight: 700; color: #64748b;
-    text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px;
+.sc-pr-cell:last-child { border-right: none; }
+.sc-pr-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .4px;
+    color: #94a3b8; font-weight: 700; margin-bottom: 3px;
 }
-.sc-date-row input { padding: 7px 9px; }
-.sc-date-row-remove {
-    width: 28px; height: 34px; border: 1px solid #fca5a5; background: none;
-    border-radius: 6px; color: #ef4444; cursor: pointer; font-size: 11px;
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    align-self: flex-end;
+.sc-pr-val   { font-size: 13px; color: #374151; }
+.sc-pr-val--bold { font-weight: 700; color: #0f172a; }
+.sc-pr-val--pay  { font-size: 15px; font-weight: 800; color: #0f766e; }
+.sc-pr-desc {
+    display: flex; align-items: flex-start; gap: 7px;
+    padding: 8px 14px; font-size: 12px; color: #374151;
+    border-bottom: 1px solid #f1f5f9;
 }
-.sc-date-row-remove:hover { background: #fee2e2; }
-.sc-btn-add-date {
-    background: none; border: 1.5px dashed #0f766e; color: #0f766e;
-    border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600;
-    cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
-    transition: background .15s;
+.sc-pr-desc--empty { color: #94a3b8; }
+.sc-pr-meta {
+    display: flex; align-items: center; gap: 16px;
+    padding: 7px 14px; font-size: 11px; color: #64748b;
+    border-bottom: 1px solid #f1f5f9;
 }
-.sc-btn-add-date:hover { background: #f0fdf9; }
-.sc-date-totals {
-    margin-top: 6px; padding: 7px 12px; background: #f0fdf9;
-    border: 1px solid #a7f3d0; border-radius: 7px; font-size: 13px; color: #065f46;
-}
-
-/* ── Dates header row inside form group ───────────────────────── */
-.sc-dates-hdr {
+.sc-pr-meta i { margin-right: 4px; color: #94a3b8; }
+.sc-pr-actions {
     display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 8px;
+    padding: 10px 14px; gap: 8px;
 }
-.sc-dates-hdr label { margin-bottom: 0; }
+.sc-pr-btn-details {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 6px 13px; border-radius: 7px; border: 1.5px solid #cbd5e1;
+    background: #f8fafc; color: #475569; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background .15s; font-family: inherit;
+}
+.sc-pr-btn-details:hover { background: #f1f5f9; border-color: #94a3b8; }

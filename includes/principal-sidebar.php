@@ -49,6 +49,11 @@ function principalActive(string $path): string {
       <i class="fa fa-wallet"></i>
       <span>Payroll Approvals</span>
     </a>
+    <a class="nav-item <?= principalActive('payroll/archive') ?>"
+       href="<?= BASE_URL ?>modules/payroll/archive.php">
+      <i class="fa fa-box-archive"></i>
+      <span>Payroll Archive</span>
+    </a>
     <a class="nav-item <?= principalActive('principal/loan-approval') ?>"
        href="<?= BASE_URL ?>modules/principal/loan-approval/index.php">
       <i class="fa fa-hand-holding-dollar"></i>

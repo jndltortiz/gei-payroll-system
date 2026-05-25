@@ -27,7 +27,7 @@ function parseJsonData(value, fallback) {
     }
 }
 
-// Render a flat list of rows into a container (earnings, employer contrib, etc.)
+// Render a flat list of rows into a container
 function renderPayslipRows(containerId, rows, emptyLabel) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -71,25 +71,36 @@ function renderGroupedDeductionRows(containerId, rows) {
         section('Other Deductions', otherRows);
 }
 
+// ── computePayroll — sums all visible inputs + saved adjustment amounts ────────
 function computePayroll() {
     const basic = Number(document.getElementById("edit-basic").value) || 0;
 
     let totalAllowances = 0;
+    // Standard allowance inputs
     document.querySelectorAll('#edit-allowances-container input[type="number"]').forEach(input => {
         totalAllowances += Number(input.value) || 0;
     });
-    // Include newly added one-time allowances
+    // Newly added one-time allowances (not yet saved)
     document.querySelectorAll('#edit-new-allowances input[type="number"]').forEach(input => {
         totalAllowances += Number(input.value) || 0;
     });
+    // Already-saved adjustment rows (tracked via data-adj-amount)
+    document.querySelectorAll('#edit-allowances-container .adj-saved-row').forEach(row => {
+        totalAllowances += Number(row.dataset.adjAmount) || 0;
+    });
 
     let totalDeductions = 0;
+    // Standard deduction inputs
     document.querySelectorAll('#edit-deductions-container input[type="number"]').forEach(input => {
         totalDeductions += Number(input.value) || 0;
     });
-    // Include newly added one-time deductions
+    // Newly added one-time deductions (not yet saved)
     document.querySelectorAll('#edit-new-deductions input[type="number"]').forEach(input => {
         totalDeductions += Number(input.value) || 0;
+    });
+    // Already-saved adjustment rows
+    document.querySelectorAll('#edit-deductions-container .adj-saved-row').forEach(row => {
+        totalDeductions += Number(row.dataset.adjAmount) || 0;
     });
 
     const gross = basic + totalAllowances;
@@ -100,6 +111,42 @@ function computePayroll() {
     document.getElementById("edit-net").innerText      = peso(net);
 }
 
+// ── Remove a previously-saved adjustment row via AJAX ─────────────────────────
+window.removeExistingAdjustment = async function(btn, rowId, type) {
+    if (!confirm('Remove this adjustment? This cannot be undone.')) return;
+
+    const payrollId = document.getElementById('edit-payrollid').value;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>';
+
+    const fd = new FormData();
+    fd.append('row_id',     rowId);
+    fd.append('type',       type);
+    fd.append('payroll_id', payrollId);
+
+    try {
+        const res  = await fetch(BASE_URL + 'actions/payroll-delete-adjustment.php', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.success) {
+            const adjRow = btn.closest('.adj-saved-row');
+            if (adjRow) {
+                adjRow.dataset.adjAmount = 0;
+                adjRow.remove();
+            }
+            computePayroll();
+        } else {
+            alert(data.message || 'Could not remove adjustment.');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-xmark"></i>';
+        }
+    } catch {
+        alert('Network error. Please try again.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-xmark"></i>';
+    }
+};
+
+// ── openPayslip — view modal (admin portal) ───────────────────────────────────
 window.openPayslip = function(el) {
     const basic = Number(el.dataset.basic || 0);
 
@@ -119,8 +166,6 @@ window.openPayslip = function(el) {
         { name: 'SSS Loan',       is_gov: false, is_loan: true,  amount: Number(el.dataset.sssLoan || 0) },
     ].filter(row => Number(row.amount) !== 0);
 
-    // Separate post-deduction additions (Rice Subsidy, Laundry Allowance) per GEI payslip format.
-    // These appear AFTER deductions as additions to Net Pay → Total Take-Home Pay.
     const POST_DED = /rice|laundry/i;
     const allAllowances = parseJsonData(el.dataset.allowances, fallbackAllowances)
         .filter(r => Number(r.amount) !== 0);
@@ -136,11 +181,9 @@ window.openPayslip = function(el) {
         ...coreAllowances
     ];
 
-    // Deductions: filter zero-value rows before grouping
     const allDeductions = parseJsonData(el.dataset.deductions, fallbackDeductions)
         .filter(r => Number(r.amount) !== 0);
 
-    // storedGross includes rice/laundry; coreGross excludes them for display
     const postDedTotal = postDedAllowances.reduce((s, r) => s + Number(r.amount), 0);
     let storedGross = Number(el.dataset.gross || 0);
     if (!storedGross) {
@@ -153,19 +196,25 @@ window.openPayslip = function(el) {
         totalDed = allDeductions.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     }
 
-    // storedNet = finalTakeHome; intermediateNet = net before post-deduction additions
     let storedNet = Number(el.dataset.net || 0);
     if (!storedNet) storedNet = storedGross - totalDed;
     const intermediateNet = storedNet - postDedTotal;
     const finalTakeHome   = storedNet;
 
+    // Employee info — use formatted employee_no for the ID field
     document.getElementById("ps-name").innerText     = el.dataset.name || '';
     document.getElementById("ps-position").innerText = el.dataset.position || '';
     document.getElementById("ps-dept").innerText     = el.dataset.dept || '';
-    document.getElementById("ps-empid").innerText    = el.dataset.empid || '';
+    // Show formatted employee number (EMP-YYYY-NNN); fall back to numeric ID
+    const empNoEl = document.getElementById("ps-empid");
+    if (empNoEl) empNoEl.innerText = el.dataset.empno || el.dataset.empid || '—';
 
     const periodLabel = document.getElementById("ps-period-label");
-    if (periodLabel) periodLabel.innerText = el.dataset.periodLabel || "-";
+    if (periodLabel) periodLabel.innerText = el.dataset.periodLabel || "—";
+
+    // Show shared batch payroll number (belongs to the period, not the individual row)
+    const payrollNoEl = document.getElementById("ps-payroll-no");
+    if (payrollNoEl) payrollNoEl.innerText = el.dataset.payrollno || "—";
 
     renderPayslipRows("ps-earnings-rows", earningsRows, "No earnings");
     document.getElementById("ps-gross").innerText = peso(coreGross);
@@ -174,7 +223,6 @@ window.openPayslip = function(el) {
     document.getElementById("ps-totalded").innerText = peso(totalDed);
     document.getElementById("ps-net").innerText      = peso(intermediateNet);
 
-    // Post-deduction additions section (Rice Subsidy, Laundry Allowance)
     const postDedSection = document.getElementById("ps-postded-section");
     const takeHomeBox    = document.getElementById("ps-takehome-box");
     if (postDedTotal > 0) {
@@ -256,6 +304,7 @@ window.downloadPayslipPDF = function() {
     printPayslip();
 }
 
+// ── openEdit — edit modal (admin portal) ─────────────────────────────────────
 window.openEdit = function(el) {
     document.getElementById("edit-empid").value         = el.dataset.empid;
     document.getElementById("edit-payrollid").value     = el.dataset.payrollId;
@@ -263,6 +312,10 @@ window.openEdit = function(el) {
     document.getElementById("edit-position").innerText  = el.dataset.position || '';
     document.getElementById("edit-dept").innerText      = el.dataset.dept     || '';
     document.getElementById("edit-basic").value         = el.dataset.basic    || 0;
+
+    // Show employee number in the modal subheading if element exists
+    const editEmpNoEl = document.getElementById('edit-empno-display');
+    if (editEmpNoEl) editEmpNoEl.innerText = el.dataset.empno || el.dataset.empid || '';
 
     // Clear previous one-time adjustment rows
     document.getElementById('edit-new-allowances').innerHTML = '';
@@ -272,7 +325,7 @@ window.openEdit = function(el) {
     const allDeductions   = parseJsonData(el.dataset.deductions, []);
     const totalAllowances = Number(el.dataset.totalAllowances || 0);
 
-    // Separate adjustments (already-saved manual entries) from standard rows
+    // Separate adjustments from standard rows
     const stdAllowances = allAllowances.filter(r => !r.is_adjustment);
     const adjAllowances = allAllowances.filter(r =>  r.is_adjustment);
     const stdDeductions = allDeductions.filter(r => !r.is_adjustment);
@@ -280,29 +333,42 @@ window.openEdit = function(el) {
 
     // ── Allowances ────────────────────────────────────────────────────────────
     const allowContainer = document.getElementById('edit-allowances-container');
-    if (stdAllowances.length) {
-        let html = stdAllowances.map(row => `
-            <div>
-                <label>${escHtml(row.name)}</label>
-                <input type="number" name="pa[${Number(row.type_id)}]"
-                       value="${Number(row.amount || 0).toFixed(2)}"
-                       step="0.01" min="0">
-            </div>`).join('');
-        // Render already-saved adjustments as read-only info rows
+    if (stdAllowances.length || adjAllowances.length) {
+        let html = '';
+
+        if (stdAllowances.length) {
+            html += stdAllowances.map(row => `
+                <div>
+                    <label>${escHtml(row.name)}</label>
+                    <input type="number" name="pa[${Number(row.type_id)}]"
+                           value="${Number(row.amount || 0).toFixed(2)}"
+                           step="0.01" min="0" oninput="computePayroll()">
+                </div>`).join('');
+        }
+
+        // Saved adjustments — shown with a remove button; amount tracked for live totals
         if (adjAllowances.length) {
             html += `<p style="grid-column:1/-1;font-size:11px;font-weight:700;text-transform:uppercase;
                                 color:#059669;letter-spacing:.5px;margin:10px 0 4px;
-                                border-bottom:1px dashed #d1fae5;padding-bottom:3px;">Existing Adjustments</p>`;
+                                border-bottom:1px dashed #d1fae5;padding-bottom:3px;">Saved Adjustments</p>`;
             html += adjAllowances.map(row => `
-                <div>
-                    <label style="color:#059669;">
-                        <i class="fa fa-sparkles" style="font-size:10px;"></i>
-                        ${escHtml(row.name)}
-                        <span class="row-tag" style="background:#d1fae5;color:#065f46;font-size:9px;">Adj</span>
-                    </label>
-                    <span style="font-size:13px;font-weight:600;color:#059669;padding:8px 0;display:block;">${peso(row.amount)}</span>
+                <div class="adj-saved-row" data-adj-amount="${Number(row.amount || 0)}" style="grid-column:1/-1;">
+                    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;">
+                        <div style="flex:1;font-size:13px;color:#059669;font-weight:600;">
+                            <i class="fa fa-sparkles" style="font-size:10px;"></i>
+                            ${escHtml(row.name)}
+                            <span class="row-tag" style="background:#d1fae5;color:#065f46;font-size:9px;">Adj</span>
+                        </div>
+                        <span style="font-size:13px;font-weight:700;color:#059669;min-width:80px;text-align:right;">${peso(row.amount)}</span>
+                        <button type="button"
+                                onclick="removeExistingAdjustment(this, ${Number(row.row_id)}, 'allowance')"
+                                class="btn-remove-adj" title="Remove this adjustment">
+                            <i class="fa fa-xmark"></i>
+                        </button>
+                    </div>
                 </div>`).join('');
         }
+
         allowContainer.innerHTML = html;
     } else if (totalAllowances > 0) {
         allowContainer.innerHTML = `<p class="edit-empty" style="grid-column:1/-1;color:#b45309;">
@@ -332,7 +398,7 @@ window.openEdit = function(el) {
                     </label>
                     <input type="number" name="pd[${Number(row.type_id)}]"
                            value="${Number(row.amount || 0).toFixed(2)}"
-                           step="0.01" min="0">
+                           step="0.01" min="0" oninput="computePayroll()">
                 </div>`).join('');
         }
 
@@ -346,19 +412,28 @@ window.openEdit = function(el) {
         if (govDeds.length)   html += groupHeader('Government Contributions') + buildDedInputs(govDeds);
         if (loanDeds.length)  html += groupHeader('Loans')                    + buildDedInputs(loanDeds);
         if (otherDeds.length) html += groupHeader('Other Deductions')         + buildDedInputs(otherDeds);
-        // Render already-saved deduction adjustments as read-only info rows
+
+        // Saved deduction adjustments — shown with remove button
         if (adjDeductions.length) {
-            html += groupHeader('Existing Adjustments');
+            html += groupHeader('Saved Adjustments');
             html += adjDeductions.map(row => `
-                <div>
-                    <label style="color:#dc2626;">
-                        <i class="fa fa-sparkles" style="font-size:10px;"></i>
-                        ${escHtml(row.name)}
-                        <span class="row-tag" style="background:#fee2e2;color:#991b1b;font-size:9px;">Adj</span>
-                    </label>
-                    <span style="font-size:13px;font-weight:600;color:#dc2626;padding:8px 0;display:block;">${peso(row.amount)}</span>
+                <div class="adj-saved-row" data-adj-amount="${Number(row.amount || 0)}" style="grid-column:1/-1;">
+                    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;">
+                        <div style="flex:1;font-size:13px;color:#dc2626;font-weight:600;">
+                            <i class="fa fa-sparkles" style="font-size:10px;"></i>
+                            ${escHtml(row.name)}
+                            <span class="row-tag" style="background:#fee2e2;color:#991b1b;font-size:9px;">Adj</span>
+                        </div>
+                        <span style="font-size:13px;font-weight:700;color:#dc2626;min-width:80px;text-align:right;">${peso(row.amount)}</span>
+                        <button type="button"
+                                onclick="removeExistingAdjustment(this, ${Number(row.row_id)}, 'deduction')"
+                                class="btn-remove-adj" title="Remove this adjustment">
+                            <i class="fa fa-xmark"></i>
+                        </button>
+                    </div>
                 </div>`).join('');
         }
+
         dedContainer.innerHTML = html;
     }
 

@@ -140,9 +140,22 @@ try {
     ");
     $insertStmt = $pdo->prepare("
         INSERT INTO payroll_periods
-            (period_name, pay_period_start, pay_period_end, pay_date, status)
-        VALUES (?, ?, ?, ?, 'OPEN')
+            (payroll_number, period_name, pay_period_start, pay_period_end, pay_date, status)
+        VALUES (?, ?, ?, ?, ?, 'OPEN')
     ");
+    // Helper: generate next sequential payroll_number for a given pay period start date.
+    // Counts existing periods in the same year-month (including ones just inserted this run).
+    $seqStmt = $pdo->prepare("
+        SELECT COUNT(*) FROM payroll_periods
+        WHERE YEAR(pay_period_start) = ? AND MONTH(pay_period_start) = ?
+    ");
+    $nextPayrollNumber = function(string $startDate) use ($pdo, $seqStmt): string {
+        $yr = date('Y', strtotime($startDate));
+        $mo = date('m', strtotime($startDate));
+        $seqStmt->execute([$yr, $mo]);
+        $seq = (int)$seqStmt->fetchColumn() + 1;
+        return 'PR-' . $yr . '-' . $mo . '-' . str_pad($seq, 3, '0', STR_PAD_LEFT);
+    };
 
     foreach ($months as $m) {
         $mName    = $monthNames[$m - 1];
@@ -171,7 +184,8 @@ try {
         if ($checkStmt->fetchColumn() > 0) {
             $skipped++;
         } else {
-            $insertStmt->execute([$p1Name, $p1Start, $p1End, $p1Pay]);
+            $p1Number = $nextPayrollNumber($p1Start);
+            $insertStmt->execute([$p1Number, $p1Name, $p1Start, $p1End, $p1Pay]);
             $created++;
         }
 
@@ -180,7 +194,8 @@ try {
         if ($checkStmt->fetchColumn() > 0) {
             $skipped++;
         } else {
-            $insertStmt->execute([$p2Name, $p2Start, $p2End, $p2Pay]);
+            $p2Number = $nextPayrollNumber($p2Start);
+            $insertStmt->execute([$p2Number, $p2Name, $p2Start, $p2End, $p2Pay]);
             $created++;
         }
     }

@@ -151,12 +151,19 @@ try {
             if ($forceRegenerate) {
                 $pdo->prepare("DELETE FROM payroll_allowances WHERE payroll_id=?")->execute([$existingId]);
                 $pdo->prepare("DELETE FROM payroll_deductions WHERE payroll_id=?")->execute([$existingId]);
-                // Reset any service credits that were linked to this payroll back to APPROVED
-                // so the re-generation loop can pick them up again.
+                // Reset service credits linked to this payroll back to pre-applied status
+                // so the re-generation loop picks them up again.
+                // PARTIALLY_APPROVED records are restored correctly via date-count check.
                 $pdo->prepare("
-                    UPDATE service_credits
-                    SET payroll_id = NULL, status = 'APPROVED', applied_to_payroll_at = NULL
-                    WHERE payroll_id = ?
+                    UPDATE service_credits sc
+                    SET sc.payroll_id = NULL, sc.applied_to_payroll_at = NULL,
+                        sc.status = CASE
+                            WHEN (SELECT SUM(scd.status='REJECTED') FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) > 0
+                             AND (SELECT SUM(scd.status='APPROVED') FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) > 0
+                            THEN 'PARTIALLY_APPROVED'
+                            ELSE 'APPROVED'
+                        END
+                    WHERE sc.payroll_id = ?
                 ")->execute([$existingId]);
                 $pdo->prepare("DELETE FROM payroll_records WHERE payroll_id=?")->execute([$existingId]);
                 $replaced++;
@@ -209,7 +216,7 @@ try {
             SELECT sc.service_credit_id, sc.equivalent_pay
             FROM service_credits sc
             WHERE sc.employee_id = :eid
-              AND sc.status = 'APPROVED'
+              AND sc.status IN ('APPROVED','PARTIALLY_APPROVED')
               AND sc.payroll_id IS NULL
         ");
         $scStmt->execute([':eid' => $employeeId]);

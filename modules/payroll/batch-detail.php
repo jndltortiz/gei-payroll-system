@@ -31,7 +31,7 @@ $totals = $totRow->fetch();
 $recStmt = $pdo->prepare("
     SELECT pr.*,
            CONCAT(e.first_name,' ',COALESCE(e.middle_name,''),' ',e.last_name) AS employee_name,
-           e.employee_no,
+           COALESCE(e.employee_no, CONCAT('EMP-', LPAD(e.employee_id, 5, '0'))) AS employee_no,
            p.position_name, d.department_name,
            COALESCE(MAX(CASE WHEN at2.allowance_name LIKE '%Additional Assignment%' THEN pa.amount END),0) AS addl_assign,
            COALESCE(MAX(CASE WHEN at2.allowance_name LIKE '%Rice%'    THEN pa.amount END),0) AS rice_sub,
@@ -66,6 +66,7 @@ $deductionDetails = [];
 if (!empty($records)) {
     $detailStmt = $pdo->prepare("
         SELECT pr.payroll_id,
+               pa.payroll_allowance_id,
                at2.allowance_type_id                        AS type_id,
                COALESCE(pa.adjustment_label, at2.allowance_name) AS name,
                pa.amount,
@@ -79,6 +80,7 @@ if (!empty($records)) {
     $detailStmt->execute([$periodId]);
     foreach ($detailStmt->fetchAll() as $d) {
         $allowanceDetails[$d['payroll_id']][] = [
+            'row_id'        => (int)$d['payroll_allowance_id'],
             'type_id'       => (int)$d['type_id'],
             'name'          => $d['name'],
             'amount'        => (float)$d['amount'],
@@ -88,6 +90,7 @@ if (!empty($records)) {
 
     $detailStmt = $pdo->prepare("
         SELECT pr.payroll_id,
+               pd.payroll_deduction_id,
                dt.deduction_type_id                             AS type_id,
                COALESCE(pd.adjustment_label, dt.deduction_name) AS name,
                COALESCE(dt.is_absence_deduction, 0)             AS is_absence,
@@ -111,6 +114,7 @@ if (!empty($records)) {
             $name .= ' (' . $label . ')';
         }
         $deductionDetails[$d['payroll_id']][] = [
+            'row_id'        => (int)$d['payroll_deduction_id'],
             'type_id'       => (int)$d['type_id'],
             'name'          => $name,
             'amount'        => (float)$d['amount'],
@@ -150,7 +154,6 @@ if ($period['status'] === 'OPEN') {
 }
 
 // ── Build revision cycles ─────────────────────────────────────────────────────
-// Each SUBMITTED event starts a new round; subsequent events belong to that round
 $revisionCycles = [];
 $currentCycle   = null;
 foreach ($workflowLog as $ev) {
@@ -163,15 +166,63 @@ foreach ($workflowLog as $ev) {
 }
 if ($currentCycle) $revisionCycles[] = $currentCycle;
 
+// ── Previous released period for comparison ────────────────────────────────────
+$prevPeriod = null;
+$prevTotals = null;
+$prevStmt = $pdo->prepare("
+    SELECT pp.period_id, pp.period_name, pp.pay_period_start,
+           COUNT(pr.payroll_id) AS emp_count,
+           SUM(pr.gross_pay) AS gross,
+           SUM(pr.total_deductions) AS deductions,
+           SUM(pr.net_pay) AS net
+    FROM payroll_periods pp
+    JOIN payroll_records pr ON pr.period_id = pp.period_id
+    WHERE pp.status = 'RELEASED'
+      AND pp.pay_period_start < ?
+    GROUP BY pp.period_id, pp.period_name, pp.pay_period_start
+    ORDER BY pp.pay_period_start DESC
+    LIMIT 1
+");
+$prevStmt->execute([$period['pay_period_start']]);
+$prevRow = $prevStmt->fetch();
+if ($prevRow) {
+    $prevPeriod = $prevRow;
+    $prevTotals = [
+        'emp_count'  => (int)$prevRow['emp_count'],
+        'gross'      => (float)$prevRow['gross'],
+        'deductions' => (float)$prevRow['deductions'],
+        'net'        => (float)$prevRow['net'],
+    ];
+}
+
+// ── Analytics & Alerts ─────────────────────────────────────────────────────────
+$alertNegative  = 0;
+$alertZeroBasic = 0;
+$maxNetEmployee = null;
+$maxNet = 0.0;
+$deptTotals = [];
+
+foreach ($records as $r) {
+    if ((float)$r['net_pay']   <  0) $alertNegative++;
+    if ((float)$r['basic_pay'] == 0) $alertZeroBasic++;
+    if ((float)$r['net_pay'] > $maxNet) {
+        $maxNet = (float)$r['net_pay'];
+        $maxNetEmployee = trim($r['employee_name']);
+    }
+    $dept = $r['department_name'] ?? 'Unknown';
+    $deptTotals[$dept] = ($deptTotals[$dept] ?? 0) + (float)$r['net_pay'];
+}
+arsort($deptTotals);
+$topDept      = !empty($deptTotals) ? array_key_first($deptTotals) : null;
+$topDeptTotal = $topDept ? $deptTotals[$topDept] : 0.0;
+$avgNet       = (int)$totals['emp_count'] > 0 ? (float)$totals['net'] / (int)$totals['emp_count'] : 0.0;
+
 // ── Role flags ────────────────────────────────────────────────────────────────
 $userIsAdmin     = isAdmin();
 $userIsPrincipal = isPrincipalRole();
 $canEdit         = $userIsAdmin && $period['status'] === 'OPEN';
 
 $pageTitle = 'Payroll Batch — ' . $period['period_name'];
-// Load principal.css when accessed by Principal — it contains .pr-modal-overlay positioning
-// (position:fixed; inset:0) that the approve/reject modals depend on.
-// Without it the overlays have no fixed positioning and render inline side-by-side.
 $extraCSS  = [BASE_URL . 'assets/css/payroll.css', BASE_URL . 'assets/css/batch-detail.css'];
 if ($userIsPrincipal) {
     $extraCSS[] = BASE_URL . 'assets/css/principal.css';
@@ -182,11 +233,18 @@ require_once __DIR__ . '/../../includes/head.php';
 function peso($n)   { return '₱' . number_format((float)$n, 2); }
 function fmtDt($d)  { return $d ? date('M j, Y g:i A', strtotime($d)) : '—'; }
 function fmtD($d)   { return $d ? date('M j, Y', strtotime($d)) : '—'; }
+function diffBadge($val) {
+    $sign  = $val >= 0 ? '+' : '';
+    $color = $val >= 0 ? '#059669' : '#dc2626';
+    $bg    = $val >= 0 ? '#d1fae5' : '#fee2e2';
+    return "<span style='background:{$bg};color:{$color};font-weight:700;font-size:12px;"
+         . "padding:2px 8px;border-radius:999px;white-space:nowrap;'>"
+         . "{$sign}₱" . number_format(abs($val), 2) . "</span>";
+}
 ?>
 <body>
 <div class="layout">
 <?php
-// Render correct sidebar depending on role
 if ($userIsPrincipal) include __DIR__ . '/../../includes/principal-sidebar.php';
 else                  include __DIR__ . '/../../includes/sidebar.php';
 ?>
@@ -205,9 +263,13 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
 </nav>
 
 <!-- ── Batch Header ── -->
+<?php $batchPayrollNo = htmlspecialchars($period['payroll_number'] ?? 'PR-' . str_pad($periodId, 6, '0', STR_PAD_LEFT)); ?>
 <div class="bd-header">
     <div class="bd-header-left">
-        <div class="bd-period-name"><?= htmlspecialchars($period['period_name']) ?></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+            <div class="bd-period-name"><?= htmlspecialchars($period['period_name']) ?></div>
+            <code style="font-size:12px;background:#e2e8f0;color:#374151;padding:2px 9px;border-radius:5px;font-family:monospace;font-weight:700;"><?= $batchPayrollNo ?></code>
+        </div>
         <div class="bd-period-dates">
             <?= fmtD($period['pay_period_start']) ?> – <?= fmtD($period['pay_period_end']) ?>
             &nbsp;·&nbsp; Pay Date: <?= fmtD($period['pay_date']) ?>
@@ -217,7 +279,6 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
         <span class="bd-status-badge bd-status-<?= strtolower($period['status']) ?>">
             <?= ucfirst(strtolower($period['status'])) ?>
         </span>
-        <!-- Role-based action buttons -->
         <?php if ($userIsAdmin): ?>
             <?php if ($period['status'] === 'OPEN' && !empty($records)): ?>
             <button class="btn-primary" onclick="confirmPayrollAction('submit',<?= $periodId ?>)">
@@ -319,7 +380,6 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
             $current = $i === $currentIdx;
             $icon    = $statusSteps[$st][2];
             $label   = $statusSteps[$st][1];
-            // Find matching log event
             $logMatch = null;
             $evMap = ['PROCESSING'=>'SUBMITTED','APPROVED'=>'APPROVED','RELEASED'=>'RELEASED'];
             foreach ($workflowLog as $ev) {
@@ -340,7 +400,7 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
         <?php endforeach; ?>
     </div>
 
-    <!-- Returned steps (show inline rejections if any) -->
+    <!-- Rejection events on overview -->
     <?php $returnedEvents = array_filter($workflowLog, fn($e) => $e['event_type'] === 'RETURNED'); ?>
     <?php if (!empty($returnedEvents)): ?>
     <div class="bd-section-title" style="margin-top:28px;">Rejection Events</div>
@@ -361,17 +421,137 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
     </div>
     <?php endforeach; ?>
     <?php endif; ?>
+
+    <!-- ── Analytics & Comparison ── -->
+    <?php if (!empty($records)): ?>
+    <div class="bd-overview-grid" style="margin-top:28px;">
+
+        <!-- vs Previous Payroll -->
+        <div>
+            <div class="bd-section-title">vs Previous Payroll</div>
+            <?php if ($prevPeriod): ?>
+            <div class="bd-analytics-card">
+                <div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">
+                    Compared to: <strong style="color:#374151;"><?= htmlspecialchars($prevPeriod['period_name']) ?></strong>
+                </div>
+                <?php
+                $grossDiff = (float)$totals['gross'] - $prevTotals['gross'];
+                $netDiff   = (float)$totals['net']   - $prevTotals['net'];
+                $dedDiff   = (float)$totals['deductions'] - $prevTotals['deductions'];
+                ?>
+                <div class="bd-analytic-row">
+                    <span>Gross Pay</span>
+                    <div style="text-align:right;">
+                        <div style="font-size:12px;color:#64748b;"><?= peso($prevTotals['gross']) ?> → <strong><?= peso($totals['gross']) ?></strong></div>
+                        <?= diffBadge($grossDiff) ?>
+                    </div>
+                </div>
+                <div class="bd-analytic-row">
+                    <span>Net Pay</span>
+                    <div style="text-align:right;">
+                        <div style="font-size:12px;color:#64748b;"><?= peso($prevTotals['net']) ?> → <strong><?= peso($totals['net']) ?></strong></div>
+                        <?= diffBadge($netDiff) ?>
+                    </div>
+                </div>
+                <div class="bd-analytic-row">
+                    <span>Employees</span>
+                    <strong><?= $prevTotals['emp_count'] ?> → <?= (int)$totals['emp_count'] ?></strong>
+                </div>
+            </div>
+            <?php else: ?>
+            <div class="bd-analytics-card" style="color:#9ca3af;font-size:13px;text-align:center;padding:24px;">
+                <i class="fa fa-chart-line" style="font-size:22px;margin-bottom:8px;display:block;"></i>
+                No previous released payroll to compare.
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- Quick Analytics -->
+        <div>
+            <div class="bd-section-title">Payroll Summary</div>
+            <div class="bd-analytics-card">
+                <div class="bd-analytic-row">
+                    <span>Average Net Pay</span>
+                    <strong><?= peso($avgNet) ?></strong>
+                </div>
+                <?php if ($maxNetEmployee): ?>
+                <div class="bd-analytic-row">
+                    <span>Highest Net Pay</span>
+                    <div style="text-align:right;">
+                        <strong><?= peso($maxNet) ?></strong>
+                        <small style="display:block;color:#94a3b8;font-size:11px;"><?= htmlspecialchars($maxNetEmployee) ?></small>
+                    </div>
+                </div>
+                <?php endif; ?>
+                <?php if ($topDept): ?>
+                <div class="bd-analytic-row">
+                    <span>Highest Dept Spend</span>
+                    <div style="text-align:right;">
+                        <strong><?= peso($topDeptTotal) ?></strong>
+                        <small style="display:block;color:#94a3b8;font-size:11px;"><?= htmlspecialchars($topDept) ?></small>
+                    </div>
+                </div>
+                <?php endif; ?>
+                <div class="bd-analytic-row">
+                    <span>Total Employees</span>
+                    <strong><?= (int)$totals['emp_count'] ?></strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Warnings -->
+    <?php if ($alertNegative > 0 || $alertZeroBasic > 0): ?>
+    <div style="margin-top:16px;">
+        <div class="bd-section-title">Warnings</div>
+        <div class="payroll-alerts-strip" style="margin-bottom:0;">
+            <i class="fa fa-triangle-exclamation" style="font-size:15px;flex-shrink:0;"></i>
+            <strong>Data Issues Detected:</strong>
+            <?php if ($alertNegative > 0): ?>
+            <span class="alert-chip alert-chip--red">
+                <?= $alertNegative ?> employee<?= $alertNegative > 1 ? 's' : '' ?> with negative net pay
+            </span>
+            <?php endif; ?>
+            <?php if ($alertZeroBasic > 0): ?>
+            <span class="alert-chip alert-chip--yellow">
+                <?= $alertZeroBasic ?> employee<?= $alertZeroBasic > 1 ? 's' : '' ?> with ₱0 basic pay
+            </span>
+            <?php endif; ?>
+            <span style="font-size:12px;color:#9a3412;">Review the Employees tab for highlighted rows.</span>
+        </div>
+    </div>
+    <?php endif; ?>
+    <?php endif; ?>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
 <!-- TAB: EMPLOYEES -->
 <!-- ══════════════════════════════════════════════════════════════════════════ -->
 <div class="bd-tab-content" id="tab-employees">
+    <!-- Search + sort bar -->
+    <div class="bd-tab-toolbar">
+        <input type="text" id="empSearch" placeholder="Search by name, ID, or department…"
+               class="bd-tab-search" oninput="filterEmpTable()">
+        <div style="display:flex;gap:6px;align-items:center;">
+            <label style="font-size:12px;font-weight:600;color:#64748b;">Sort:</label>
+            <select id="empSort" onchange="sortEmpTable()"
+                    style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);font-size:12px;background:#fff;">
+                <option value="name-asc">Name A→Z</option>
+                <option value="name-desc">Name Z→A</option>
+                <option value="dept-asc">Dept A→Z</option>
+                <option value="net-desc">Net Pay ↓</option>
+                <option value="net-asc">Net Pay ↑</option>
+                <option value="gross-desc">Gross ↓</option>
+            </select>
+        </div>
+        <span id="empCount" style="font-size:12px;color:#94a3b8;margin-left:4px;"></span>
+    </div>
     <div class="table-wrapper">
-    <table class="payroll-table">
+    <table class="payroll-table" id="empTable">
         <thead>
             <tr>
-                <th>Employee</th>
+                <th style="min-width:80px;">Payroll #</th>
+                <th style="min-width:160px;">Employee</th>
                 <th>Dept</th>
                 <th>Basic</th>
                 <th>Add'l</th>
@@ -391,19 +571,34 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
         </thead>
         <tbody>
         <?php if (empty($records)): ?>
-            <tr><td colspan="19" style="text-align:center;padding:40px;color:#9ca3af;">No payroll records.</td></tr>
+            <tr><td colspan="20" style="text-align:center;padding:40px;color:#9ca3af;">No payroll records.</td></tr>
         <?php else: ?>
-        <?php foreach ($records as $r): ?>
-        <?php
+        <?php foreach ($records as $r):
             $allowanceJson = htmlspecialchars(json_encode($allowanceDetails[$r['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
             $deductionJson = htmlspecialchars(json_encode($deductionDetails[$r['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
+            $employeeNo    = htmlspecialchars($r['employee_no'] ?? '');
+            $isNegative    = (float)$r['net_pay'] < 0;
+            $empNameClean  = trim($r['employee_name']);
+            $deptClean     = $r['department_name'] ?? '';
         ?>
-        <tr data-payroll-id="<?= $r['payroll_id'] ?>">
+        <tr data-payroll-id="<?= $r['payroll_id'] ?>"
+            data-name="<?= strtolower(htmlspecialchars($empNameClean)) ?>"
+            data-empno="<?= strtolower($employeeNo) ?>"
+            data-dept="<?= strtolower(htmlspecialchars($deptClean)) ?>"
+            data-net="<?= $r['net_pay'] ?>"
+            data-gross="<?= $r['gross_pay'] ?>"
+            <?= $isNegative ? ' class="row--negative-net"' : '' ?>>
             <td>
-                <strong><?= htmlspecialchars(trim($r['employee_name'])) ?></strong><br>
+                <code style="font-size:11px;color:#64748b;background:#f1f5f9;padding:2px 7px;border-radius:4px;white-space:nowrap;">
+                    <?= $batchPayrollNo ?>
+                </code>
+            </td>
+            <td>
+                <div class="emp-no-label"><?= $employeeNo ?></div>
+                <strong><?= htmlspecialchars($empNameClean) ?></strong><br>
                 <small style="color:#9ca3af"><?= htmlspecialchars($r['position_name'] ?? '') ?></small>
             </td>
-            <td><?= htmlspecialchars($r['department_name'] ?? '—') ?></td>
+            <td><?= htmlspecialchars($deptClean ?: '—') ?></td>
             <td><?= peso($r['basic_pay']) ?></td>
             <td><?= peso($r['addl_assign']) ?></td>
             <td><?= peso($r['rice_sub']) ?></td>
@@ -417,16 +612,18 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
             <td><?= peso($r['sss_p']) ?></td>
             <td><?= peso($r['sss_l']) ?></td>
             <td><?= peso($r['wtax']) ?></td>
-            <td style="color:#ef4444"><?= peso($r['total_deductions']) ?></td>
-            <td><strong style="color:#0f766e"><?= peso($r['net_pay']) ?></strong></td>
+            <td style="<?= $isNegative ? 'color:#dc2626;font-weight:700;' : 'color:#ef4444;' ?>"><?= peso($r['total_deductions']) ?></td>
+            <td><strong style="<?= $isNegative ? 'color:#dc2626;' : 'color:#0f766e;' ?>"><?= peso($r['net_pay']) ?><?= $isNegative ? ' <i class="fa fa-triangle-exclamation" style="font-size:11px;" title="Negative net pay"></i>' : '' ?></strong></td>
             <td><span class="badge badge--<?= strtolower($r['payroll_status']) ?>"><?= $r['payroll_status'] ?></span></td>
             <?php if ($userIsAdmin || $userIsPrincipal): ?>
             <td class="row-actions">
                 <button class="btn-icon" title="View Payslip" onclick="openPayslip(this)"
-                    data-name="<?= htmlspecialchars(trim($r['employee_name'])) ?>"
+                    data-name="<?= htmlspecialchars($empNameClean) ?>"
                     data-position="<?= htmlspecialchars($r['position_name'] ?? '') ?>"
-                    data-dept="<?= htmlspecialchars($r['department_name'] ?? '') ?>"
+                    data-dept="<?= htmlspecialchars($deptClean) ?>"
                     data-empid="<?= $r['employee_id'] ?>"
+                    data-empno="<?= $employeeNo ?>"
+                    data-payrollno="<?= $batchPayrollNo ?>"
                     data-basic="<?= $r['basic_pay'] ?>" data-assign="<?= $r['addl_assign'] ?>"
                     data-rice="<?= $r['rice_sub'] ?>" data-laundry="<?= $r['laundry'] ?>"
                     data-peraa-premium="<?= $r['peraa_p'] ?>" data-peraa-loan="<?= $r['peraa_l'] ?>"
@@ -447,10 +644,11 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
                 <?php if ($canEdit): ?>
                 <button class="btn-icon btn-icon--edit" title="Edit" onclick="openEdit(this)"
                     data-payroll-id="<?= $r['payroll_id'] ?>"
-                    data-name="<?= htmlspecialchars(trim($r['employee_name'])) ?>"
+                    data-name="<?= htmlspecialchars($empNameClean) ?>"
                     data-position="<?= htmlspecialchars($r['position_name'] ?? '') ?>"
-                    data-dept="<?= htmlspecialchars($r['department_name'] ?? '') ?>"
+                    data-dept="<?= htmlspecialchars($deptClean) ?>"
                     data-empid="<?= $r['employee_id'] ?>"
+                    data-empno="<?= $employeeNo ?>"
                     data-basic="<?= $r['basic_pay'] ?>"
                     data-total-allowances="<?= $r['total_allowances'] ?>"
                     data-allowances="<?= $allowanceJson ?>"
@@ -465,6 +663,9 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
         <?php endif; ?>
         </tbody>
     </table>
+    <div id="empNoResults" style="display:none;padding:32px;text-align:center;color:#94a3b8;font-size:13px;">
+        No employees match your search.
+    </div>
     </div>
 </div>
 
@@ -592,16 +793,28 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
     <?php if (empty($records)): ?>
         <p style="color:#9ca3af;padding:32px 0;text-align:center;">No payroll records found.</p>
     <?php else: ?>
-    <div class="bd-payslip-grid">
-        <?php foreach ($records as $r): ?>
-        <?php
+    <div class="bd-tab-toolbar">
+        <input type="text" id="psSearch" placeholder="Search by name or ID…"
+               class="bd-tab-search" oninput="filterPayslipCards()">
+        <span id="psCardCount" style="font-size:12px;color:#94a3b8;margin-left:4px;"></span>
+    </div>
+    <div class="bd-payslip-grid" id="psGrid">
+        <?php foreach ($records as $r):
             $allowanceJson = htmlspecialchars(json_encode($allowanceDetails[$r['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
             $deductionJson = htmlspecialchars(json_encode($deductionDetails[$r['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
+            $employeeNo    = htmlspecialchars($r['employee_no'] ?? '');
+            $empNameClean  = trim($r['employee_name']);
         ?>
-        <div class="bd-payslip-card">
-            <div class="bd-ps-avatar"><?= strtoupper(substr(trim($r['employee_name']), 0, 2)) ?></div>
+        <div class="bd-payslip-card"
+             data-name="<?= strtolower(htmlspecialchars($empNameClean)) ?>"
+             data-empno="<?= strtolower($employeeNo) ?>">
+            <div class="bd-ps-avatar"><?= strtoupper(substr($empNameClean, 0, 2)) ?></div>
             <div class="bd-ps-info">
-                <strong><?= htmlspecialchars(trim($r['employee_name'])) ?></strong>
+                <div style="display:flex;gap:6px;align-items:center;margin-bottom:2px;">
+                    <div class="emp-no-label" style="font-size:10px;margin-bottom:0;"><?= $employeeNo ?></div>
+                    <code style="font-size:10px;color:#94a3b8;background:#f1f5f9;padding:1px 5px;border-radius:3px;"><?= $batchPayrollNo ?></code>
+                </div>
+                <strong><?= htmlspecialchars($empNameClean) ?></strong>
                 <span><?= htmlspecialchars($r['position_name'] ?? '') ?></span>
             </div>
             <div class="bd-ps-amounts">
@@ -609,10 +822,12 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
                 <div><small>Net Pay</small><strong style="color:#0f766e"><?= peso($r['net_pay']) ?></strong></div>
             </div>
             <button class="btn-icon" onclick="openPayslip(this)"
-                data-name="<?= htmlspecialchars(trim($r['employee_name'])) ?>"
+                data-name="<?= htmlspecialchars($empNameClean) ?>"
                 data-position="<?= htmlspecialchars($r['position_name'] ?? '') ?>"
                 data-dept="<?= htmlspecialchars($r['department_name'] ?? '') ?>"
                 data-empid="<?= $r['employee_id'] ?>"
+                data-empno="<?= $employeeNo ?>"
+                data-payrollno="<?= $batchPayrollNo ?>"
                 data-basic="<?= $r['basic_pay'] ?>" data-assign="<?= $r['addl_assign'] ?>"
                 data-rice="<?= $r['rice_sub'] ?>" data-laundry="<?= $r['laundry'] ?>"
                 data-peraa-premium="<?= $r['peraa_p'] ?>" data-peraa-loan="<?= $r['peraa_l'] ?>"
@@ -632,6 +847,9 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
             </button>
         </div>
         <?php endforeach; ?>
+    </div>
+    <div id="psNoResults" style="display:none;padding:32px;text-align:center;color:#94a3b8;font-size:13px;">
+        No payslips match your search.
     </div>
     <?php endif; ?>
 </div>
@@ -672,13 +890,72 @@ document.querySelectorAll('.bd-tab').forEach(btn => {
         document.querySelectorAll('.bd-tab,.bd-tab-content').forEach(el => el.classList.remove('active'));
         this.classList.add('active');
         document.getElementById('tab-' + this.dataset.tab)?.classList.add('active');
-        // Highlight active tab in URL (no reload)
         history.replaceState(null,'', location.pathname + '?period_id=<?= $periodId ?>&tab=' + this.dataset.tab);
     });
 });
-// Restore tab from URL
 const urlTab = new URLSearchParams(location.search).get('tab');
 if (urlTab) document.querySelector(`.bd-tab[data-tab="${urlTab}"]`)?.click();
+
+// ── Employee tab: search & sort ───────────────────────────────────────────────
+function filterEmpTable() {
+    const q    = (document.getElementById('empSearch')?.value || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#empTable tbody tr[data-name]');
+    let vis = 0;
+    rows.forEach(tr => {
+        const match = !q ||
+            tr.dataset.name.includes(q) ||
+            tr.dataset.empno.includes(q) ||
+            tr.dataset.dept.includes(q);
+        tr.style.display = match ? '' : 'none';
+        if (match) vis++;
+    });
+    const cnt = document.getElementById('empCount');
+    if (cnt) cnt.textContent = q ? `${vis} result${vis !== 1 ? 's' : ''}` : '';
+    const noRes = document.getElementById('empNoResults');
+    if (noRes) noRes.style.display = (!vis && rows.length > 0) ? 'block' : 'none';
+}
+
+function sortEmpTable() {
+    const val  = document.getElementById('empSort')?.value || 'name-asc';
+    const tbody = document.querySelector('#empTable tbody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr[data-name]'));
+    rows.sort((a, b) => {
+        switch (val) {
+            case 'name-asc':  return a.dataset.name.localeCompare(b.dataset.name);
+            case 'name-desc': return b.dataset.name.localeCompare(a.dataset.name);
+            case 'dept-asc':  return a.dataset.dept.localeCompare(b.dataset.dept);
+            case 'net-desc':  return parseFloat(b.dataset.net)   - parseFloat(a.dataset.net);
+            case 'net-asc':   return parseFloat(a.dataset.net)   - parseFloat(b.dataset.net);
+            case 'gross-desc':return parseFloat(b.dataset.gross) - parseFloat(a.dataset.gross);
+            default: return 0;
+        }
+    });
+    rows.forEach(r => tbody.appendChild(r));
+}
+
+// ── Payslip tab: search ───────────────────────────────────────────────────────
+function filterPayslipCards() {
+    const q     = (document.getElementById('psSearch')?.value || '').toLowerCase().trim();
+    const cards = document.querySelectorAll('#psGrid .bd-payslip-card');
+    let vis = 0;
+    cards.forEach(c => {
+        const match = !q || c.dataset.name.includes(q) || c.dataset.empno.includes(q);
+        c.style.display = match ? '' : 'none';
+        if (match) vis++;
+    });
+    const cnt = document.getElementById('psCardCount');
+    if (cnt) cnt.textContent = q ? `${vis} result${vis !== 1 ? 's' : ''}` : '';
+    const noRes = document.getElementById('psNoResults');
+    if (noRes) noRes.style.display = (!vis && cards.length > 0) ? 'block' : 'none';
+}
+
+// Init counts
+document.addEventListener('DOMContentLoaded', () => {
+    const rows = document.querySelectorAll('#empTable tbody tr[data-name]');
+    const cnt = document.getElementById('empCount');
+    if (cnt && rows.length) cnt.textContent = '';
+});
 
 // ── Admin payroll action modal ────────────────────────────────────────────────
 const _pcmConfig = {

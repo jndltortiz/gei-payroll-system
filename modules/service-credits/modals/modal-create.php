@@ -1,9 +1,10 @@
 <?php
 /**
  * modal-create.php — Create / Edit service credit
- * Variables: $employees (from parent index.php)
+ * Variables expected from parent: $employees, $openPeriods
  */
-if (!isset($employees)) $employees = [];
+if (!isset($employees))   $employees   = [];
+if (!isset($openPeriods)) $openPeriods = [];
 ?>
 <div class="sc-modal-overlay" id="createModal" style="display:none;">
   <div class="sc-modal-box">
@@ -13,8 +14,8 @@ if (!isset($employees)) $employees = [];
     </div>
 
     <form id="scCreateForm" method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php">
-      <input type="hidden" name="action"            id="scFormAction" value="submit">
-      <input type="hidden" name="service_credit_id" id="scFormId"     value="">
+      <input type="hidden" name="action"            id="scFormAction"   value="submit">
+      <input type="hidden" name="service_credit_id" id="scFormId"       value="">
 
       <div class="sc-modal-body">
 
@@ -34,11 +35,38 @@ if (!isset($employees)) $employees = [];
           <div id="scRateHint" style="display:none;" class="sc-rate-hint">
             <i class="fa fa-circle-info"></i>
             Daily rate: <strong id="scRateDisplay">—</strong>
-            &nbsp;·&nbsp; Each row auto-computes Days × Daily Rate
+            &nbsp;·&nbsp; Computed Pay = Days × Daily Rate
           </div>
         </div>
 
-        <!-- Work Date Rows (multi-date, rendered by JS) -->
+        <!-- Target Payroll Period -->
+        <div class="sc-form-group">
+          <label>Target Payroll Period</label>
+          <select name="target_period_id" id="scTargetPeriod">
+            <option value="">— Not specified (auto-applied on next payroll run) —</option>
+            <?php foreach ($openPeriods as $p):
+              $pLabel = $p['period_name']
+                  ?: (date('M j', strtotime($p['pay_period_start'])) . '–' . date('j, Y', strtotime($p['pay_period_end'])));
+              $pPayDate = $p['pay_date'] ? ' · Pay: ' . date('M j, Y', strtotime($p['pay_date'])) : '';
+            ?>
+            <option value="<?= $p['period_id'] ?>">
+              <?= htmlspecialchars($pLabel . $pPayDate) ?>
+            </option>
+            <?php endforeach; ?>
+          </select>
+          <small>Informational — shows which payroll period this credit is intended for.</small>
+        </div>
+
+        <!-- Description -->
+        <div class="sc-form-group">
+          <label>Description of Extra Work</label>
+          <textarea name="remarks" id="scRemarks" rows="2"
+                    placeholder="e.g. Saturday tutorial, enrollment duty, school event…"
+                    maxlength="255"></textarea>
+          <span class="sc-char-count" id="scCharCount">0 / 255</span>
+        </div>
+
+        <!-- Work Date Table -->
         <div class="sc-form-group">
           <div class="sc-dates-hdr">
             <label>Work Dates <span class="req">*</span></label>
@@ -46,23 +74,25 @@ if (!isset($employees)) $employees = [];
               <i class="fa fa-plus"></i> Add Date
             </button>
           </div>
-          <div id="scDateRows">
-            <!-- Populated by renderScDateRows() on DOMContentLoaded / resetCreateModal() -->
+          <div class="sc-dates-table-wrap">
+            <table class="sc-dates-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Day Equivalent</th>
+                  <th>Computed Pay (₱)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="scDateRows">
+                <!-- Populated by renderScDateRows() -->
+              </tbody>
+            </table>
           </div>
-          <div class="sc-date-totals" id="scDateTotals" style="display:none;">
-            Total: <strong id="scTotalDays">0.0</strong> day(s)
-            &nbsp;·&nbsp;
-            Equiv. Pay: ₱<strong id="scTotalPay">0.00</strong>
+          <div class="sc-date-totals" id="scDateTotals">
+            <span>Total: <strong id="scTotalDays">0.0</strong> day(s)</span>
+            <span>Total Pay: <strong id="scTotalPay" style="color:#0f766e;">₱0.00</strong></span>
           </div>
-        </div>
-
-        <!-- Description -->
-        <div class="sc-form-group">
-          <label>Description of Extra Work</label>
-          <textarea name="remarks" id="scRemarks" rows="3"
-                    placeholder="e.g. Saturday tutorial, enrollment duty, school event…"
-                    maxlength="255"></textarea>
-          <span class="sc-char-count" id="scCharCount">0 / 255</span>
         </div>
 
       </div><!-- .sc-modal-body -->

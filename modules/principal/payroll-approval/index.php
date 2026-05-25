@@ -41,6 +41,7 @@ $history = $pdo->query("
 // ── Prior rejection context for re-submitted PROCESSING periods ──────────────
 $returnHistory  = [];
 $submissionMeta = [];
+$periodAlerts   = [];
 if (!empty($pending)) {
     $pendingIds = implode(',', array_map('intval', array_column($pending, 'period_id')));
     $retRows = $pdo->query("
@@ -63,6 +64,17 @@ if (!empty($pending)) {
         GROUP BY period_id
     ")->fetchAll();
     foreach ($subRows as $r) $submissionMeta[(int)$r['period_id']] = $r['submitted_at'];
+
+    // Alerts: negative net pay or zero basic pay per period
+    $alertRows = $pdo->query("
+        SELECT period_id,
+               SUM(net_pay < 0)   AS neg_net_count,
+               SUM(basic_pay = 0) AS zero_basic_count
+        FROM payroll_records
+        WHERE period_id IN ($pendingIds)
+        GROUP BY period_id
+    ")->fetchAll();
+    foreach ($alertRows as $r) $periodAlerts[(int)$r['period_id']] = $r;
 }
 
 $pageTitle = 'Payroll Approvals — Principal Portal';
@@ -122,12 +134,25 @@ require_once __DIR__ . '/../../../includes/head.php';
     <?php foreach ($pending as $p):
         $periodLabel = date('M j', strtotime($p['pay_period_start'])) . ' – ' .
                        date('M j, Y', strtotime($p['pay_period_end']));
+        $pAlerts     = $periodAlerts[(int)$p['period_id']] ?? [];
+        $negCount    = (int)($pAlerts['neg_net_count']   ?? 0);
+        $zeroCount   = (int)($pAlerts['zero_basic_count'] ?? 0);
     ?>
     <div class="pr-pending-card" id="pr-card-<?= $p['period_id'] ?>">
       <div class="pr-pending-header">
         <div>
           <div class="pr-pending-label">Pending Review</div>
-          <div class="pr-pending-period">Pay Period: <?= htmlspecialchars($periodLabel) ?></div>
+          <div class="pr-pending-period">
+            <?= htmlspecialchars($p['period_name'] ?? $periodLabel) ?>
+          </div>
+          <?php if (!empty($p['payroll_number'])): ?>
+          <div style="margin-top:3px;">
+            <code style="font-size:11px;color:#64748b;background:#f1f5f9;padding:2px 7px;border-radius:4px;">
+              <?= htmlspecialchars($p['payroll_number']) ?>
+            </code>
+          </div>
+          <?php endif; ?>
+          <div style="font-size:12px;color:#94a3b8;margin-top:2px;"><?= htmlspecialchars($periodLabel) ?></div>
           <?php if (!empty($submissionMeta[$p['period_id']])): ?>
           <div class="pr-submission-meta">
             <i class="fa fa-paper-plane"></i>
@@ -137,6 +162,23 @@ require_once __DIR__ . '/../../../includes/head.php';
         </div>
         <span class="pr-badge pr-badge--awaiting">Awaiting Approval</span>
       </div>
+
+      <?php if ($negCount > 0 || $zeroCount > 0): ?>
+      <div class="pr-alerts-strip">
+        <i class="fa fa-triangle-exclamation"></i>
+        <strong>Payroll Warnings:</strong>
+        <?php if ($negCount > 0): ?>
+        <span class="pr-alert-chip pr-alert-chip--red">
+          <?= $negCount ?> employee<?= $negCount > 1 ? 's' : '' ?> with negative net pay
+        </span>
+        <?php endif; ?>
+        <?php if ($zeroCount > 0): ?>
+        <span class="pr-alert-chip pr-alert-chip--yellow">
+          <?= $zeroCount ?> employee<?= $zeroCount > 1 ? 's' : '' ?> with zero basic pay
+        </span>
+        <?php endif; ?>
+      </div>
+      <?php endif; ?>
 
       <div class="pr-stats-row">
         <div class="pr-stat">
@@ -207,15 +249,34 @@ require_once __DIR__ . '/../../../includes/head.php';
 
     <!-- ── Past Approved Payrolls ── -->
     <div class="pr-history-section">
-      <h2>Past Approved Payrolls</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+        <h2 style="margin:0;">Past Approved Payrolls</h2>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="text" id="histSearch" placeholder="Search period…"
+                 oninput="filterHistory()"
+                 style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);font-size:13px;background:#fff;width:200px;">
+          <select id="histSort" onchange="sortHistory()"
+                  style="padding:7px 12px;border-radius:8px;border:1px solid var(--border);font-size:13px;background:#fff;">
+            <option value="date-desc">Newest First</option>
+            <option value="date-asc">Oldest First</option>
+            <option value="net-desc">Net Pay ↓</option>
+            <option value="emp-desc">Employees ↓</option>
+          </select>
+          <a href="<?= BASE_URL ?>modules/payroll/archive.php"
+             style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#7c3aed;text-decoration:none;padding:7px 12px;border-radius:8px;border:1px solid #ddd6fe;background:#f5f3ff;">
+            <i class="fa fa-box-archive"></i> Full Archive
+          </a>
+        </div>
+      </div>
 
       <?php if (empty($history)): ?>
       <p style="color:#94a3b8;font-size:14px;padding:20px 0;">No approved payroll history yet.</p>
       <?php else: ?>
       <div class="pr-history-table-wrap">
-        <table class="pr-history-table">
+        <table class="pr-history-table" id="histTable">
           <thead>
             <tr>
+              <th>Payroll #</th>
               <th>Pay Period</th>
               <th style="text-align:center;">Employees</th>
               <th>Net Payable</th>
@@ -232,8 +293,19 @@ require_once __DIR__ . '/../../../includes/head.php';
                   ? date('M j, Y', strtotime($h['approved_at']))
                   : date('M j, Y', strtotime($h['updated_at']));
           ?>
-          <tr>
-            <td><strong><?= htmlspecialchars($hl) ?></strong></td>
+          <tr data-period="<?= strtolower(htmlspecialchars($h['period_name'] ?? $hl)) ?>"
+              data-net="<?= (float)$h['total_net'] ?>"
+              data-emp="<?= (int)$h['emp_count'] ?>"
+              data-date="<?= strtotime($h['pay_period_start']) ?>">
+            <td>
+              <code style="font-size:11px;color:#64748b;background:#f1f5f9;padding:2px 7px;border-radius:4px;">
+                <?= htmlspecialchars($h['payroll_number'] ?? '—') ?>
+              </code>
+            </td>
+            <td>
+              <strong><?= htmlspecialchars($h['period_name'] ?? $hl) ?></strong>
+              <div style="font-size:11px;color:#94a3b8;margin-top:2px;"><?= htmlspecialchars($hl) ?></div>
+            </td>
             <td style="text-align:center;font-weight:600;color:#374151;"><?= (int)$h['emp_count'] ?></td>
             <td><strong>₱<?= number_format((float)$h['total_net'], 2) ?></strong></td>
             <td style="color:#64748b;"><?= $approvedDate ?></td>
@@ -262,7 +334,40 @@ require_once __DIR__ . '/../../../includes/head.php';
           <?php endforeach; ?>
           </tbody>
         </table>
+        <div id="histNoResults" style="display:none;padding:28px;text-align:center;color:#94a3b8;font-size:13px;">
+            No periods match your search.
+        </div>
       </div>
+
+      <script>
+      function filterHistory() {
+          const q    = document.getElementById('histSearch').value.toLowerCase().trim();
+          const rows = document.querySelectorAll('#histTable tbody tr[data-period]');
+          let vis = 0;
+          rows.forEach(tr => {
+              const show = !q || tr.dataset.period.includes(q);
+              tr.style.display = show ? '' : 'none';
+              if (show) vis++;
+          });
+          document.getElementById('histNoResults').style.display =
+              (!vis && rows.length > 0) ? 'block' : 'none';
+      }
+
+      function sortHistory() {
+          const val   = document.getElementById('histSort').value;
+          const tbody = document.querySelector('#histTable tbody');
+          const rows  = Array.from(tbody.querySelectorAll('tr[data-period]'));
+          rows.sort((a, b) => {
+              switch (val) {
+                  case 'date-asc':  return parseInt(a.dataset.date) - parseInt(b.dataset.date);
+                  case 'net-desc':  return parseFloat(b.dataset.net) - parseFloat(a.dataset.net);
+                  case 'emp-desc':  return parseInt(b.dataset.emp)  - parseInt(a.dataset.emp);
+                  default:          return parseInt(b.dataset.date) - parseInt(a.dataset.date);
+              }
+          });
+          rows.forEach(r => tbody.appendChild(r));
+      }
+      </script>
       <?php endif; ?>
     </div>
 

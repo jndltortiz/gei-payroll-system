@@ -478,6 +478,60 @@
 .bd-ps-amounts small { display: block; font-size: 9px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.4px; }
 .bd-ps-amounts strong { font-size: 12px; }
 
+/* ── Tab toolbar (search + sort bar) ── */
+.bd-tab-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 14px 0 10px;
+}
+
+.bd-tab-search {
+    flex: 1;
+    min-width: 200px;
+    max-width: 340px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+    background: #fff;
+    outline: none;
+}
+
+.bd-tab-search:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+
+/* ── Analytics card classes ── */
+.bd-analytics-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: var(--shadow);
+}
+
+.bd-analytic-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: #374151;
+}
+
+.bd-analytic-row:last-child { border-bottom: none; }
+
+.bd-overview-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+@media (max-width: 700px) {
+    .bd-overview-grid { grid-template-columns: 1fr; }
+}
+
 /* ── Print ── */
 @media print {
     .bd-tabs, .bd-header-right, .bd-breadcrumb, .sidebar, .header { display: none !important; }

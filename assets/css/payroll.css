@@ -719,6 +719,52 @@
     .payslip-signatures { flex-direction: column !important; gap: 20px !important; }
 }
 
+/* ── Employee number label in table rows ─────────────────────────────────────*/
+.emp-no-label {
+    font-size: 11px; font-weight: 600; color: #94a3b8;
+    letter-spacing: 0.3px; margin-bottom: 1px;
+    font-family: monospace;
+}
+
+/* ── History mode notice bar ─────────────────────────────────────────────────*/
+.payroll-history-notice {
+    display: flex; align-items: center; gap: 12px;
+    background: #f1f5f9; border: 1px solid #cbd5e1; border-left: 4px solid #64748b;
+    border-radius: 10px; padding: 10px 16px; margin-bottom: 14px;
+    font-size: 13px; color: #374151; flex-wrap: wrap;
+}
+.payroll-history-notice i { color: #64748b; flex-shrink: 0; }
+
+/* ── Alerts strip ────────────────────────────────────────────────────────────*/
+.payroll-alerts-strip {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: #fff7ed; border: 1.5px solid #fed7aa;
+    border-left: 4px solid #ea580c;
+    border-radius: 10px; padding: 10px 16px;
+    margin-bottom: 14px; font-size: 13px; color: #9a3412;
+}
+.alert-chip {
+    padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    white-space: nowrap;
+}
+.alert-chip--red    { background: #fee2e2; color: #991b1b; }
+.alert-chip--yellow { background: #fef3c7; color: #92400e; }
+
+/* ── Negative net pay row highlight ─────────────────────────────────────────*/
+.row--negative-net { background: #fff5f5 !important; }
+.row--negative-net td { border-top-color: #fecaca !important; }
+
+/* ── Remove button for saved adjustments in edit modal ───────────────────────*/
+.btn-remove-adj {
+    background: #fef2f2; border: none; color: #9ca3af;
+    cursor: pointer; padding: 0; border-radius: 6px;
+    width: 28px; height: 28px; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: background 0.15s, color 0.15s;
+}
+.btn-remove-adj:hover:not(:disabled) { background: #fee2e2; color: #dc2626; }
+.btn-remove-adj:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* ── Print: payslip isolation ────────────────────────────────────────────────
    printPayslip() adds .printing-payslip to <body> before window.print() and
    removes it in the afterprint event. Everything becomes invisible except the

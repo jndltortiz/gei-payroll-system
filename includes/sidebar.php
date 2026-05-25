@@ -64,6 +64,11 @@ $_sidebarInit  = strtoupper(substr($_SESSION['user']['first_name'] ?? 'A', 0, 1)
       <i class="fa fa-file-invoice-dollar"></i>
       <span>Payroll</span>
     </a>
+    <a class="nav-item <?= sidebarActive('modules/payroll/archive') ?>"
+       href="<?= BASE_URL ?>modules/payroll/archive.php">
+      <i class="fa fa-box-archive"></i>
+      <span>Payroll Archive</span>
+    </a>
     <a class="nav-item <?= sidebarActive('modules/loans') ?>"
        href="<?= BASE_URL ?>modules/loans/index.php">
       <i class="fa fa-hand-holding-dollar"></i>
