@@ -35,6 +35,11 @@ function employeeActive(string $path): string {
       <i class="fa fa-house"></i>
       <span>Dashboard</span>
     </a>
+    <a class="nav-item <?= employeeActive('employee/profile') ?>"
+       href="<?= BASE_URL ?>modules/employee/profile/index.php">
+      <i class="fa fa-id-badge"></i>
+      <span>My Profile</span>
+    </a>
 
     <div class="nav-section-label">MY PAYROLL</div>
     <a class="nav-item <?= employeeActive('employee/payslips') ?>"

@@ -102,10 +102,22 @@ require_once __DIR__ . '/../../includes/head.php';
         </tr>
       </thead>
       <tbody>
-      <?php foreach ($years as $y):
-        $start    = new DateTime($y['start_date']);
-        $end      = new DateTime($y['end_date']);
-        $months   = round($start->diff($end)->days / 30.44, 1);
+      <?php
+        $today = date('Y-m-d');
+        foreach ($years as $y):
+          $start  = new DateTime($y['start_date']);
+          $end    = new DateTime($y['end_date']);
+          $months = round($start->diff($end)->days / 30.44, 1);
+
+          if ($y['is_active']) {
+              $badge = '<span class="sy-badge sy-badge--active"><i class="fa fa-circle-check"></i> Active</span>';
+          } elseif ($y['end_date'] < $today) {
+              $badge = '<span class="sy-badge sy-badge--archived">Archived</span>';
+          } elseif ($y['start_date'] > $today) {
+              $badge = '<span class="sy-badge sy-badge--upcoming">Upcoming</span>';
+          } else {
+              $badge = '<span class="sy-badge sy-badge--inactive">Inactive</span>';
+          }
       ?>
       <tr>
         <td><strong><?= htmlspecialchars($y['year_name']) ?></strong></td>
@@ -114,7 +126,7 @@ require_once __DIR__ . '/../../includes/head.php';
         <td style="color:#64748b;"><?= $months ?> mo.</td>
         <td>
           <?php if ($y['leave_count'] > 0): ?>
-            <a href="<?= BASE_URL ?>modules/leave/index.php" style="font-size:13px;color:#2563eb;">
+            <a href="<?= BASE_URL ?>modules/leave/index.php?sy=<?= $y['school_year_id'] ?>" class="sy-count-link">
               <?= $y['leave_count'] ?> request<?= $y['leave_count']!=1?'s':'' ?>
             </a>
           <?php else: ?>
@@ -123,20 +135,14 @@ require_once __DIR__ . '/../../includes/head.php';
         </td>
         <td>
           <?php if ($y['credit_count'] > 0): ?>
-            <a href="<?= BASE_URL ?>modules/leave-credits/index.php?school_year_id=<?= $y['school_year_id'] ?>" style="font-size:13px;color:#2563eb;">
+            <a href="<?= BASE_URL ?>modules/leave-credits/index.php?school_year_id=<?= $y['school_year_id'] ?>" class="sy-count-link">
               <?= $y['credit_count'] ?> record<?= $y['credit_count']!=1?'s':'' ?>
             </a>
           <?php else: ?>
-            <a href="<?= BASE_URL ?>modules/leave-credits/index.php?school_year_id=<?= $y['school_year_id'] ?>" style="font-size:13px;color:#94a3b8;">Allocate credits</a>
+            <a href="<?= BASE_URL ?>modules/leave-credits/index.php?school_year_id=<?= $y['school_year_id'] ?>" class="sy-count-link sy-count-link--muted">Allocate credits</a>
           <?php endif; ?>
         </td>
-        <td>
-          <?php if ($y['is_active']): ?>
-            <span class="sy-badge sy-badge--active">Active</span>
-          <?php else: ?>
-            <span class="sy-badge sy-badge--inactive">Inactive</span>
-          <?php endif; ?>
-        </td>
+        <td><?= $badge ?></td>
         <td>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <?php if (!$y['is_active']): ?>
@@ -230,17 +236,21 @@ require_once __DIR__ . '/../../includes/head.php';
             <input type="text" name="year_name" id="syYearName" required
                    placeholder="e.g. 2026-2027" maxlength="20">
             <small>Format: YYYY-YYYY (e.g. 2026-2027)</small>
+            <span class="sy-inline-error" id="errYearName"></span>
           </div>
         </div>
 
         <div class="sy-form-row sy-form-row--2">
           <div class="sy-form-group">
             <label>Start Date <span class="req">*</span></label>
-            <input type="date" name="start_date" id="syStartDate" required>
+            <input type="date" name="start_date" id="syStartDate" required
+                   onchange="clearFieldError('errStartDate')">
           </div>
           <div class="sy-form-group">
             <label>End Date <span class="req">*</span></label>
-            <input type="date" name="end_date" id="syEndDate" required>
+            <input type="date" name="end_date" id="syEndDate" required
+                   onchange="clearFieldError('errEndDate')">
+            <span class="sy-inline-error" id="errEndDate"></span>
           </div>
         </div>
 
@@ -249,9 +259,9 @@ require_once __DIR__ . '/../../includes/head.php';
             <input type="checkbox" name="is_active" id="syIsActive" value="1">
             <span>Set as active school year</span>
           </label>
-          <small style="color:#d97706;display:none;" id="syActiveWarning">
+          <small class="sy-active-warn" id="syActiveWarning">
             <i class="fa fa-triangle-exclamation"></i>
-            This will deactivate the currently active school year.
+            Setting this active will deactivate the current active school year.
           </small>
         </div>
 
@@ -268,38 +278,105 @@ require_once __DIR__ . '/../../includes/head.php';
 </div>
 
 <script>
-const _hasActive = <?= $activeYear ? 'true' : 'false' ?>;
+const _hasActive  = <?= $activeYear ? 'true' : 'false' ?>;
+const _activeId   = <?= $activeYear ? (int)$activeYear['school_year_id'] : 'null' ?>;
+const _activeName = <?= $activeYear ? json_encode($activeYear['year_name']) : 'null' ?>;
 
+// ── Modal open/close ───────────────────────────────────────────────────────
 function openCreateModal() {
     document.getElementById('syModalTitle').innerHTML = '<i class="fa fa-calendar-plus"></i> Add School Year';
     document.getElementById('syFormAction').value = 'create';
     document.getElementById('syFormId').value     = '';
     document.getElementById('syForm').reset();
-    document.getElementById('syActiveWarning').style.display = 'none';
+    clearAllErrors();
     document.getElementById('syModal').style.display = 'flex';
+    document.getElementById('syYearName').focus();
 }
 
 function openEditModal(y) {
     document.getElementById('syModalTitle').innerHTML = '<i class="fa fa-pen"></i> Edit School Year';
-    document.getElementById('syFormAction').value     = 'update';
-    document.getElementById('syFormId').value         = y.school_year_id;
-    document.getElementById('syYearName').value       = y.year_name;
-    document.getElementById('syStartDate').value      = y.start_date;
-    document.getElementById('syEndDate').value        = y.end_date;
-    document.getElementById('syIsActive').checked     = !!parseInt(y.is_active);
-    checkActiveWarning();
+    document.getElementById('syFormAction').value = 'update';
+    document.getElementById('syFormId').value     = y.school_year_id;
+    document.getElementById('syYearName').value   = y.year_name;
+    document.getElementById('syStartDate').value  = y.start_date;
+    document.getElementById('syEndDate').value    = y.end_date;
+    document.getElementById('syIsActive').checked = !!parseInt(y.is_active);
+    clearAllErrors();
+    updateActiveWarning();
     document.getElementById('syModal').style.display = 'flex';
 }
 
-function checkActiveWarning() {
-    const checked = document.getElementById('syIsActive').checked;
-    document.getElementById('syActiveWarning').style.display =
-        (checked && _hasActive) ? 'block' : 'none';
-}
-document.getElementById('syIsActive').addEventListener('change', checkActiveWarning);
-
 document.getElementById('syModal').addEventListener('click', function(e) {
     if (e.target === this) this.style.display = 'none';
+});
+
+// ── Active-year warning label ──────────────────────────────────────────────
+function updateActiveWarning() {
+    const chk    = document.getElementById('syIsActive');
+    const warn   = document.getElementById('syActiveWarning');
+    const editId = parseInt(document.getElementById('syFormId').value) || 0;
+    const displacesActive = chk.checked && _hasActive && editId !== _activeId;
+    warn.style.display = displacesActive ? 'flex' : 'none';
+}
+document.getElementById('syIsActive').addEventListener('change', updateActiveWarning);
+
+// ── Client-side validation ─────────────────────────────────────────────────
+function showFieldError(id, msg) {
+    var el = document.getElementById(id);
+    if (el) { el.textContent = msg; el.style.display = 'inline'; }
+}
+function clearFieldError(id) {
+    var el = document.getElementById(id);
+    if (el) { el.textContent = ''; el.style.display = 'none'; }
+}
+function clearAllErrors() {
+    ['errYearName', 'errEndDate'].forEach(clearFieldError);
+}
+
+// ── Form submit: validate then confirm if activating ──────────────────────
+document.getElementById('syForm').addEventListener('submit', function(e) {
+    clearAllErrors();
+    var valid = true;
+
+    var name  = document.getElementById('syYearName').value.trim();
+    var start = document.getElementById('syStartDate').value;
+    var end   = document.getElementById('syEndDate').value;
+    var isActivating = document.getElementById('syIsActive').checked;
+    var editId = parseInt(document.getElementById('syFormId').value) || 0;
+
+    // Year name format: YYYY-YYYY or YYYY–YYYY
+    if (name && !/^\d{4}[-–]\d{4}$/.test(name)) {
+        showFieldError('errYearName', 'Format must be YYYY–YYYY (e.g. 2026-2027)');
+        valid = false;
+    }
+
+    // End date after start date
+    if (start && end && end <= start) {
+        showFieldError('errEndDate', 'End date must be after start date.');
+        valid = false;
+    }
+
+    if (!valid) { e.preventDefault(); return; }
+
+    // Confirmation when activating a year that displaces an existing active year
+    var displacesActive = isActivating && _hasActive && editId !== _activeId;
+    if (displacesActive) {
+        e.preventDefault();
+        var form = this;
+        GEI.confirm({
+            title:       'Change Active School Year',
+            message:     'Set “' + (name || 'this school year') + '” as the active school year?',
+            note:        'This will deactivate “' + _activeName + '”. New leave requests and credit allocations will link to the new active year. Previous records are preserved.',
+            type:        'warning',
+            confirmText: 'Confirm',
+        }).then(function() { form.submit(); }).catch(function() {});
+    }
+});
+
+// Auto-format year name: normalise en-dash to hyphen on blur for consistency
+document.getElementById('syYearName').addEventListener('blur', function() {
+    this.value = this.value.replace('–', '-');
+    if (this.value) clearFieldError('errYearName');
 });
 </script>
 

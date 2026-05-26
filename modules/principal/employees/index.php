@@ -1,29 +1,19 @@
 <?php
-require_once __DIR__ . '/../../includes/auth.php';
-require '../../config/database.php';
+require_once __DIR__ . '/../../../includes/auth.php';
+requirePrincipal();
+require_once __DIR__ . '/../../../config/database.php';
 
-$limit = 12;
-$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-$start = ($page - 1) * $limit;
+$limit  = 12;
+$page   = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$start  = ($page - 1) * $limit;
 $deptFilter = isset($_GET['dept']) ? (int)$_GET['dept'] : 0;
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$search     = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-// Fetch departments for filter
 $deptStmt = $pdo->query("SELECT department_id, department_name FROM departments ORDER BY department_name");
 $departments = $deptStmt->fetchAll();
 
-// Fetch positions grouped by department (for cascade dropdowns)
-$posStmt = $pdo->query("SELECT position_id, position_name, department_id FROM positions ORDER BY position_name");
-$positions = $posStmt->fetchAll();
-
-// Fetch shifts
-$shiftStmt = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, grace_period_minutes FROM shifts ORDER BY shift_name");
-$shifts = $shiftStmt->fetchAll();
-
-// Build query with filters
-$where = "WHERE 1=1";
+$where  = "WHERE 1=1";
 $params = [];
-
 if ($deptFilter) {
     $where .= " AND e.department_id = :dept_id";
     $params[':dept_id'] = $deptFilter;
@@ -33,7 +23,7 @@ if ($search !== '') {
     $params[':search'] = '%' . $search . '%';
 }
 
-$countStmt = $pdo->prepare("SELECT COUNT(*) as total FROM employees e $where");
+$countStmt = $pdo->prepare("SELECT COUNT(*) AS total FROM employees e $where");
 $countStmt->execute($params);
 $total = $countStmt->fetch()['total'];
 $pages = max(1, ceil($total / $limit));
@@ -46,8 +36,8 @@ $stmt = $pdo->prepare("
            s.shift_name, s.start_time AS shift_start, s.end_time AS shift_end
     FROM employees e
     LEFT JOIN departments d ON e.department_id = d.department_id
-    LEFT JOIN positions p ON e.position_id = p.position_id
-    LEFT JOIN shifts s ON e.shift_id = s.shift_id
+    LEFT JOIN positions p   ON e.position_id   = p.position_id
+    LEFT JOIN shifts s      ON e.shift_id       = s.shift_id
     $where
     ORDER BY e.employee_id ASC
     LIMIT :start, :limit
@@ -55,78 +45,70 @@ $stmt = $pdo->prepare("
 $stmt->bindValue(':start', $start, PDO::PARAM_INT);
 $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
 foreach ($params as $k => $v) {
-    if ($k !== ':start' && $k !== ':limit') {
-        $stmt->bindValue($k, $v);
-    }
+    if ($k !== ':start' && $k !== ':limit') $stmt->bindValue($k, $v);
 }
 $stmt->execute();
-$result = $stmt->fetchAll();
+$employees = $stmt->fetchAll();
 
-$pageTitle = 'Employee Management';
+$pageTitle = 'Employee Directory';
 $extraCSS  = [BASE_URL . 'assets/css/employee.css'];
-require_once __DIR__ . '/../../includes/head.php';
+require_once __DIR__ . '/../../../includes/head.php';
 ?>
 <body>
-    <?php include __DIR__ . '/../../includes/sidebar.php'; ?>
+    <?php include __DIR__ . '/../../../includes/principal-sidebar.php'; ?>
     <div class="main">
-        <?php include __DIR__ . '/../../includes/header.php'; ?>
+        <?php include __DIR__ . '/../../../includes/header.php'; ?>
         <div class="content">
 
-            <!-- HEADER -->
             <div class="page-header">
                 <div>
-                    <h2 class="page-title">Employee Management</h2>
-                    <p class="page-date">Manage employee records, accounts, and profiles</p>
+                    <h2 class="page-title">Employee Directory</h2>
+                    <p class="page-date">View-only employee profiles — contact Admin to make changes</p>
                 </div>
                 <div class="actions">
-                    <button class="btn-primary" onclick="openAddWizard()">+ Add Employee</button>
+                    <span style="font-size:12px;background:#f0fdf9;border:1px solid #a7f3d0;color:#065f46;padding:8px 14px;border-radius:8px;">
+                        <i class="fa fa-eye"></i> View Only
+                    </span>
                 </div>
             </div>
 
-            <!-- CARD -->
             <div class="card">
-                <!-- FILTER BAR -->
                 <div class="table-header">
                     <div style="position:relative;flex:1;max-width:300px;">
                         <i class="fa fa-magnifying-glass" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:13px;pointer-events:none;"></i>
-                        <input
-                            type="text"
-                            id="searchInput"
-                            placeholder="Search by name or ID..."
-                            value="<?= htmlspecialchars($search) ?>"
-                            onkeyup="searchTable()"
-                            style="padding-left:32px;width:100%;"
-                        >
+                        <input type="text" id="searchInput" placeholder="Search by name or ID..."
+                               value="<?= htmlspecialchars($search) ?>"
+                               onkeyup="searchTable()"
+                               style="padding-left:32px;width:100%;">
                     </div>
                     <select id="deptFilterSelect" onchange="filterDept()">
                         <option value="0" <?= $deptFilter == 0 ? 'selected' : '' ?>>All Departments</option>
                         <?php foreach ($departments as $dept): ?>
                             <option value="<?= $dept['department_id'] ?>" <?= $deptFilter == $dept['department_id'] ? 'selected' : '' ?>>
-                                <?= $dept['department_name'] ?>
+                                <?= htmlspecialchars($dept['department_name']) ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
                 </div>
 
-                <!-- TABLE -->
                 <div class="table-wrapper">
                     <table id="empTable">
                         <thead>
                             <tr>
-                                <th class="sortable" data-col="0" data-sort-type="text">Employee No</th>
-                                <th class="sortable" data-col="1" data-sort-type="text">Name</th>
-                                <th class="sortable" data-col="2" data-sort-type="text">Position</th>
-                                <th class="sortable" data-col="3" data-sort-type="text">Department</th>
+                                <th>Employee No</th>
+                                <th>Name</th>
+                                <th>Position</th>
+                                <th>Department</th>
                                 <th>Type</th>
                                 <th>Shift</th>
-                                <th class="sortable" data-col="6" data-sort-type="date">Date Hired</th>
-                                <th class="sortable" data-col="7" data-sort-type="text">Status</th>
-                                <th style="text-align:right;">Actions</th>
+                                <th>Date Hired</th>
+                                <th>Status</th>
+                                <th style="text-align:right;">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php if (empty($result)): ?>
-                            <tr id="empEmptyRow">
+                            <?php if (empty($employees)): ?>
+                            <tr>
                                 <td colspan="9">
                                     <div class="empty-state" style="padding:40px 24px;">
                                         <i class="fa fa-users-slash"></i>
@@ -136,7 +118,7 @@ require_once __DIR__ . '/../../includes/head.php';
                                 </td>
                             </tr>
                             <?php endif; ?>
-                            <?php foreach ($result as $row): ?>
+                            <?php foreach ($employees as $row): ?>
                             <tr>
                                 <td><?= htmlspecialchars($row['employee_no'] ?? 'EMP-' . str_pad($row['employee_id'], 3, '0', STR_PAD_LEFT)) ?></td>
                                 <td>
@@ -171,14 +153,8 @@ require_once __DIR__ . '/../../includes/head.php';
                                     </span>
                                 </td>
                                 <td style="text-align:right;">
-                                    <button class="btn-view" onclick="openViewProfile(<?= $row['employee_id'] ?>)" title="View">
+                                    <button class="btn-view" onclick="openViewProfile(<?= $row['employee_id'] ?>)" title="View Profile">
                                         <i class="fa fa-eye"></i>
-                                    </button>
-                                    <button class="btn-edit" onclick="openEditWizard(<?= $row['employee_id'] ?>)" title="Edit">
-                                        <i class="fa fa-pen"></i>
-                                    </button>
-                                    <button class="btn-delete" onclick="setDeactivate(<?= $row['employee_id'] ?>, '<?= htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) ?>', '<?= htmlspecialchars($row['department_name'] ?? '') ?>')" title="Deactivate">
-                                        <i class="fa fa-user-slash"></i>
                                     </button>
                                 </td>
                             </tr>
@@ -187,7 +163,6 @@ require_once __DIR__ . '/../../includes/head.php';
                     </table>
                 </div>
 
-                <!-- FOOTER -->
                 <div class="table-footer">
                     <span>Showing <?= $total === 0 ? 0 : $start + 1 ?>–<?= min($start + $limit, $total) ?> of <?= $total ?> employees</span>
                     <div class="pagination">
@@ -203,19 +178,21 @@ require_once __DIR__ . '/../../includes/head.php';
         </div>
     </div>
 
-    <!-- MODALS -->
-    <?php
-    $modalPath = __DIR__ . '/modals/';
-    include $modalPath . 'add-modal.php';
-    include $modalPath . 'edit-modal.php';
-    include $modalPath . 'view-modal.php';
-    include $modalPath . 'deactivate-modal.php';
-    include $modalPath . 'save-modal.php';
-    ?>
+    <!-- VIEW PROFILE MODAL ONLY (no add/edit/deactivate for Principal) -->
+    <?php include __DIR__ . '/../../employees/modals/view-modal.php'; ?>
 
-    <!-- positions JSON for JS cascade -->
+    <script>window.BASE_URL = '<?= BASE_URL ?>';</script>
+    <script src="<?= BASE_URL ?>assets/js/employee.js?v=<?= filemtime(__DIR__ . '/../../../assets/js/employee.js') ?>"></script>
     <script>
-        window.allPositions = <?= json_encode($positions) ?>;
+    // Principal view — disable the Edit button inside view modal
+    document.addEventListener('DOMContentLoaded', function() {
+        const editBtn = document.querySelector('#viewEmployeeModal .btn-outline');
+        if (editBtn) editBtn.style.display = 'none';
+    });
+    window.filterDept = function() {
+        const dept   = document.getElementById('deptFilterSelect').value;
+        const search = document.getElementById('searchInput')?.value || '';
+        window.location.href = '?dept=' + dept + '&search=' + encodeURIComponent(search);
+    };
     </script>
-    <script src="<?= BASE_URL ?>assets/js/employee.js?v=<?= filemtime(__DIR__ . '/../../assets/js/employee.js') ?>"></script>
-<?php include __DIR__ . '/../../includes/footer.php'; ?>
+<?php include __DIR__ . '/../../../includes/footer.php'; ?>

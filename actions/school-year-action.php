@@ -42,6 +42,23 @@ try {
                 syRedirect($back, false, 'End date must be after start date.');
             }
 
+            // Duplicate name
+            $dupName = $pdo->prepare("SELECT school_year_id FROM school_years WHERE year_name = ?");
+            $dupName->execute([$yearName]);
+            if ($dupName->fetch()) {
+                syRedirect($back, false, "School year \"{$yearName}\" already exists.");
+            }
+
+            // Overlapping date range
+            $over = $pdo->prepare("
+                SELECT year_name FROM school_years
+                WHERE start_date <= ? AND end_date >= ?
+            ");
+            $over->execute([$endDate, $startDate]);
+            if ($row = $over->fetch()) {
+                syRedirect($back, false, "Date range overlaps with existing school year \"{$row['year_name']}\".");
+            }
+
             $pdo->beginTransaction();
 
             if ($isActive) {
@@ -54,7 +71,7 @@ try {
             ")->execute([$yearName, $startDate, $endDate, $isActive]);
 
             $pdo->commit();
-            syRedirect($back, true, "School year "{$yearName}" created successfully.");
+            syRedirect($back, true, "School year \"{$yearName}\" created successfully.");
         }
 
         // ── Update ────────────────────────────────────────────────────────
@@ -73,6 +90,23 @@ try {
                 syRedirect($back, false, 'End date must be after start date.');
             }
 
+            // Duplicate name (excluding self)
+            $dupName = $pdo->prepare("SELECT school_year_id FROM school_years WHERE year_name = ? AND school_year_id != ?");
+            $dupName->execute([$yearName, $id]);
+            if ($dupName->fetch()) {
+                syRedirect($back, false, "School year \"{$yearName}\" already exists.");
+            }
+
+            // Overlapping date range (excluding self)
+            $over = $pdo->prepare("
+                SELECT year_name FROM school_years
+                WHERE school_year_id != ? AND start_date <= ? AND end_date >= ?
+            ");
+            $over->execute([$id, $endDate, $startDate]);
+            if ($row = $over->fetch()) {
+                syRedirect($back, false, "Date range overlaps with existing school year \"{$row['year_name']}\".");
+            }
+
             $pdo->beginTransaction();
 
             if ($isActive) {
@@ -87,7 +121,7 @@ try {
             ")->execute([$yearName, $startDate, $endDate, $isActive, $id]);
 
             $pdo->commit();
-            syRedirect($back, true, "School year "{$yearName}" updated.");
+            syRedirect($back, true, "School year \"{$yearName}\" updated.");
         }
 
         // ── Set Active ────────────────────────────────────────────────────
@@ -103,7 +137,7 @@ try {
             $stmt = $pdo->prepare("SELECT year_name FROM school_years WHERE school_year_id = ?");
             $stmt->execute([$id]);
             $name = $stmt->fetchColumn() ?: 'selected year';
-            syRedirect($back, true, ""{$name}" is now the active school year.");
+            syRedirect($back, true, "\"{$name}\" is now the active school year.");
         }
 
         // ── Delete ────────────────────────────────────────────────────────

@@ -79,24 +79,34 @@ if ($contact) {
 try {
     $pdo->beginTransaction();
 
+    // ── Check if personal_email column exists (migration 015) ────────────────
+    $hasPE = false;
+    try {
+        $pdo->query("SELECT personal_email FROM employees LIMIT 1");
+        $hasPE = true;
+    } catch (PDOException $e) { /* column not yet migrated */ }
+
     // ── INSERT employee ───────────────────────────────────────────────────────
-    $pdo->prepare("
+    $peCol = $hasPE ? ', personal_email' : '';
+    $peVal = $hasPE ? ', :personal_email' : '';
+    $insertStmt = $pdo->prepare("
         INSERT INTO employees (
             employee_no, first_name, middle_name, last_name, suffix,
-            sex, birth_date, civil_status, address, contact_no, email,
+            sex, birth_date, civil_status, address, contact_no, email$peCol,
             hire_date, employment_type, employee_status,
             department_id, position_id, shift_id,
             sss_no, philhealth_no, pagibig_no, tin_no, peraa_no,
             emergency_contact_name, emergency_contact_relation, emergency_contact_number
         ) VALUES (
             :emp_no, :fn, :mn, :ln, :sfx,
-            :sex, :bd, :cs, :addr, :cno, :email,
+            :sex, :bd, :cs, :addr, :cno, :email$peVal,
             :hd, :et, :es,
             :dept, :pos, :shift,
             :sss, :ph, :pi, :tin, :peraa,
             :ec_name, :ec_rel, :ec_num
         )
-    ")->execute([
+    ");
+    $insertParams = [
         ':emp_no' => $employee_no,
         ':fn'     => trim($_POST['first_name']),
         ':mn'     => trim($_POST['middle_name'] ?? '') ?: null,
@@ -122,7 +132,11 @@ try {
         ':ec_name'=> trim($_POST['emergency_contact_name']     ?? '') ?: null,
         ':ec_rel' => trim($_POST['emergency_contact_relation'] ?? '') ?: null,
         ':ec_num' => trim($_POST['emergency_contact_number']   ?? '') ?: null,
-    ]);
+    ];
+    if ($hasPE) {
+        $insertParams[':personal_email'] = trim($_POST['personal_email'] ?? '') ?: null;
+    }
+    $insertStmt->execute($insertParams);
 
     $empId = (int)$pdo->lastInsertId();
 

@@ -1,6 +1,7 @@
 /* ── Leave Credit Allocation styles ── */
 .lc-page { max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
 
+/* ── Filter bar ──────────────────────────────────────────────────────────── */
 .lc-filter-bar {
     display: flex;
     align-items: flex-end;
@@ -13,7 +14,10 @@
     margin-bottom: 18px;
 }
 .lc-filter-group { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
-.lc-filter-group label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #64748b; }
+.lc-filter-group label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .4px; color: #64748b;
+}
 .lc-filter-group select {
     padding: 7px 10px;
     border: 1px solid #e2e8f0;
@@ -23,47 +27,407 @@
     background: #fff;
 }
 .lc-clear-link {
-    font-size: 12px;
-    color: #ef4444;
-    text-decoration: none;
-    align-self: flex-end;
-    padding-bottom: 8px;
-    white-space: nowrap;
+    font-size: 12px; color: #ef4444; text-decoration: none;
+    align-self: flex-end; padding-bottom: 8px; white-space: nowrap;
 }
 
-/* Stats row */
+/* ── Stats row ───────────────────────────────────────────────────────────── */
 .lc-stats-row {
     display: flex;
     gap: 12px;
     flex-wrap: wrap;
-    margin-bottom: 18px;
+    margin-bottom: 16px;
 }
 .lc-stat {
     background: #fff;
     border: 1px solid #e2e8f0;
     border-radius: 10px;
-    padding: 14px 18px;
-    min-width: 130px;
+    padding: 12px 16px;
+    min-width: 110px;
     flex: 1;
 }
 .lc-stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; margin-bottom: 4px; }
-.lc-stat-value { font-size: 22px; font-weight: 700; color: #0f172a; }
+.lc-stat-value { font-size: 20px; font-weight: 700; color: #0f172a; }
 .lc-stat-value--red  { color: #dc2626; }
 .lc-stat-value--teal { color: #0f766e; }
 
-/* Table extras */
-.lc-table td { font-size: 13px; }
+/* ── Search bar ──────────────────────────────────────────────────────────── */
+.lc-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+.lc-search-wrap {
+    position: relative;
+    flex: 1;
+    max-width: 420px;
+}
+.lc-search-icon {
+    position: absolute;
+    left: 11px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    font-size: 13px;
+    pointer-events: none;
+}
+.lc-search-input {
+    width: 100%;
+    padding: 8px 36px 8px 34px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #0f172a;
+    background: #fff;
+    box-sizing: border-box;
+    transition: border-color .15s;
+}
+.lc-search-input:focus {
+    outline: none;
+    border-color: #0f766e;
+    box-shadow: 0 0 0 3px rgba(15,118,110,.12);
+}
+.lc-search-clear {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    font-size: 13px;
+    text-decoration: none;
+    line-height: 1;
+}
+.lc-search-clear:hover { color: #374151; }
+
+/* ── Result info row ─────────────────────────────────────────────────────── */
+.lc-result-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 12px;
+}
+.lc-result-info em { font-style: normal; color: #0f766e; font-weight: 600; }
+.lc-result-page { color: #94a3b8; }
+
+/* ── Accordion / Employee cards ──────────────────────────────────────────── */
+.lc-accordion {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.lc-emp-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    transition: box-shadow .15s;
+}
+.lc-emp-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.09); }
+.lc-emp-card--open { border-color: #0f766e; }
+.lc-emp-card--open .lc-emp-header { background: #f0fdf4; border-bottom: 1px solid #d1fae5; }
+.lc-emp-card--open .lc-emp-toggle-icon { transform: rotate(180deg); }
+
+.lc-emp-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    cursor: pointer;
+    user-select: none;
+    transition: background .15s;
+}
+.lc-emp-header:hover { background: #f8fafc; }
+.lc-emp-card--open .lc-emp-header:hover { background: #dcfce7; }
+
+.lc-emp-toggle-icon {
+    color: #94a3b8;
+    font-size: 13px;
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: transform .2s;
+}
+
+.lc-emp-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #0f766e;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    letter-spacing: .5px;
+}
+
+.lc-emp-info { flex: 1; min-width: 0; }
+.lc-emp-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.lc-emp-meta {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.lc-meta-dot { color: #cbd5e1; font-size: 10px; }
+
+.lc-emp-summary {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+}
+.lc-emp-sum-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+}
+.lc-emp-sum-label { color: #94a3b8; }
+.lc-emp-sum-val { font-weight: 700; color: #0f172a; }
+
+/* Sex badge — deliberately low-emphasis; text carries the meaning */
+.lc-sex-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 500;
+    color: #94a3b8;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    letter-spacing: .2px;
+    vertical-align: middle;
+}
+
+/* Not-set badge */
+.lc-badge-unset {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: #f1f5f9;
+    color: #94a3b8;
+    font-size: 11px;
+}
+
+/* ── Inner credits table ──────────────────────────────────────────────────── */
+.lc-emp-body {
+    display: none;
+    border-top: 1px solid #f1f5f9;
+}
+
+.lc-credits-inner {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.lc-credits-inner thead tr { background: #f8fafc; }
+.lc-credits-inner th {
+    padding: 9px 14px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    border-bottom: 1px solid #e2e8f0;
+}
+.lc-credits-inner td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #0f172a;
+    vertical-align: middle;
+}
+.lc-credits-inner tbody tr:last-child td { border-bottom: none; }
+.lc-credits-inner tbody tr:hover { background: #f8fafc; }
+
+.lc-th-num    { text-align: right; }
+.lc-th-action { text-align: center; width: 56px; }
+.lc-num-cell  { text-align: right; font-variant-numeric: tabular-nums; }
+.lc-action-cell { text-align: center; }
+.lc-leave-type-cell { font-weight: 600; }
+.lc-dash { color: #94a3b8; }
+.lc-edit-btn { padding: 4px 10px !important; }
+
+/* Value classes */
 .lc-pos  { color: #059669; font-weight: 700; }
 .lc-zero { color: #d97706; font-weight: 700; }
 .lc-neg  { color: #dc2626; font-weight: 700; }
 
-/* Edit credit info */
-.lc-edit-info {
+/* ── Pagination ───────────────────────────────────────────────────────────── */
+.lc-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+.lc-page-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    background: #fff;
+    text-decoration: none;
+    transition: background .15s;
+}
+.lc-page-btn:hover { background: #f1f5f9; }
+.lc-page-btn--disabled {
+    color: #cbd5e1;
+    cursor: default;
+    pointer-events: none;
+}
+.lc-page-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 34px;
+    border: 1px solid #e2e8f0;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    background: #fff;
+    text-decoration: none;
+    transition: background .15s;
+}
+.lc-page-num:hover { background: #f1f5f9; }
+.lc-page-num--active {
+    background: #0f766e;
+    color: #fff;
+    border-color: #0f766e;
+}
+.lc-page-ellipsis { color: #94a3b8; font-size: 13px; padding: 0 4px; }
+
+/* ── Edit modal: info grid ────────────────────────────────────────────────── */
+.lc-edit-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+.lc-info-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.lc-info-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    color: #64748b;
+}
+.lc-info-val {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+/* Read-only used days display */
+.lc-readonly-field {
+    padding: 8px 11px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 7px;
+    font-size: 14px;
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Live remaining preview */
+.lc-remaining-preview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 14px;
+}
+.lc-remaining-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+}
+.lc-remaining-val {
+    font-size: 18px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+/* ── Bulk modal extras ────────────────────────────────────────────────────── */
+.lc-bulk-desc {
+    font-size: 13px;
+    color: #64748b;
+    margin: 0 0 16px;
+    line-height: 1.5;
+}
+
+.lc-gender-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: #92400e;
+    margin-bottom: 12px;
+}
+.lc-gender-notice i { margin-top: 1px; flex-shrink: 0; }
+
+.lc-bulk-preview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     background: #f0fdf4;
     border: 1px solid #bbf7d0;
     border-radius: 8px;
     padding: 10px 14px;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 13px;
     color: #166534;
+    margin-bottom: 12px;
+}
+.lc-bulk-preview i { color: #0f766e; }
+.lc-bulk-preview strong { font-size: 15px; }
+
+/* ── Responsive tweaks ───────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+    .lc-emp-summary { display: none; }
+    .lc-edit-info-grid { grid-template-columns: 1fr; }
+    .lc-stats-row { gap: 8px; }
+    .lc-stat { min-width: 90px; }
+    .lc-stat-value { font-size: 17px; }
 }

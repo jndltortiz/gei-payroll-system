@@ -23,7 +23,7 @@ $_initials  = strtoupper(
       </svg>
     </div>
     <div class="header-portal-text">
-      <strong><?= isPrincipalRole() ? 'Principal Portal' : 'Admin Portal' ?></strong>
+      <strong><?= (function_exists('isPrincipalRole') && isPrincipalRole()) ? 'Principal Portal' : 'Admin Portal' ?></strong>
       <span>Great Eastern Institute</span>
     </div>
   </div>

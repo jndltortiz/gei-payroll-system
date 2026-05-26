@@ -45,14 +45,12 @@ try {
             }
 
             if ($creditId > 0) {
-                // Update existing
                 $pdo->prepare("
                     UPDATE employee_leave_credits
                     SET allocated_days = ?, used_days = ?, notes = ?
                     WHERE credit_id = ?
                 ")->execute([$allocated, $used, $notes, $creditId]);
             } else {
-                // Insert (or replace if race condition)
                 $pdo->prepare("
                     INSERT INTO employee_leave_credits
                         (employee_id, school_year_id, leave_type_id, allocated_days, used_days, notes)
@@ -82,8 +80,23 @@ try {
                 lcRedirect($redirect, false, 'Allocated days must be 0 or greater.');
             }
 
+            // Determine gender restriction for this leave type
+            $ltStmt = $pdo->prepare("SELECT leave_name FROM leave_types WHERE leave_type_id = ?");
+            $ltStmt->execute([$leaveTypeId]);
+            $ltName = strtolower((string)($ltStmt->fetchColumn() ?: ''));
+
+            $sexFilter = '';
+            $sexLabel  = '';
+            if (strpos($ltName, 'matern') !== false) {
+                $sexFilter = " AND (sex = 'FEMALE' OR sex IS NULL)";
+                $sexLabel  = ' (female employees only)';
+            } elseif (strpos($ltName, 'patern') !== false) {
+                $sexFilter = " AND (sex = 'MALE' OR sex IS NULL)";
+                $sexLabel  = ' (male employees only)';
+            }
+
             // Fetch matching employees
-            $sql    = "SELECT employee_id FROM employees WHERE employee_status = 'ACTIVE'";
+            $sql    = "SELECT employee_id FROM employees WHERE employee_status = 'ACTIVE'" . $sexFilter;
             $params = [];
             if ($deptId) { $sql .= " AND department_id = ?"; $params[] = $deptId; }
             $stmt = $pdo->prepare($sql);
@@ -91,7 +104,7 @@ try {
             $employees = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
             if (empty($employees)) {
-                lcRedirect($redirect, false, 'No active employees found for the selected criteria.');
+                lcRedirect($redirect, false, 'No eligible employees found for the selected criteria.');
             }
 
             $pdo->beginTransaction();
@@ -112,7 +125,7 @@ try {
             $pdo->commit();
 
             $count = count($employees);
-            lcRedirect($redirect, true, "Bulk allocation applied to {$count} employee(s): {$allocated} days per employee.");
+            lcRedirect($redirect, true, "Bulk allocation applied to {$count} employee(s){$sexLabel}: {$allocated} days per employee.");
         }
 
         default:

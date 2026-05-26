@@ -36,7 +36,12 @@ function principalActive(string $path): string {
       <span>Dashboard</span>
     </a>
 
-        <div class="nav-section-label">ATTENDANCE</div>
+        <div class="nav-section-label">WORKFORCE</div>
+    <a class="nav-item <?= principalActive('principal/employees') ?>"
+       href="<?= BASE_URL ?>modules/principal/employees/index.php">
+      <i class="fa fa-users"></i>
+      <span>Employees</span>
+    </a>
     <a class="nav-item <?= principalActive('principal/attendance') ?>"
        href="<?= BASE_URL ?>modules/principal/attendance/index.php">
       <i class="fa fa-user-check"></i>

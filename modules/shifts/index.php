@@ -90,22 +90,22 @@ require_once __DIR__ . '/../../includes/head.php';
         <div class="sh-sum-label">Assigned Employees</div>
       </div>
     </div>
-    <div class="sh-sum-card <?= $unassignedCount > 0 ? 'sh-sum-card--warn' : '' ?>">
-      <div class="sh-sum-icon <?= $unassignedCount > 0 ? 'orange' : 'gray' ?>">
-        <i class="fa fa-user-slash"></i>
+    <div class="sh-sum-card">
+      <div class="sh-sum-icon gray">
+        <i class="fa fa-user-clock"></i>
       </div>
       <div>
         <div class="sh-sum-val"><?= $unassignedCount ?></div>
-        <div class="sh-sum-label">No Shift Assigned</div>
+        <div class="sh-sum-label">Part-Time Employees</div>
       </div>
     </div>
   </div>
 
   <?php if ($unassignedCount > 0): ?>
-  <div class="sh-alert sh-alert--warn">
-    <i class="fa fa-triangle-exclamation"></i>
-    <strong><?= $unassignedCount ?> active employee<?= $unassignedCount != 1 ? 's have' : ' has' ?> no shift assigned.</strong>
-    Attendance auto-compute will skip shift validation for these employees.
+  <div class="sh-alert sh-alert--info">
+    <i class="fa fa-circle-info"></i>
+    <strong><?= $unassignedCount ?> employee<?= $unassignedCount != 1 ? 's are' : ' is' ?> part-time (no shift required).</strong>
+    Part-time employees are evaluated as <strong>PRESENT</strong> or <strong>LATE</strong> only — the half-day threshold does not apply to them.
     <a href="<?= BASE_URL ?>modules/employees/index.php" class="sh-link">
       Manage Employees <i class="fa fa-arrow-right fa-xs"></i>
     </a>
@@ -226,17 +226,17 @@ require_once __DIR__ . '/../../includes/head.php';
       <div class="sh-guide-card">
         <div class="sh-guide-label">Attendance Status Logic</div>
         <ul>
-          <li>Time-in &le; Start Time → <strong>PRESENT</strong></li>
-          <li>Time-in between Start+Grace and Half-Day threshold → <strong>LATE</strong></li>
-          <li>Time-in &ge; Half-Day threshold → <strong>HALF_DAY</strong></li>
-          <li>No record during payroll period → <strong>ABSENT</strong></li>
+          <li>Time-in before shift start → <strong>PRESENT</strong></li>
+          <li>Time-in after grace period → <strong>LATE</strong></li>
+          <li>Time-in at or after half-day threshold <em>(full-time only)</em> → <strong>HALF_DAY</strong></li>
+          <li>No record logged → <strong>ABSENT</strong></li>
         </ul>
       </div>
       <div class="sh-guide-card">
         <div class="sh-guide-label">Payroll Impact</div>
         <ul>
-          <li>PRESENT / LATE → no salary deduction</li>
-          <li>HALF_DAY → counted as 0.5 absent day</li>
+          <li>PRESENT / LATE / HALF_DAY → no salary deduction</li>
+          <li>UNDERTIME (early departure) → no salary deduction</li>
           <li>ABSENT (exceeds leave credits) → salary deduction</li>
           <li>HOLIDAY → excluded from absence calculation</li>
         </ul>
@@ -293,9 +293,9 @@ require_once __DIR__ . '/../../includes/head.php';
             <small>Minutes after start time before attendance is marked LATE</small>
           </div>
           <div class="sh-form-group">
-            <label>Half-Day Threshold</label>
+            <label>Half-Day Threshold <span class="sh-field-note">(full-time only)</span></label>
             <input type="time" name="half_day_time" id="shHalfDay">
-            <small>Time-in at or after this → HALF_DAY. Leave blank to use 9:00 AM default.</small>
+            <small>Full-time employees arriving at or after this time are marked <strong>HALF_DAY</strong>. Leave blank to use 9:00 AM default. Part-time employees are always PRESENT or LATE — this threshold does not apply to them.</small>
           </div>
         </div>
 

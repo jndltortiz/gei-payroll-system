@@ -107,7 +107,9 @@
     letter-spacing: .4px;
 }
 .sy-badge--active   { background: #dcfce7; color: #166534; }
-.sy-badge--inactive { background: #f1f5f9; color: #64748b; }
+.sy-badge--inactive { background: #fef9c3; color: #854d0e; }
+.sy-badge--archived { background: #f1f5f9; color: #94a3b8; font-weight: 600; }
+.sy-badge--upcoming { background: #eff6ff; color: #1d4ed8; }
 
 /* Buttons */
 .sy-btn-primary {
@@ -234,6 +236,37 @@
 }
 .sy-check-label input { width: 15px; height: 15px; cursor: pointer; }
 .req { color: #ef4444; }
+
+/* Inline field error */
+.sy-inline-error {
+    display: none;
+    font-size: 12px;
+    color: #dc2626;
+    margin-top: 4px;
+}
+
+/* Active-year displacement warning */
+.sy-active-warn {
+    display: none;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 12px;
+    color: #92400e;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 6px;
+    padding: 7px 10px;
+    margin-top: 6px;
+}
+
+/* Linked-count links in table */
+.sy-count-link {
+    font-size: 13px;
+    color: #2563eb;
+    text-decoration: none;
+}
+.sy-count-link:hover { text-decoration: underline; }
+.sy-count-link--muted { color: #94a3b8; }
 
 .sy-btn-ghost {
     background: none; border: 1px solid #e2e8f0;
