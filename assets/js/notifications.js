@@ -104,7 +104,10 @@
         fetch(baseUrl + 'actions/notification-action.php?action=get_preview')
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                if (!data.success) return;
+                if (!data.success) {
+                    if (ddBody) ddBody.innerHTML = renderItems([]);
+                    return;
+                }
                 setBadge(parseInt(data.unread_count) || 0);
                 if (ddBody) ddBody.innerHTML = renderItems(data.notifications);
             })

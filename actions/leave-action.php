@@ -17,6 +17,7 @@
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/notif-utils.php';
 
 header('Content-Type: application/json');
 
@@ -210,6 +211,27 @@ try {
 
         $pdo->commit();
 
+        // Notify employee of the outcome
+        if ($parentStatus !== 'PENDING') {
+            try {
+                $empUid = getEmployeeUserId($pdo, (int)$leave['employee_id']);
+                if ($empUid) {
+                    $statusLabels = ['APPROVED' => 'Approved', 'REJECTED' => 'Rejected', 'PARTIALLY_APPROVED' => 'Partially Approved'];
+                    $statusLabel  = $statusLabels[$parentStatus] ?? ucfirst(strtolower($parentStatus));
+                    $dateRange    = $leave['start_date'] === $leave['end_date']
+                        ? $leave['start_date']
+                        : "{$leave['start_date']} to {$leave['end_date']}";
+                    sendNotif($pdo, $empUid,
+                        "Leave Request {$statusLabel}",
+                        "Your leave request ({$dateRange}, {$leave['total_days']} day(s)) has been {$statusLabel}." . ($notes ? " Remarks: {$notes}" : ''),
+                        'leave',
+                        BASE_URL . 'modules/employee/leave/index.php',
+                        $leaveId
+                    );
+                }
+            } catch (Exception $ignored) {}
+        }
+
         $friendlyVerb = $action === 'approve' ? 'approved' : 'rejected';
         echo json_encode(['success' => true, 'message' => "Leave request {$friendlyVerb} successfully."]);
 
@@ -271,6 +293,32 @@ try {
         ]);
 
         $pdo->commit();
+
+        // Notify employee only when the entire request is fully resolved
+        if ($parentStatus !== 'PENDING') {
+            try {
+                $finalStmt = $pdo->prepare("SELECT employee_id, start_date, end_date, total_days FROM leave_requests WHERE leave_id = ?");
+                $finalStmt->execute([$parentLeaveId]);
+                $finalLeave = $finalStmt->fetch();
+                if ($finalLeave) {
+                    $empUid = getEmployeeUserId($pdo, (int)$finalLeave['employee_id']);
+                    if ($empUid) {
+                        $statusLabels = ['APPROVED' => 'Approved', 'REJECTED' => 'Rejected', 'PARTIALLY_APPROVED' => 'Partially Approved'];
+                        $statusLabel  = $statusLabels[$parentStatus] ?? ucfirst(strtolower($parentStatus));
+                        $dateRange    = $finalLeave['start_date'] === $finalLeave['end_date']
+                            ? $finalLeave['start_date']
+                            : "{$finalLeave['start_date']} to {$finalLeave['end_date']}";
+                        sendNotif($pdo, $empUid,
+                            "Leave Request {$statusLabel}",
+                            "Your leave request ({$dateRange}, {$finalLeave['total_days']} day(s)) has been {$statusLabel}." . ($notes ? " Remarks: {$notes}" : ''),
+                            'leave',
+                            BASE_URL . 'modules/employee/leave/index.php',
+                            $parentLeaveId
+                        );
+                    }
+                }
+            } catch (Exception $ignored) {}
+        }
 
         $friendlyVerb = $action === 'approve' ? 'approved' : 'rejected';
         echo json_encode(['success' => true, 'message' => "Date {$friendlyVerb} successfully."]);

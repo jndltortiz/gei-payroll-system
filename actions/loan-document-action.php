@@ -145,7 +145,7 @@ if ($action === 'upload') {
     }
 
     $allowedExts  = ['pdf','jpg','jpeg','png'];
-    $allowedMimes = ['application/pdf','image/jpeg','image/png'];
+    $allowedMimes = ['application/pdf','image/jpeg','image/jpg','image/png','image/x-png','image/pjpeg'];
     $maxBytes     = 5 * 1024 * 1024; // 5 MB
 
     $uploadDir = __DIR__ . '/../uploads/loan-documents/' . $loanId . '/';

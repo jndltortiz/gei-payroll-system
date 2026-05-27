@@ -24,6 +24,7 @@
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/notif-utils.php';
 
 if (!isset($_SESSION['user'])) {
     header('Location: ' . BASE_URL . 'modules/auth/login.php'); exit;
@@ -126,6 +127,18 @@ if ($action === 'submit') {
         $_SESSION['sc_error'] = 'Failed to submit: ' . $e->getMessage();
         header("Location: $back"); exit;
     }
+    // Notify principals about the new service credit pending approval
+    try {
+        $empNameSC = getEmployeeName($pdo, $empId);
+        notifPrincipals($pdo,
+            "Service Credit Submitted for Approval",
+            "{$empNameSC} submitted a service credit for {$totalDays} day(s) (₱" . number_format($totalPay, 2) . ") awaiting your approval.",
+            'service_credit',
+            BASE_URL . 'modules/service-credits/index.php',
+            $scId
+        );
+    } catch (Exception $ignored) {}
+
     if ($uid) scLogAudit($pdo, $uid, 'SUBMIT', $scId,
         "Submitted SC #{$scId} for emp #{$empId} — ₱" . number_format($totalPay, 2));
     $_SESSION['sc_success'] = 'Service credit submitted for Principal approval.';
@@ -155,6 +168,23 @@ if ($action === 'resubmit') {
         WHERE service_credit_id=?
     ")->execute([$scId]);
     $pdo->commit();
+    // Notify principals it's back in the queue
+    try {
+        $scResubStmt = $pdo->prepare("SELECT employee_id, days, equivalent_pay FROM service_credits WHERE service_credit_id=?");
+        $scResubStmt->execute([$scId]);
+        $scri = $scResubStmt->fetch();
+        if ($scri) {
+            $empNameResubSC = getEmployeeName($pdo, (int)$scri['employee_id']);
+            notifPrincipals($pdo,
+                "Service Credit Resubmitted",
+                "{$empNameResubSC} resubmitted a service credit for {$scri['days']} day(s) (₱" . number_format($scri['equivalent_pay'], 2) . ") awaiting your approval.",
+                'service_credit',
+                BASE_URL . 'modules/service-credits/index.php',
+                $scId
+            );
+        }
+    } catch (Exception $ignored) {}
+
     if ($uid) scLogAudit($pdo, $uid, 'RESUBMIT', $scId, "Resubmitted SC #{$scId}");
     $_SESSION['sc_success'] = 'Service credit resubmitted for approval.';
     header("Location: $back"); exit;
@@ -216,6 +246,24 @@ if ($action === 'approve') {
         WHERE service_credit_id=? AND status='PENDING'
     ")->execute([$uid, $scId]);
     $pdo->commit();
+
+    // Notify the employee
+    try {
+        $scAppStmt = $pdo->prepare("SELECT employee_id, days, equivalent_pay FROM service_credits WHERE service_credit_id=?");
+        $scAppStmt->execute([$scId]);
+        $scApp = $scAppStmt->fetch();
+        if ($scApp) {
+            $scEmpUid = getEmployeeUserId($pdo, (int)$scApp['employee_id']);
+            sendNotif($pdo, $scEmpUid,
+                "Service Credit Approved",
+                "Your service credit for {$scApp['days']} day(s) (₱" . number_format($scApp['equivalent_pay'], 2) . ") has been approved. It will be released during the EOSY Accrued Pay run.",
+                'service_credit',
+                BASE_URL . 'modules/employee/service-credits/index.php',
+                $scId
+            );
+        }
+    } catch (Exception $ignored) {}
+
     if ($uid) scLogAudit($pdo, $uid, 'APPROVE', $scId,
         "Approved SC #{$scId} (all dates) — will be released in EOSY Accrued Pay run");
     $_SESSION['sc_success'] = 'Approved. Service credit will be released during the EOSY Accrued Pay run as Additional Assignment Payment.';
@@ -240,6 +288,24 @@ if ($action === 'reject') {
         WHERE service_credit_id=? AND status='PENDING'
     ")->execute([$reason, $uid, $scId]);
     $pdo->commit();
+
+    // Notify the employee
+    try {
+        $scRejStmt = $pdo->prepare("SELECT employee_id FROM service_credits WHERE service_credit_id=?");
+        $scRejStmt->execute([$scId]);
+        $scRej = $scRejStmt->fetch();
+        if ($scRej) {
+            $scEmpUid2 = getEmployeeUserId($pdo, (int)$scRej['employee_id']);
+            sendNotif($pdo, $scEmpUid2,
+                "Service Credit Rejected",
+                "Your service credit request has been rejected." . ($reason ? " Reason: {$reason}" : ''),
+                'service_credit',
+                BASE_URL . 'modules/employee/service-credits/index.php',
+                $scId
+            );
+        }
+    } catch (Exception $ignored) {}
+
     if ($uid) scLogAudit($pdo, $uid, 'REJECT', $scId, "Rejected SC #{$scId}: {$reason}");
     $_SESSION['sc_success'] = 'Service credit rejected.';
     header("Location: $back"); exit;

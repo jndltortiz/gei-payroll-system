@@ -121,7 +121,7 @@ window.openEditModal = function(id, name, empNo, date, timeIn, timeOut, status, 
     document.getElementById('edit_time_in').value  = timeIn  ? timeIn.substring(0, 5)  : '';
     document.getElementById('edit_time_out').value = timeOut ? timeOut.substring(0, 5) : '';
     document.getElementById('edit_status').value   = status || 'PRESENT';
-    document.getElementById('edit_source').value   = source || 'MANUAL_ADMIN';
+    document.getElementById('edit_source').value   = 'MANUAL_ADMIN';
     document.getElementById('edit_remarks').value  = remarks || '';
     document.getElementById('edit_reason').value   = '';
 

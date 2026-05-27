@@ -268,7 +268,7 @@ require_once __DIR__ . '/../../includes/head.php';
     <?php endif; ?>
 
     <?php if ($filterSY || $filterType || ($filterYear && $filterYear != (int)date('Y'))): ?>
-    <a href="<?= holTabUrl($filterTab) ?>" class="hol-btn-ghost hol-btn-clear">
+    <a href="?tab=<?= htmlspecialchars($filterTab) ?>" class="hol-btn-ghost hol-btn-clear">
       <i class="fa fa-times"></i> Clear
     </a>
     <?php endif; ?>

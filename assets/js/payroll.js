@@ -32,17 +32,16 @@ function renderPayslipRows(containerId, rows, emptyLabel) {
     const container = document.getElementById(containerId);
     if (!container) return;
 
-    if (!rows.length) {
-        container.innerHTML = `<div class="row"><span>${escHtml(emptyLabel)}</span><span>${peso(0)}</span></div>`;
+    if (!rows || !rows.length) {
+        container.innerHTML = `<div style="padding:10px 14px;color:#94a3b8;font-size:12px;">${escHtml(emptyLabel || 'None')}</div>`;
         return;
     }
 
-    container.innerHTML = rows.map(row => `
-        <div class="row">
-            <span>${escHtml(row.name)}</span>
-            <span>${peso(row.amount)}</span>
-        </div>
-    `).join('');
+    container.innerHTML = rows.map(row =>
+        `<div style="display:flex;justify-content:space-between;padding:9px 14px;font-size:13px;border-bottom:1px solid rgba(0,0,0,0.05);">` +
+        `<span style="color:#374151;">${escHtml(row.name)}</span>` +
+        `<span style="font-weight:600;color:#0f172a;">${peso(row.amount)}</span></div>`
+    ).join('');
 }
 
 // Render deduction rows grouped by Government / Loans / Other
@@ -146,7 +145,7 @@ window.removeExistingAdjustment = async function(btn, rowId, type) {
     }
 };
 
-// ── openPayslip — view modal (admin portal) ───────────────────────────────────
+// ── openPayslip — view modal (admin/principal portal) ────────────────────────
 window.openPayslip = function(el) {
     const basic = Number(el.dataset.basic || 0);
 
@@ -157,13 +156,13 @@ window.openPayslip = function(el) {
     ].filter(row => Number(row.amount) !== 0);
 
     const fallbackDeductions = [
-        { name: 'PERAA Premium',  is_gov: false, is_loan: false, amount: Number(el.dataset.peraaPremium || 0) },
-        { name: 'PERAA Loan',     is_gov: false, is_loan: true,  amount: Number(el.dataset.peraaLoan || 0) },
-        { name: 'HDMF Premium',   is_gov: false, is_loan: false, amount: Number(el.dataset.hdmfPremium || 0) },
-        { name: 'HDMF Loan',      is_gov: false, is_loan: true,  amount: Number(el.dataset.hdmfLoan || 0) },
-        { name: 'PhilHealth',     is_gov: true,  is_loan: false, amount: Number(el.dataset.philhealth || 0) },
-        { name: 'SSS Premium',    is_gov: true,  is_loan: false, amount: Number(el.dataset.sssPremium || 0) },
-        { name: 'SSS Loan',       is_gov: false, is_loan: true,  amount: Number(el.dataset.sssLoan || 0) },
+        { name: 'PERAA Premium',  is_gov: false, amount: Number(el.dataset.peraaPremium || 0) },
+        { name: 'PERAA Loan',     is_gov: false, amount: Number(el.dataset.peraaLoan || 0) },
+        { name: 'HDMF Premium',   is_gov: false, amount: Number(el.dataset.hdmfPremium || 0) },
+        { name: 'HDMF Loan',      is_gov: false, amount: Number(el.dataset.hdmfLoan || 0) },
+        { name: 'PhilHealth',     is_gov: true,  amount: Number(el.dataset.philhealth || 0) },
+        { name: 'SSS Premium',    is_gov: true,  amount: Number(el.dataset.sssPremium || 0) },
+        { name: 'SSS Loan',       is_gov: false, amount: Number(el.dataset.sssLoan || 0) },
     ].filter(row => Number(row.amount) !== 0);
 
     const allAllowances = parseJsonData(el.dataset.allowances, fallbackAllowances)
@@ -177,82 +176,66 @@ window.openPayslip = function(el) {
         .filter(r => Number(r.amount) !== 0);
 
     let storedGross = Number(el.dataset.gross || 0);
-    if (!storedGross) {
-        storedGross = basic + allAllowances.reduce((s, r) => s + Number(r.amount), 0);
-    }
+    if (!storedGross) storedGross = basic + allAllowances.reduce((s, r) => s + Number(r.amount), 0);
 
     let totalDed = Number(el.dataset.totalDeductions || 0);
-    if (!totalDed && allDeductions.length) {
-        totalDed = allDeductions.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-    }
+    if (!totalDed && allDeductions.length) totalDed = allDeductions.reduce((s, r) => s + Number(r.amount || 0), 0);
 
     let storedNet = Number(el.dataset.net || 0);
     if (!storedNet) storedNet = storedGross - totalDed;
 
-    // Employee info — use formatted employee_no for the ID field
-    document.getElementById("ps-name").innerText     = el.dataset.name || '';
-    document.getElementById("ps-position").innerText = el.dataset.position || '';
-    document.getElementById("ps-dept").innerText     = el.dataset.dept || '';
-    // Show formatted employee number (EMP-YYYY-NNN); fall back to numeric ID
-    const empNoEl = document.getElementById("ps-empid");
-    if (empNoEl) empNoEl.innerText = el.dataset.empno || el.dataset.empid || '—';
+    // Period label
+    const periodEl = document.getElementById('ps-period');
+    if (periodEl) periodEl.textContent = el.dataset.periodLabel || '—';
 
-    const periodLabel = document.getElementById("ps-period-label");
-    if (periodLabel) periodLabel.innerText = el.dataset.periodLabel || "—";
+    // Payroll reference number
+    const psNumEl = document.getElementById('ps-numbers');
+    if (psNumEl) {
+        const payrollNo = el.dataset.payrollno || '—';
+        psNumEl.innerHTML =
+            `<span>Payroll #: <code style="font-size:11px;background:#e2e8f0;padding:1px 6px;border-radius:4px;">${escHtml(payrollNo)}</code></span>`;
+    }
 
-    // Show shared batch payroll number (belongs to the period, not the individual row)
-    const payrollNoEl = document.getElementById("ps-payroll-no");
-    if (payrollNoEl) payrollNoEl.innerText = el.dataset.payrollno || "—";
+    // Employee info
+    const empnameEl = document.getElementById('ps-empname');
+    if (empnameEl) empnameEl.textContent = el.dataset.name || '';
+    document.getElementById('ps-position').textContent = el.dataset.position || '—';
+    document.getElementById('ps-dept').textContent     = el.dataset.dept     || '—';
+    const empidEl = document.getElementById('ps-empid');
+    if (empidEl) empidEl.textContent = el.dataset.empno || el.dataset.empid || '—';
 
     // Basic Pay section
-    renderPayslipRows("ps-basicpay-rows", [{ name: 'Basic Pay', amount: basic }], "");
+    renderPayslipRows('ps-basicpay', [{ name: 'Basic Pay', amount: basic }], 'No basic pay recorded.');
 
-    // Allowances section (all allowances: rice, laundry, overload, custom)
+    // Allowances section
     const totalAllowances   = allAllowances.reduce((s, r) => s + Number(r.amount), 0);
-    const allowancesSection = document.getElementById("ps-allowances-section");
+    const allowancesSection = document.getElementById('ps-allowances-section');
     if (allAllowances.length) {
-        renderPayslipRows("ps-allowances-rows", allAllowances, "");
-        document.getElementById("ps-total-allowances").innerText = peso(totalAllowances);
-        if (allowancesSection) allowancesSection.style.display = '';
+        renderPayslipRows('ps-allowances', allAllowances, '');
+        document.getElementById('ps-total-allowances').textContent = peso(totalAllowances);
+        if (allowancesSection) allowancesSection.style.display = 'block';
     } else {
         if (allowancesSection) allowancesSection.style.display = 'none';
     }
 
-    document.getElementById("ps-gross").innerText = peso(storedGross);
+    document.getElementById('ps-gross').textContent = peso(storedGross);
 
-    renderGroupedDeductionRows("ps-deductions-rows", allDeductions);
-    document.getElementById("ps-totalded").innerText = peso(totalDed);
-    document.getElementById("ps-net").innerText      = peso(storedNet);
+    // Deductions (flat list, same as employee portal)
+    renderPayslipRows('ps-deductions', allDeductions, 'No deductions');
+    document.getElementById('ps-totalded').textContent = peso(totalDed);
+    document.getElementById('ps-net').textContent      = peso(storedNet);
 
-    const statusEl = document.getElementById("ps-status");
-    if (statusEl) statusEl.innerText = el.dataset.payrollStatus || '—';
+    // Government deduction footnote
+    const hasGov = allDeductions.some(d => d.is_gov || /sss|philhealth|pag.?ibig/i.test(d.name || ''));
+    const govNoteEl = document.getElementById('ps-gov-note');
+    if (govNoteEl) govNoteEl.textContent = hasGov ? '* SSS, PhilHealth, and Pag-IBIG amounts reflect employee share only.' : '';
 
-    const releasedAtEl = document.getElementById("ps-released-at");
-    if (releasedAtEl) {
-        const relAt = el.dataset.releasedAt;
-        releasedAtEl.innerText = relAt
-            ? new Date(relAt).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
-            : '—';
-    }
-
-    const releasedByEl = document.getElementById("ps-released-by");
-    if (releasedByEl) releasedByEl.innerText = el.dataset.releasedBy || '—';
-
-    const generatedOn = document.getElementById("ps-generated-on");
-    if (generatedOn) {
-        generatedOn.innerText = new Date().toLocaleDateString('en-PH', {
-            year: 'numeric', month: 'long', day: 'numeric'
-        });
-    }
-
-    // Employer contributions — admin/principal view only; hidden on print
+    // Employer contributions (admin/principal only)
     const empSss     = Number(el.dataset.employerSss || 0);
     const empPhil    = Number(el.dataset.employerPhilhealth || 0);
     const empPagibig = Number(el.dataset.employerPagibig || 0);
-    const employerSection  = document.getElementById('ps-employer-section');
-    const employerRowsEl   = document.getElementById('ps-employer-rows');
-    const employerTotalEl  = document.getElementById('ps-employer-total');
-    if (employerSection && employerRowsEl) {
+    const empSection = document.getElementById('ps-employer-section');
+    if (empSection) {
         const employerRows = [
             { name: 'SSS (Employer Share)',        amount: empSss },
             { name: 'PhilHealth (Employer Share)', amount: empPhil },
@@ -260,24 +243,59 @@ window.openPayslip = function(el) {
         ].filter(r => Number(r.amount) !== 0);
         if (employerRows.length) {
             renderPayslipRows('ps-employer-rows', employerRows, '');
-            if (employerTotalEl) {
-                const empTotal = employerRows.reduce((s, r) => s + Number(r.amount), 0);
-                employerTotalEl.innerText = peso(empTotal);
-            }
-            employerSection.style.display = '';
+            const empTotalEl = document.getElementById('ps-employer-total');
+            if (empTotalEl) empTotalEl.textContent = peso(employerRows.reduce((s, r) => s + Number(r.amount), 0));
+            empSection.style.display = 'block';
         } else {
-            employerSection.style.display = 'none';
+            empSection.style.display = 'none';
         }
     }
 
-    document.getElementById("payslipModal").style.display = "flex";
-    document.body.style.overflow = "hidden";
-}
+    // Released info
+    const releasedInfoEl = document.getElementById('ps-released-info');
+    if (releasedInfoEl) {
+        const relAt = el.dataset.releasedAt;
+        releasedInfoEl.textContent = relAt
+            ? 'Released on ' + new Date(relAt).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+            : '';
+    }
+
+    // Reset attendance section to dashes while fetching
+    const attSection = document.getElementById('ps-att-section');
+    if (attSection) {
+        ['ps-att-present','ps-att-late','ps-att-halfday','ps-att-absent','ps-att-leave']
+            .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
+        attSection.style.display = 'none';
+    }
+
+    document.getElementById('payslipOverlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    // Fetch attendance summary
+    const payrollId = el.dataset.payrollId;
+    if (payrollId && attSection) {
+        fetch(BASE_URL + 'actions/admin-payslip-attendance.php?payroll_id=' + encodeURIComponent(payrollId))
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) return;
+                const att = data.attendance || {};
+                if (parseInt(att.total_records || 0) > 0) {
+                    document.getElementById('ps-att-present').textContent = att.days_present || '0';
+                    document.getElementById('ps-att-late').textContent    = att.days_late    || '0';
+                    document.getElementById('ps-att-halfday').textContent = att.days_halfday || '0';
+                    document.getElementById('ps-att-absent').textContent  = att.days_absent  || '0';
+                    document.getElementById('ps-att-leave').textContent   = att.days_leave   || '0';
+                    attSection.style.display = 'block';
+                }
+            })
+            .catch(() => {}); // silently skip if attendance data unavailable
+    }
+};
 
 window.closePayslip = function() {
-    document.getElementById("payslipModal").style.display = "none";
-    document.body.style.overflow = "auto";
-}
+    document.getElementById('payslipOverlay').style.display = 'none';
+    document.body.style.overflow = 'auto';
+};
 
 window.printPayslip = function() {
     document.body.classList.add('printing-payslip');
@@ -286,11 +304,17 @@ window.printPayslip = function() {
         document.body.classList.remove('printing-payslip');
         window.removeEventListener('afterprint', onAfterPrint);
     });
-}
+};
 
-window.downloadPayslipPDF = function() {
-    printPayslip();
-}
+window.downloadPayslipPDF = function() { printPayslip(); };
+
+// Click outside payslip overlay to close
+document.addEventListener('DOMContentLoaded', function() {
+    const overlay = document.getElementById('payslipOverlay');
+    if (overlay) overlay.addEventListener('click', function(e) {
+        if (e.target === this) closePayslip();
+    });
+});
 
 // ── openEdit — edit modal (admin portal) ─────────────────────────────────────
 window.openEdit = function(el) {

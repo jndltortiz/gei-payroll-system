@@ -20,6 +20,7 @@
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/notif-utils.php';
 
 header('Content-Type: application/json');
 
@@ -252,6 +253,22 @@ try {
     }
 
     $pdo->commit();
+
+    // Notify admins + principals about the new leave request
+    try {
+        $ltStmt = $pdo->prepare("SELECT leave_name FROM leave_types WHERE leave_type_id = ? LIMIT 1");
+        $ltStmt->execute([$leaveTypeId]);
+        $ltName  = $ltStmt->fetchColumn() ?: 'Leave';
+        $empName = getEmployeeName($pdo, (int)$employeeId);
+        $dateRange = $startDate === $endDate ? $startDate : "{$startDate} to {$endDate}";
+        notifAdminsAndPrincipals($pdo,
+            "New Leave Request",
+            "{$empName} filed a {$ltName} request for {$totalDays} day(s) ({$dateRange}).",
+            'leave',
+            BASE_URL . 'modules/leave/index.php',
+            $leaveId
+        );
+    } catch (Exception $ignored) {}
 
     echo json_encode([
         'success'  => true,

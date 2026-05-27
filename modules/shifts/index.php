@@ -152,7 +152,7 @@ require_once __DIR__ . '/../../includes/head.php';
 
           $halfDayLabel = $s['half_day_time']
               ? date('h:i A', strtotime('1970-01-01 ' . $s['half_day_time']))
-              : '<span class="sh-none">default (9:00 AM)</span>';
+              : '<span class="sh-none">—</span>';
         ?>
         <tr class="<?= !$s['is_active'] ? 'sh-row--inactive' : '' ?>">
           <td>
@@ -299,7 +299,6 @@ require_once __DIR__ . '/../../includes/head.php';
           <div class="sh-form-group">
             <label>Half-Day Threshold <span class="sh-field-note">(full-time only)</span></label>
             <input type="time" name="half_day_time" id="shHalfDay">
-            <small>Full-time employees arriving at or after this time are marked <strong>HALF_DAY</strong>. Leave blank to use 9:00 AM default. Part-time employees are always PRESENT or LATE — this threshold does not apply to them.</small>
           </div>
         </div>
 

@@ -564,7 +564,6 @@ function submitPayrollSettings() {
         cutoff2_end_day:        document.getElementById('cutoff2End')?.value,
         government_calc_mode:    document.getElementById('btnGovMode')?.dataset.mode || 'STANDARD',
         weekend_pay_date_rule:   document.getElementById('weekendRule')?.value       || 'ADVANCE',
-        attendance_source:       document.getElementById('attendanceSource')?.value  || 'REFERENCE',
         // Manual gov rates (if manual mode)
         sss_rate:  document.getElementById('sssRate')?.value,
         sss_type:  document.getElementById('sssType')?.value,

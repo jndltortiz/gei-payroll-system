@@ -25,7 +25,10 @@ $activeLoans = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Loans awaiting Principal review (PENDING or RETURNED for correction)
 $stmt = $pdo->prepare("
-    SELECT el.loan_id, lt.loan_name, el.provider_name, el.total_amount, el.status,
+    SELECT el.loan_id, el.loan_type_id, lt.loan_name, el.provider_name,
+           el.account_reference, el.total_amount, el.balance_amount,
+           el.monthly_deduction, el.interest_rate, el.total_payable,
+           el.start_date, el.reason, el.status,
            el.created_at, el.updated_at, el.return_reason
     FROM employee_loans el
     JOIN loan_types lt ON el.loan_type_id = lt.loan_type_id
@@ -87,11 +90,11 @@ $historyLoans = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Deduction payment history from loan_payment_log for all employee loans
 // Shows both PAYROLL auto-deductions and MANUAL payments
-$allLoanIds = array_unique(array_merge(
+$allLoanIds = array_values(array_unique(array_merge(
     array_column($activeLoans,  'loan_id'),
     array_column($pendingLoans, 'loan_id'),
     array_column($historyLoans, 'loan_id')
-));
+)));
 $deductionHistory = [];
 if (!empty($allLoanIds)) {
     $ph   = implode(',', array_fill(0, count($allLoanIds), '?'));
@@ -312,6 +315,23 @@ endif;
           </div>
         </div>
         <?php endif; ?>
+
+        <!-- Loan documents -->
+        <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">
+          <button onclick="toggleLoanDocs(<?= $loanId ?>)"
+                  style="background:none;border:none;cursor:pointer;font-size:12px;color:#0369a1;
+                         font-weight:600;display:flex;align-items:center;gap:5px;padding:0;">
+            <i class="fa fa-paperclip" style="font-size:11px;"></i>
+            <span id="ld-lbl-<?= $loanId ?>">View Attached Documents</span>
+          </button>
+          <div id="ld-<?= $loanId ?>" style="display:none;margin-top:10px;">
+            <div id="ld-body-<?= $loanId ?>">
+              <div style="font-size:12px;color:#94a3b8;">
+                <i class="fa fa-spinner fa-spin"></i> Loading…
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <?php endforeach; ?>
 
@@ -378,9 +398,18 @@ endif;
               <strong>Date:</strong> <?= date('M j, Y', strtotime($loan['updated_at'])) ?>
             </div>
             <?php endif; ?>
+            <?php if ($isReturned && $filedByEmp): ?>
+            <button onclick="openEditReturned(<?= $loanId ?>)"
+                    style="margin-top:8px;padding:7px 14px;background:#d97706;color:#fff;border:none;
+                           border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;
+                           display:inline-flex;align-items:center;gap:6px;">
+              <i class="fa fa-pen-to-square"></i> Edit &amp; Resubmit
+            </button>
+            <?php else: ?>
             <div style="font-size:11px;color:#b45309;font-style:italic;">
               Please update your request or contact HR Admin for assistance.
             </div>
+            <?php endif; ?>
           </div>
           <?php endif; ?>
         </div>
@@ -500,10 +529,48 @@ endif;
 </div>
 </div>
 
+<!-- Edit & Resubmit Returned Loan Modal -->
+<?php include __DIR__ . '/modal-edit-returned-loan.php'; ?>
+
 <!-- Request Loan Modal -->
 <?php include __DIR__ . '/modal-request-loan.php'; ?>
 
 <script>
+var _ldLoaded = {};
+function toggleLoanDocs(loanId) {
+    var wrap  = document.getElementById('ld-'      + loanId);
+    var body  = document.getElementById('ld-body-' + loanId);
+    var label = document.getElementById('ld-lbl-'  + loanId);
+    if (!wrap) return;
+    var showing = wrap.style.display !== 'none';
+    wrap.style.display = showing ? 'none' : 'block';
+    if (label) label.textContent = showing ? 'View Attached Documents' : 'Hide Documents';
+    if (showing || _ldLoaded[loanId]) return;
+    _ldLoaded[loanId] = true;
+    var esc = function(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
+    fetch('<?= BASE_URL ?>actions/loan-document-action.php?action=list&loan_id=' + loanId)
+        .then(function(r){ return r.json(); })
+        .then(function(data) {
+            if (!data.success || !data.documents || !data.documents.length) {
+                body.innerHTML = '<div style="font-size:12px;color:#94a3b8;padding:4px 0;">No documents attached.</div>';
+                return;
+            }
+            body.innerHTML = data.documents.map(function(doc) {
+                var icon = doc.mime_type === 'application/pdf'
+                    ? '<i class="fa fa-file-pdf" style="color:#ef4444;flex-shrink:0;"></i>'
+                    : '<i class="fa fa-file-image" style="color:#3b82f6;flex-shrink:0;"></i>';
+                return '<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border:1px solid var(--border);border-radius:7px;margin-bottom:5px;background:#fafafa;">'
+                    + icon
+                    + '<a href="' + esc(doc.url) + '" target="_blank" style="flex:1;font-size:12px;font-weight:600;color:#0369a1;text-decoration:none;word-break:break-all;">' + esc(doc.original_name) + '</a>'
+                    + '<span style="font-size:10px;color:#94a3b8;">' + esc(doc.size_kb) + ' KB</span>'
+                    + '</div>';
+            }).join('');
+        })
+        .catch(function() {
+            body.innerHTML = '<div style="font-size:12px;color:#94a3b8;padding:4px 0;">Could not load documents.</div>';
+        });
+}
+
 function toggleDeductionHistory(loanId) {
     var div   = document.getElementById('dh-' + loanId);
     var label = document.getElementById('dh-toggle-label-' + loanId);
@@ -511,6 +578,134 @@ function toggleDeductionHistory(loanId) {
     var isHidden = div.style.display === 'none';
     div.style.display   = isHidden ? 'block' : 'none';
     label.textContent   = isHidden ? 'Hide Deduction History' : label.textContent.replace('Hide','Show');
+}
+
+// Returned loans data map keyed by loan_id — used to pre-populate edit modal
+var _returnedLoans = <?php
+    $returnedForJs = [];
+    foreach ($pendingLoans as $l) {
+        if ($l['status'] === 'RETURNED') {
+            $returnedForJs[(int)$l['loan_id']] = [
+                'loan_id'           => (int)$l['loan_id'],
+                'loan_type_id'      => (int)$l['loan_type_id'],
+                'loan_name'         => $l['loan_name'],
+                'provider_name'     => $l['provider_name'] ?? '',
+                'account_reference' => $l['account_reference'] ?? '',
+                'total_amount'      => (float)$l['total_amount'],
+                'monthly_deduction' => (float)$l['monthly_deduction'],
+                'interest_rate'     => (float)($l['interest_rate'] ?? 0),
+                'total_payable'     => (float)($l['total_payable'] ?? $l['total_amount']),
+                'start_date'        => $l['start_date'] ?? '',
+                'reason'            => $l['reason'] ?? '',
+                'return_reason'     => $l['return_reason'] ?? '',
+            ];
+        }
+    }
+    echo json_encode($returnedForJs);
+?>;
+
+function openEditReturned(loanId) {
+    var loan = _returnedLoans[loanId];
+    if (!loan) { alert('Loan data not found.'); return; }
+    var overlay = document.getElementById('editReturnedOverlay');
+    if (!overlay) return;
+
+    // Fill return reason banner
+    var banner = document.getElementById('er-return-reason-banner');
+    var bannerText = document.getElementById('er-return-reason-text');
+    if (loan.return_reason) {
+        bannerText.textContent = loan.return_reason;
+        banner.style.display = 'block';
+    } else {
+        banner.style.display = 'none';
+    }
+
+    // Set hidden loan_id
+    document.getElementById('er-loan-id').value = loanId;
+
+    // Pre-populate fields
+    var typeSelect = document.getElementById('er-type');
+    if (typeSelect) {
+        for (var i = 0; i < typeSelect.options.length; i++) {
+            if (parseInt(typeSelect.options[i].value) === loan.loan_type_id) {
+                typeSelect.selectedIndex = i; break;
+            }
+        }
+    }
+    document.getElementById('er-provider').value  = loan.provider_name;
+    document.getElementById('er-ref').value        = loan.account_reference;
+    document.getElementById('er-amount').value     = loan.total_amount;
+    document.getElementById('er-monthly').value    = loan.monthly_deduction;
+    document.getElementById('er-interest').value   = loan.interest_rate || '';
+    document.getElementById('er-payable').value    = loan.total_payable;
+    document.getElementById('er-start').value      = loan.start_date;
+    document.getElementById('er-remarks').value    = loan.reason;
+
+    // Reset flash
+    var flash = document.getElementById('er-flash');
+    if (flash) flash.style.display = 'none';
+    document.getElementById('er-submit-btn').disabled = false;
+    document.getElementById('er-submit-btn').innerHTML = '<i class="fa fa-paper-plane"></i> Save &amp; Resubmit';
+
+    overlay.style.display = 'flex';
+}
+
+function closeEditReturned() {
+    var overlay = document.getElementById('editReturnedOverlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+function submitEditReturned() {
+    var loanId  = document.getElementById('er-loan-id').value;
+    var typeId  = document.getElementById('er-type').value;
+    var provider = document.getElementById('er-provider').value.trim();
+    var amount   = parseFloat(document.getElementById('er-amount').value) || 0;
+    var monthly  = parseFloat(document.getElementById('er-monthly').value) || 0;
+    var startDt  = document.getElementById('er-start').value;
+
+    if (!typeId || !provider || amount <= 0 || monthly <= 0 || !startDt) {
+        erFlash('Please fill in all required fields.', false); return;
+    }
+
+    var btn = document.getElementById('er-submit-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Submitting…';
+
+    var fd = new FormData();
+    fd.append('action',            'edit_returned');
+    fd.append('loan_id',           loanId);
+    fd.append('loan_type_id',      typeId);
+    fd.append('provider_name',     provider);
+    fd.append('account_reference', document.getElementById('er-ref').value.trim());
+    fd.append('total_amount',      amount);
+    fd.append('monthly_deduction', monthly);
+    fd.append('interest_rate',     document.getElementById('er-interest').value || '0');
+    fd.append('total_payable',     document.getElementById('er-payable').value || '');
+    fd.append('start_date',        startDt);
+    fd.append('reason',            document.getElementById('er-remarks').value.trim());
+
+    fetch('<?= BASE_URL ?>actions/loans-action.php', {method:'POST', body:fd})
+    .then(function(r){ return r.json(); })
+    .then(function(res) {
+        if (res.success) {
+            erFlash(res.message, true);
+            setTimeout(function(){ location.reload(); }, 1200);
+        } else {
+            erFlash(res.message || 'Submission failed.', false);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-paper-plane"></i> Save &amp; Resubmit';
+        }
+    })
+    .catch(function(){ erFlash('Network error. Please try again.', false); btn.disabled = false; btn.innerHTML = '<i class="fa fa-paper-plane"></i> Save &amp; Resubmit'; });
+}
+
+function erFlash(msg, ok) {
+    var f = document.getElementById('er-flash');
+    f.textContent = msg;
+    f.style.display = 'block';
+    f.style.background = ok ? '#f0fdf4' : '#fef2f2';
+    f.style.color = ok ? '#166534' : '#991b1b';
+    f.style.border = '1px solid ' + (ok ? '#bbf7d0' : '#fecaca');
 }
 
 function cancelOwnLoan(loanId) {

@@ -618,6 +618,7 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
             <?php if ($userIsAdmin || $userIsPrincipal): ?>
             <td class="row-actions">
                 <button class="btn-icon" title="View Payslip" onclick="openPayslip(this)"
+                    data-payroll-id="<?= $r['payroll_id'] ?>"
                     data-name="<?= htmlspecialchars($empNameClean) ?>"
                     data-position="<?= htmlspecialchars($r['position_name'] ?? '') ?>"
                     data-dept="<?= htmlspecialchars($deptClean) ?>"
@@ -822,6 +823,7 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
                 <div><small>Net Pay</small><strong style="color:#0f766e"><?= peso($r['net_pay']) ?></strong></div>
             </div>
             <button class="btn-icon" onclick="openPayslip(this)"
+                data-payroll-id="<?= $r['payroll_id'] ?>"
                 data-name="<?= htmlspecialchars($empNameClean) ?>"
                 data-position="<?= htmlspecialchars($r['position_name'] ?? '') ?>"
                 data-dept="<?= htmlspecialchars($r['department_name'] ?? '') ?>"

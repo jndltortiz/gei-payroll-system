@@ -388,7 +388,16 @@ function submitRequestLoan() {
                 docFd.append('loan_docs[]', fileInput.files[i]);
             }
             fetch('<?= BASE_URL ?>actions/loan-document-action.php', {method:'POST', body:docFd})
-            .then(function(){ finishRequestLoan(res.message); })
+            .then(function(r){ return r.json(); })
+            .then(function(docRes){
+                if (!docRes.success) {
+                    rlFlash('Loan submitted, but document upload failed: ' + (docRes.message || 'Unknown error. Please upload it from the loan details page.'), false);
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa fa-paper-plane"></i> Submit Request';
+                } else {
+                    finishRequestLoan(res.message);
+                }
+            })
             .catch(function(){ finishRequestLoan(res.message); });
         } else {
             finishRequestLoan(res.message);

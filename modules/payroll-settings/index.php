@@ -537,20 +537,6 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <i class="bi bi-info-circle"></i>
                                 Working days affect pro-rated salary and per-day computations. Ensure this matches your institution's schedule.
                             </div>
-                            <?php if ($hasMig010): ?>
-                            <div class="ps-form-group mt-3">
-                                <label class="ps-form-label">Attendance Source</label>
-                                <select class="ps-form-select" name="attendance_source" id="attendanceSource">
-                                    <option value="REFERENCE" <?= ($settings['attendance_source'] ?? 'REFERENCE') === 'REFERENCE' ? 'selected' : '' ?>>Use attendance as reference only</option>
-                                    <option value="MANUAL"    <?= ($settings['attendance_source'] ?? 'REFERENCE') === 'MANUAL'    ? 'selected' : '' ?>>Manual review only</option>
-                                    <option value="AUTO"      <?= ($settings['attendance_source'] ?? 'REFERENCE') === 'AUTO'      ? 'selected' : '' ?>>Auto-include approved attendance</option>
-                                </select>
-                                <div class="ps-info-note mt-2">
-                                    <i class="bi bi-info-circle"></i>
-                                    Documents how attendance informs payroll editing. Does not affect automatic pay computation.
-                                </div>
-                            </div>
-                            <?php endif; ?>
                             <?php if ($hasMig020): ?>
                             <div class="ps-form-group mt-3">
                                 <label class="ps-form-label">Default Leave Allocation (days)</label>
@@ -857,7 +843,6 @@ window.PAYROLL_SETTINGS = <?= json_encode([
     'use_government_tables'   => $settings['use_government_tables'],
     'government_calc_mode'    => $settings['government_calc_mode'],
     'weekend_pay_date_rule'   => $hasMig010 ? ($settings['weekend_pay_date_rule'] ?? 'ADVANCE') : 'ADVANCE',
-    'attendance_source'       => $hasMig010 ? ($settings['attendance_source'] ?? 'REFERENCE') : 'REFERENCE',
     'has_mig010'              => $hasMig010,
     'leave_allocation_days'   => $hasMig020 ? (float)($settings['leave_allocation_days'] ?? 30.00) : 30.00,
     'has_mig020'              => $hasMig020,

@@ -265,7 +265,10 @@ window.openEditWizard = function(id) {
                     existingDocsList.innerHTML = docs.map(doc =>
                         `<div class="existing-doc-item">
                            <i class="fa fa-file"></i>
-                           <span>${escHtml(doc.doc_type || 'Document')}: ${escHtml(doc.doc_name)}</span>
+                           <a href="${BASE_URL}${escHtml(doc.file_path)}" target="_blank"
+                              style="flex:1;color:#0369a1;text-decoration:none;font-size:13px;">
+                             ${escHtml(doc.doc_type || 'Document')}: ${escHtml(doc.doc_name)}
+                           </a>
                            <span class="existing-doc-size">${formatFileSize(doc.file_size)}</span>
                          </div>`
                     ).join('');
@@ -390,7 +393,10 @@ window.openViewProfile = function(id) {
                            <i class="fa fa-file-lines"></i>
                            <div>
                              <strong>${escHtml(doc.doc_type || 'Document')}</strong>
-                             <span>${escHtml(doc.doc_name)} · ${formatFileSize(doc.file_size)}</span>
+                             <a href="${BASE_URL}${escHtml(doc.file_path)}" target="_blank"
+                                style="display:block;font-size:12px;color:#0369a1;text-decoration:none;word-break:break-all;">
+                               ${escHtml(doc.doc_name)} · ${formatFileSize(doc.file_size)}
+                             </a>
                            </div>
                          </div>`
                     ).join('');

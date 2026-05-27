@@ -779,33 +779,133 @@
 .btn-remove-adj:hover:not(:disabled) { background: #fee2e2; color: #dc2626; }
 .btn-remove-adj:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ── Payslip Modal — unified .ps-* styles (mirrors employee-portal.css) ─────*/
+.ps-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45); z-index: 9999;
+    align-items: center; justify-content: center;
+}
+.ps-modal {
+    background: #fff; border-radius: 14px;
+    width: 560px; max-width: 95%; max-height: 92vh;
+    overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+.ps-modal-header {
+    background: var(--sidebar-bg, #0d3d36); color: #fff;
+    padding: 18px 22px; border-radius: 14px 14px 0 0;
+    display: flex; align-items: flex-start; justify-content: space-between;
+}
+.ps-header-left { display: flex; flex-direction: column; gap: 2px; }
+.ps-school-name { font-size: 11px; font-weight: 600; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.6px; }
+.ps-modal-title { font-size: 16px; font-weight: 700; }
+.ps-period-label { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+.ps-close-btn {
+    background: rgba(255,255,255,0.2); border: none; color: #fff;
+    width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+    font-size: 14px; flex-shrink: 0;
+}
+.ps-emp-info {
+    background: #f8fafc; border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 16px; font-size: 13px;
+}
+.ps-emp-name { font-weight: 700; font-size: 15px; color: #0f172a; margin-bottom: 4px; }
+.ps-emp-id-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.ps-emp-id-label { font-size: 11px; font-weight: 600; color: #64748b; }
+.ps-emp-id { font-size: 12px; color: #374151; background: #e2e8f0; padding: 1px 7px; border-radius: 4px; font-family: monospace; }
+.ps-emp-meta-row { display: flex; gap: 12px; flex-wrap: wrap; color: #64748b; font-size: 12px; }
+.ps-meta-sep { color: #d1d5db; }
+.ps-att-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
+.ps-att-cell { background: #f1f5f9; border-radius: 7px; padding: 8px 4px; text-align: center; }
+.ps-att-num { font-size: 17px; font-weight: 700; color: #0f172a; line-height: 1; }
+.ps-att-num--amber  { color: #d97706; }
+.ps-att-num--orange { color: #ea580c; }
+.ps-att-num--red    { color: #dc2626; }
+.ps-att-num--teal   { color: #0f766e; }
+.ps-att-lbl { font-size: 9px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.3px; margin-top: 3px; }
+.ps-section-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 6px;
+}
+.ps-section-label--green  { color: #059669; }
+.ps-section-label--red    { color: #dc2626; }
+.ps-section-label--purple { color: #7c3aed; }
+.ps-section-label--blue   { color: #2563eb; }
+.ps-row-list { border-radius: 8px 8px 0 0; overflow: hidden; }
+.ps-row-list--green  { border: 1px solid #d1fae5; }
+.ps-row-list--red    { border: 1px solid #fee2e2; }
+.ps-row-list--purple { border: 1px solid #ede9fe; }
+.ps-total-bar {
+    display: flex; justify-content: space-between; padding: 10px 14px;
+    border-radius: 0 0 8px 8px; font-weight: 700; font-size: 13px; margin-top: -1px;
+}
+.ps-total-bar--green  { background: #d1fae5; color: #065f46; }
+.ps-total-bar--red    { background: #fee2e2; color: #991b1b; }
+.ps-total-bar--purple { background: #ede9fe; color: #5b21b6; }
+.ps-net-box {
+    border-radius: 10px; padding: 14px 18px;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.ps-net-box--blue   { background: #eff6ff; border: 2px solid #bfdbfe; }
+.ps-net-box--green  { background: #f0fdf4; border: 2px solid #86efac; }
+.ps-net-label  { font-size: 14px; font-weight: 700; }
+.ps-net-amount { font-size: 20px; font-weight: 800; }
+.ps-net-box--blue   .ps-net-label  { color: #1e40af; }
+.ps-net-box--blue   .ps-net-amount { color: #2563eb; }
+.ps-net-box--green  .ps-net-label  { color: #166534; }
+.ps-net-box--green  .ps-net-amount { color: #15803d; }
+.ps-released-info { margin-top: 12px; font-size: 11px; color: #94a3b8; text-align: right; }
+.ps-print-footer {
+    display: none; font-size: 10px; color: #94a3b8;
+    text-align: center; margin-top: 14px; padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+}
+.ps-modal-footer {
+    padding: 14px 22px; border-top: 1px solid var(--border, #e2e8f0);
+    display: flex; justify-content: flex-end; gap: 8px;
+}
+.ps-btn {
+    padding: 8px 18px; border-radius: 8px; font-size: 13px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; font-weight: 600;
+}
+.ps-btn--outline { border: 1px solid var(--border, #e2e8f0); background: #fff; color: #374151; }
+.ps-btn--primary { border: none; background: var(--accent, #0d9488); color: #fff; }
+
 /* ── Print: payslip isolation ────────────────────────────────────────────────
    printPayslip() adds .printing-payslip to <body> before window.print() and
    removes it in the afterprint event. Everything becomes invisible except the
-   payslip box, giving a clean single-page printout on desktop and mobile.
+   ps-modal content, giving a clean single-page printout.
    ─────────────────────────────────────────────────────────────────────────── */
 @media print {
     body.printing-payslip * { visibility: hidden; }
 
-    body.printing-payslip .payslip-box,
-    body.printing-payslip .payslip-box * { visibility: visible; }
+    body.printing-payslip #payslipOverlay,
+    body.printing-payslip #payslipOverlay * { visibility: visible; }
 
-    /* Suppress buttons and modal chrome from the print output */
-    body.printing-payslip .modal-actions,
-    body.printing-payslip .modal-actions *,
-    body.printing-payslip .modal-header,
-    body.printing-payslip .modal-header * { visibility: hidden; }
+    body.printing-payslip #payslipOverlay {
+        position: fixed; top: 0; left: 0;
+        width: 100%; background: transparent !important;
+        display: flex !important; align-items: flex-start; justify-content: center;
+    }
 
-    body.printing-payslip .payslip-box {
-        position: fixed;
-        top: 0; left: 0;
-        width: 100%;
-        max-width: none;
-        max-height: none;
-        overflow: visible;
-        border-radius: 0;
-        box-shadow: none;
-        padding: 20mm 18mm;
-        background: #fff;
+    body.printing-payslip .ps-modal {
+        width: 100%; max-width: none; max-height: none;
+        overflow: visible; border-radius: 0; box-shadow: none;
+    }
+
+    body.printing-payslip .no-print,
+    body.printing-payslip .no-print * { visibility: hidden !important; }
+
+    body.printing-payslip .ps-print-footer { visibility: visible !important; display: block !important; }
+
+    body.printing-payslip .ps-net-box,
+    body.printing-payslip .ps-total-bar {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    body.printing-payslip .ps-modal-header {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
 }

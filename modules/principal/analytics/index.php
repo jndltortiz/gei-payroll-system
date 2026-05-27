@@ -222,31 +222,7 @@ require_once __DIR__ . '/../../../includes/head.php';
 
 <div class="main">
 
-  <!-- ── Header ─────────────────────────────────────────────────────────────── -->
-  <div class="header">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <i class="fa fa-chart-bar" style="color:#0f766e;font-size:18px;"></i>
-      <div>
-        <div style="font-size:15px;font-weight:700;color:#0f172a;">Principal Portal</div>
-        <div style="font-size:12px;color:#64748b;">Great Eastern Institute</div>
-      </div>
-    </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
-      <button style="background:none;border:none;cursor:pointer;">
-        <i class="fa fa-bell" style="font-size:16px;color:#64748b;"></i>
-      </button>
-      <div style="text-align:right;">
-        <div style="font-size:14px;font-weight:600;color:#0f172a;">
-          <?= htmlspecialchars(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['user']['last_name'] ?? '')) ?>
-        </div>
-        <div style="font-size:11px;color:#64748b;">School Principal</div>
-      </div>
-      <div class="header-avatar">
-        <?= strtoupper(substr($_SESSION['user']['first_name'] ?? 'P', 0, 1) .
-                       substr($_SESSION['user']['last_name']  ?? 'R', 0, 1)) ?>
-      </div>
-    </div>
-  </div>
+<?php include __DIR__ . '/../../../includes/header.php'; ?>
 
   <div class="main-content">
   <div class="principal-page">

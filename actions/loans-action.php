@@ -15,6 +15,7 @@
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/notif-utils.php';
 header('Content-Type: application/json');
 requireLogin();
 
@@ -199,6 +200,26 @@ if ($action === 'add') {
         if ($uid) $pdo->prepare("INSERT INTO audit_logs(user_id,action,table_name,record_id,description) VALUES(?,?,?,?,?)")
             ->execute([$uid,'CREATE','employee_loans',$lid,$auditNote]);
 
+        // Notify principals (they approve) and the employee (informational)
+        try {
+            $empNameForLoan = getEmployeeName($pdo, $empId);
+            notifPrincipals($pdo,
+                "New Loan Record for Review",
+                "{$empNameForLoan} has a {$providerName} loan of ₱" . number_format($amount, 2) . " awaiting your approval.",
+                'loan',
+                BASE_URL . 'modules/loans/index.php',
+                (int)$lid
+            );
+            $loanEmpUid = getEmployeeUserId($pdo, $empId);
+            sendNotif($pdo, $loanEmpUid,
+                "Loan Record Filed",
+                "A {$providerName} loan for ₱" . number_format($amount, 2) . " has been submitted for Principal approval. Payroll deductions will not begin until approved.",
+                'loan',
+                BASE_URL . 'modules/employee/loans/index.php',
+                (int)$lid
+            );
+        } catch (Exception $ignored) {}
+
         $msg = 'Loan record submitted for Principal review. Payroll deductions will not begin until the Principal approves.';
         echo json_encode(['success'=>true,'message'=>$msg,'loan_id'=>$lid]);
     } catch (PDOException $e) {
@@ -232,6 +253,23 @@ if ($action === 'approve') {
             ->execute([$uid,'APPROVE','employee_loans',$loanId,
                        "Principal approved loan #{$loanId} for payroll deduction".($notes?" — {$notes}":'')]);
 
+        // Notify the employee
+        try {
+            $liStmt = $pdo->prepare("SELECT el.employee_id, el.provider_name, el.total_amount, el.monthly_deduction, lt.loan_name FROM employee_loans el JOIN loan_types lt ON el.loan_type_id=lt.loan_type_id WHERE el.loan_id=?");
+            $liStmt->execute([$loanId]);
+            $li = $liStmt->fetch();
+            if ($li) {
+                $loanEmpUid = getEmployeeUserId($pdo, (int)$li['employee_id']);
+                sendNotif($pdo, $loanEmpUid,
+                    "Loan Approved",
+                    "Your {$li['loan_name']} ({$li['provider_name']}) loan of ₱" . number_format($li['total_amount'], 2) . " has been approved. Monthly deductions of ₱" . number_format($li['monthly_deduction'], 2) . " will begin on the next payroll.",
+                    'loan',
+                    BASE_URL . 'modules/employee/loans/index.php',
+                    $loanId
+                );
+            }
+        } catch (Exception $ignored) {}
+
         echo json_encode(['success'=>true,'message'=>'Loan approved. Payroll deductions will begin on the next run.']);
     } catch (PDOException $e) {
         echo json_encode(['success'=>false,'message'=>'DB error: '.$e->getMessage()]);
@@ -256,6 +294,23 @@ if ($action === 'deny') {
         if ($uid) $pdo->prepare("INSERT INTO audit_logs(user_id,action,table_name,record_id,description) VALUES(?,?,?,?,?)")
             ->execute([$uid,'DENY','employee_loans',$loanId,
                        "Principal rejected loan #{$loanId}".($reason?" — {$reason}":'')]);
+
+        // Notify the employee
+        try {
+            $liStmt2 = $pdo->prepare("SELECT el.employee_id, el.provider_name, lt.loan_name FROM employee_loans el JOIN loan_types lt ON el.loan_type_id=lt.loan_type_id WHERE el.loan_id=?");
+            $liStmt2->execute([$loanId]);
+            $li2 = $liStmt2->fetch();
+            if ($li2) {
+                $loanEmpUid2 = getEmployeeUserId($pdo, (int)$li2['employee_id']);
+                sendNotif($pdo, $loanEmpUid2,
+                    "Loan Rejected",
+                    "Your {$li2['loan_name']} ({$li2['provider_name']}) loan request has been rejected." . ($reason ? " Reason: {$reason}" : ''),
+                    'loan',
+                    BASE_URL . 'modules/employee/loans/index.php',
+                    $loanId
+                );
+            }
+        } catch (Exception $ignored) {}
 
         echo json_encode(['success'=>true,'message'=>'Loan record rejected.']);
     } catch (PDOException $e) {
@@ -288,6 +343,21 @@ if ($action === 'return_for_correction') {
             ->execute([$uid,'RETURN','employee_loans',$loanId,
                        "Principal returned loan #{$loanId} for correction — {$reason}"]);
 
+        // Notify admins to correct the document
+        try {
+            $liStmt3 = $pdo->prepare("SELECT el.provider_name, lt.loan_name FROM employee_loans el JOIN loan_types lt ON el.loan_type_id=lt.loan_type_id WHERE el.loan_id=?");
+            $liStmt3->execute([$loanId]);
+            $li3 = $liStmt3->fetch();
+            $loanDesc = $li3 ? "{$li3['loan_name']} ({$li3['provider_name']})" : "Loan #{$loanId}";
+            notifAdmins($pdo,
+                "Loan Returned for Correction",
+                "{$loanDesc} has been returned for correction. Reason: {$reason}",
+                'loan',
+                BASE_URL . 'modules/loans/index.php',
+                $loanId
+            );
+        } catch (Exception $ignored) {}
+
         echo json_encode(['success'=>true,'message'=>'Loan document returned for correction. Admin will be notified.']);
     } catch (PDOException $e) {
         echo json_encode(['success'=>false,'message'=>'DB error: '.$e->getMessage()]);
@@ -295,9 +365,17 @@ if ($action === 'return_for_correction') {
     exit;
 }
 
-// ── EDIT & RESUBMIT RETURNED LOAN — Admin only ────────────────────────────────
+// ── EDIT & RESUBMIT RETURNED LOAN — Admin or the employee who filed it ────────
 if ($action === 'edit_returned') {
-    requireAdminAction();
+    requireLogin();
+
+    $isAdminOrPrincipal = isAdmin() || isPrincipalRole();
+    $isEmp              = isEmployee();
+
+    if (!$isAdminOrPrincipal && !$isEmp) {
+        http_response_code(403);
+        echo json_encode(['success'=>false,'message'=>'Access denied.']); exit;
+    }
 
     $loanId       = (int)($_POST['loan_id']           ?? 0);
     $typeId       = (int)($_POST['loan_type_id']      ?? 0);
@@ -316,12 +394,22 @@ if ($action === 'edit_returned') {
         exit;
     }
 
-    // Verify the loan exists and is currently in RETURNED status
-    $check = $pdo->prepare("SELECT loan_id, employee_id FROM employee_loans WHERE loan_id=? AND status='RETURNED'");
+    // Verify the loan exists, is RETURNED, and the caller is allowed to edit it
+    $check = $pdo->prepare("SELECT loan_id, employee_id, filed_by FROM employee_loans WHERE loan_id=? AND status='RETURNED'");
     $check->execute([$loanId]);
-    if (!$check->fetch()) {
+    $loanRow = $check->fetch();
+    if (!$loanRow) {
         echo json_encode(['success'=>false,'message'=>'Loan not found or is not in RETURNED status — cannot edit.']);
         exit;
+    }
+
+    // Employees may only edit loans THEY filed for THEMSELVES
+    if ($isEmp && !$isAdminOrPrincipal) {
+        $sessionEmpId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        if ((int)$loanRow['employee_id'] !== $sessionEmpId || $loanRow['filed_by'] !== 'EMPLOYEE') {
+            http_response_code(403);
+            echo json_encode(['success'=>false,'message'=>'You can only edit loan requests that you filed yourself.']); exit;
+        }
     }
 
     // Total payable must be >= principal; balance capped at principal
@@ -364,10 +452,28 @@ if ($action === 'edit_returned') {
             exit;
         }
 
+        $resubmitActor = $isEmp && !$isAdminOrPrincipal ? 'Employee' : 'Admin';
         if ($uid) $pdo->prepare("INSERT INTO audit_logs(user_id,action,table_name,record_id,description) VALUES(?,?,?,?,?)")
             ->execute([$uid, 'RESUBMIT', 'employee_loans', $loanId,
-                       "Admin edited and resubmitted returned loan #{$loanId} for Principal review"
+                       "{$resubmitActor} edited and resubmitted returned loan #{$loanId} for Principal review"
                        .($ref ? " (Ref: {$ref})" : '')]);
+
+        // Notify principals that the corrected loan is ready
+        try {
+            $liStmt4 = $pdo->prepare("SELECT el.employee_id, el.provider_name, el.total_amount, lt.loan_name FROM employee_loans el JOIN loan_types lt ON el.loan_type_id=lt.loan_type_id WHERE el.loan_id=?");
+            $liStmt4->execute([$loanId]);
+            $li4 = $liStmt4->fetch();
+            if ($li4) {
+                $empNameForResubmit = getEmployeeName($pdo, (int)$li4['employee_id']);
+                notifPrincipals($pdo,
+                    "Loan Resubmitted for Review",
+                    "{$li4['loan_name']} ({$li4['provider_name']}) for {$empNameForResubmit} — ₱" . number_format($li4['total_amount'], 2) . " — has been corrected and resubmitted.",
+                    'loan',
+                    BASE_URL . 'modules/loans/index.php',
+                    $loanId
+                );
+            }
+        } catch (Exception $ignored) {}
 
         echo json_encode(['success'=>true,'message'=>'Loan record updated and resubmitted for Principal review.']);
     } catch (PDOException $e) {

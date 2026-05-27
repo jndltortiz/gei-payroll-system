@@ -10,6 +10,7 @@
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/notif-utils.php';
 header('Content-Type: application/json');
 requireLogin();
 
@@ -90,6 +91,15 @@ try {
                     "Principal approved \"{$period['period_name']}\""
                     .($notes?" | Notes: $notes":'')]);
 
+            // Notify admins — they can now release
+            notifAdmins($pdo,
+                "Payroll Approved — Ready to Release",
+                "\"{$period['period_name']}\" approved by the Principal. " . (int)$snapshot['c'] . " employee(s). Ready to release.",
+                'payroll',
+                BASE_URL . 'modules/payroll/index.php',
+                $periodId
+            );
+
             echo json_encode(['success'=>true,
                 'message'=>"\"{$period['period_name']}\" approved. Accounting can now release payroll."]);
             break;
@@ -115,6 +125,15 @@ try {
                 ->execute([$uid,'RETURN','payroll_periods',$periodId,
                     "Principal returned \"{$period['period_name']}\" for revision"
                     .($notes?" | Reason: $notes":'')]);
+
+            // Notify admins — they need to revise and resubmit
+            notifAdmins($pdo,
+                "Payroll Returned for Revision",
+                "\"{$period['period_name']}\" has been returned by the Principal." . ($notes ? " Reason: {$notes}" : ''),
+                'payroll',
+                BASE_URL . 'modules/payroll/index.php',
+                $periodId
+            );
 
             echo json_encode(['success'=>true,
                 'message'=>"\"{$period['period_name']}\" returned to Admin for revision."
@@ -182,6 +201,31 @@ try {
                     "Admin released \"{$period['period_name']}\""]);
 
             $pdo->commit();
+
+            // Notify every employee in this payroll that their payslip is ready
+            try {
+                $empIdsStmt = $pdo->prepare("SELECT DISTINCT employee_id FROM payroll_records WHERE period_id = ?");
+                $empIdsStmt->execute([$periodId]);
+                foreach ($empIdsStmt->fetchAll(PDO::FETCH_COLUMN) as $payEmpId) {
+                    $payEmpUid = getEmployeeUserId($pdo, (int)$payEmpId);
+                    sendNotif($pdo, $payEmpUid,
+                        "Payslip Available",
+                        "Your payslip for \"{$period['period_name']}\" is now available. You can view and download it.",
+                        'payroll',
+                        BASE_URL . 'modules/employee/payslips/index.php',
+                        $periodId
+                    );
+                }
+                // Notify admins + principals as a confirmation
+                notifAdminsAndPrincipals($pdo,
+                    "Payroll Released",
+                    "\"{$period['period_name']}\" released successfully. " . (int)$snapshot['c'] . " employee(s), Net: ₱" . number_format((float)$snapshot['n'], 2) . ".",
+                    'payroll',
+                    BASE_URL . 'modules/payroll/index.php',
+                    $periodId
+                );
+            } catch (Exception $ignored) {}
+
             echo json_encode(['success'=>true,
                 'message'=>"\"{$period['period_name']}\" released. Payslips can now be printed."]);
             break;

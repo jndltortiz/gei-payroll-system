@@ -54,7 +54,7 @@ $education = $eduStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Documents ────────────────────────────────────────────────────────────────
 $docStmt = $pdo->prepare("
-    SELECT doc_id, doc_type, doc_name, file_size, uploaded_at
+    SELECT doc_id, doc_type, doc_name, file_path, file_size, uploaded_at
     FROM employee_documents
     WHERE employee_id = ?
     ORDER BY uploaded_at DESC
@@ -354,7 +354,10 @@ endif;
               <i class="fa fa-file-lines"></i>
               <div>
                 <strong><?= htmlspecialchars($doc['doc_type'] ?? 'Document') ?></strong>
-                <span><?= htmlspecialchars($doc['doc_name']) ?> &middot; <?= fSize((int)$doc['file_size']) ?></span>
+                <a href="<?= BASE_URL . htmlspecialchars($doc['file_path']) ?>" target="_blank"
+                   style="display:block;font-size:12px;color:#0369a1;text-decoration:none;word-break:break-all;">
+                  <?= htmlspecialchars($doc['doc_name']) ?> &middot; <?= fSize((int)$doc['file_size']) ?>
+                </a>
               </div>
             </div>
             <?php endforeach; ?>

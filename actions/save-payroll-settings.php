@@ -138,7 +138,7 @@ try {
         }
     }
 
-    // Migration 010: save weekend_pay_date_rule + attendance_source if columns exist
+    // Migration 010: save weekend_pay_date_rule if column exists
     $hasMig010 = false;
     try {
         $hasMig010 = (bool)$pdo->query("
@@ -150,15 +150,13 @@ try {
     } catch (PDOException $_e) {}
 
     if ($hasMig010) {
-        $weekendRule   = in_array($body['weekend_pay_date_rule'] ?? '', ['EXACT','ADVANCE'])
-                         ? $body['weekend_pay_date_rule'] : 'ADVANCE';
-        $attendanceSrc = in_array($body['attendance_source'] ?? '', ['MANUAL','REFERENCE','AUTO'])
-                         ? $body['attendance_source'] : 'REFERENCE';
+        $weekendRule = in_array($body['weekend_pay_date_rule'] ?? '', ['EXACT','ADVANCE'])
+                       ? $body['weekend_pay_date_rule'] : 'ADVANCE';
         $pdo->prepare("
             UPDATE payroll_settings
-            SET weekend_pay_date_rule = ?, attendance_source = ?
+            SET weekend_pay_date_rule = ?
             WHERE setting_id = ?
-        ")->execute([$weekendRule, $attendanceSrc, $exists ?: $pdo->lastInsertId()]);
+        ")->execute([$weekendRule, $exists ?: $pdo->lastInsertId()]);
     }
 
     // Migration 020: save leave_allocation_days if column exists

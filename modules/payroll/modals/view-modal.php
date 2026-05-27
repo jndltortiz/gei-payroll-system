@@ -1,156 +1,150 @@
-<!-- PAYSLIP / VIEW MODAL
-     FIX #7 — pay period label and "Generated on" date were hardcoded strings.
-     Added id="ps-period-label" and id="ps-generated-on" so the admin portal
-     JS can populate them alongside all the other #ps-* fields.
--->
-<div id="payslipModal" class="modal">
+<!-- Payslip View Modal — unified design matching employee portal -->
+<div id="payslipOverlay" class="ps-overlay">
+  <div class="ps-modal" id="ps-printable">
 
-    <div class="modal-box payslip-box">
+    <!-- Header -->
+    <div class="ps-modal-header">
+      <div class="ps-header-left">
+        <div class="ps-school-name">Great Eastern Institute</div>
+        <div class="ps-modal-title">Employee Payslip</div>
+        <div class="ps-period-label" id="ps-period"></div>
+      </div>
+      <button onclick="closePayslip()" class="ps-close-btn no-print">
+        <i class="fa fa-times"></i>
+      </button>
+    </div>
 
-        <!-- HEADER -->
-        <div class="modal-header">
-            <h3>Employee Payslip</h3>
-            <span class="close" onclick="closePayslip()">&times;</span>
+    <!-- Content -->
+    <div id="ps-content" style="padding:20px 22px;">
+
+      <!-- Payroll reference numbers -->
+      <div id="ps-numbers" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;
+           font-size:12px;color:#64748b;padding:0 0 8px;"></div>
+
+      <!-- Employee info -->
+      <div class="ps-emp-info">
+        <div class="ps-emp-name" id="ps-empname"></div>
+        <div class="ps-emp-id-row">
+          <span class="ps-emp-id-label">Employee ID:</span>
+          <code class="ps-emp-id" id="ps-empid"></code>
         </div>
-
-        <!-- GREEN BANNER -->
-        <div class="payslip-banner">
-            <div class="payslip-institution">Great Eastern Institute</div>
-            <div class="payslip-institution-sub">Ala Paz, Tarlac</div>
-            <h2>PAYSLIP</h2>
-            <p>Pay Period: <span id="ps-period-label">—</span></p>
+        <div class="ps-emp-meta-row">
+          <span><strong>Position:</strong> <span id="ps-position"></span></span>
+          <span class="ps-meta-sep">|</span>
+          <span><strong>Dept:</strong> <span id="ps-dept"></span></span>
         </div>
+      </div>
 
-        <!-- EMPLOYEE INFO -->
-        <div class="payslip-info">
-            <div>
-                <small>EMPLOYEE NAME: </small>
-                <strong id="ps-name">-</strong>
-            </div>
-
-            <div>
-                <small>POSITION: </small>
-                <strong id="ps-position">-</strong>
-            </div>
-
-            <div>
-                <small>DEPARTMENT: </small>
-                <strong id="ps-dept">-</strong>
-            </div>
-
-            <div>
-                <small>EMPLOYEE ID: </small>
-                <strong id="ps-empid">-</strong>
-            </div>
-
-            <div>
-                <small>PAYROLL #: </small>
-                <strong id="ps-payroll-no">—</strong>
-            </div>
+      <!-- Attendance Summary -->
+      <div id="ps-att-section" style="display:none;margin-bottom:14px;">
+        <div class="ps-section-label ps-section-label--blue">
+          <i class="fa fa-calendar-check"></i> Attendance Summary
         </div>
-
-        <!-- SALARY FOR PAYROLL PERIOD (Basic Pay) -->
-        <div class="payslip-section">
-            <h4 class="earnings-title">SALARY FOR PAYROLL PERIOD</h4>
-
-            <div class="card">
-                <div id="ps-basicpay-rows"></div>
-            </div>
+        <div class="ps-att-grid">
+          <div class="ps-att-cell">
+            <div class="ps-att-num" id="ps-att-present">—</div>
+            <div class="ps-att-lbl">Present</div>
+          </div>
+          <div class="ps-att-cell">
+            <div class="ps-att-num ps-att-num--amber" id="ps-att-late">—</div>
+            <div class="ps-att-lbl">Late</div>
+          </div>
+          <div class="ps-att-cell">
+            <div class="ps-att-num ps-att-num--orange" id="ps-att-halfday">—</div>
+            <div class="ps-att-lbl">Half-Day</div>
+          </div>
+          <div class="ps-att-cell">
+            <div class="ps-att-num ps-att-num--red" id="ps-att-absent">—</div>
+            <div class="ps-att-lbl">Absent</div>
+          </div>
+          <div class="ps-att-cell">
+            <div class="ps-att-num ps-att-num--teal" id="ps-att-leave">—</div>
+            <div class="ps-att-lbl">Leave</div>
+          </div>
         </div>
-
-        <!-- OVERLOAD / ADDITIONAL ALLOWANCES -->
-        <div id="ps-allowances-section" class="payslip-section" style="display:none;">
-            <h4 class="additions-title">OVERLOAD / ADDITIONAL ALLOWANCES</h4>
-
-            <div class="card">
-                <div id="ps-allowances-rows"></div>
-
-                <hr>
-
-                <div class="row total">
-                    <strong>Total Allowances</strong>
-                    <strong id="ps-total-allowances">-</strong>
-                </div>
-            </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px;font-style:italic;">
+          Attendance shown for reference. Late/undertime incur no salary deduction per GEI policy.
         </div>
+      </div>
 
-        <!-- GROSS PAY -->
-        <div class="gross-box">
-            <span>GROSS PAY</span>
-            <strong id="ps-gross">-</strong>
+      <!-- Salary for Payroll Period (Basic Pay) -->
+      <div style="margin-bottom:14px;">
+        <div class="ps-section-label ps-section-label--green">
+          <i class="fa fa-money-bill-wave"></i> Salary for Payroll Period
         </div>
+        <div id="ps-basicpay" class="ps-row-list ps-row-list--green"></div>
+      </div>
 
-        <!-- LESS: DEDUCTIONS -->
-        <div class="payslip-section">
-            <h4 class="deductions-title">LESS: DEDUCTIONS</h4>
-
-            <div class="card">
-                <div id="ps-deductions-rows"></div>
-
-                <hr>
-
-                <div class="row total red">
-                    <strong>Total Deductions</strong>
-                    <strong id="ps-totalded">-</strong>
-                </div>
-            </div>
+      <!-- Overload / Additional Allowances -->
+      <div id="ps-allowances-section" style="display:none;margin-bottom:14px;">
+        <div class="ps-section-label ps-section-label--purple">
+          <i class="fa fa-circle-plus"></i> Overload / Additional Allowances
         </div>
-
-        <!-- NET PAY -->
-        <div class="net-box">
-            <span>NET PAY</span>
-            <strong id="ps-net">-</strong>
+        <div id="ps-allowances" class="ps-row-list ps-row-list--purple"></div>
+        <div class="ps-total-bar ps-total-bar--purple">
+          <span>Total Allowances</span>
+          <span id="ps-total-allowances"></span>
         </div>
+      </div>
 
-        <!-- EMPLOYER CONTRIBUTIONS — admin/principal view only; hidden on print -->
-        <div id="ps-employer-section" class="payslip-section payslip-employer-contrib" style="display:none;">
-            <h4 class="employer-title">EMPLOYER CONTRIBUTIONS</h4>
-            <div class="card" style="border:1px dashed #d1d5db;background:#f9fafb;">
-                <div id="ps-employer-rows"></div>
-                <hr>
-                <div class="row total">
-                    <strong style="color:#6b7280;">Total Employer Cost</strong>
-                    <strong id="ps-employer-total" style="color:#6b7280;">-</strong>
-                </div>
-                <div style="font-size:11px;color:#9ca3af;margin-top:6px;font-style:italic;">
-                    Employer contributions are not deducted from employee pay.
-                </div>
-            </div>
-        </div>
+      <!-- Gross Pay -->
+      <div class="ps-net-box ps-net-box--green" style="margin-bottom:14px;">
+        <span class="ps-net-label">GROSS PAY</span>
+        <span class="ps-net-amount" id="ps-gross"></span>
+      </div>
 
-        <!-- SIGNATURE LINES -->
-        <div class="payslip-signatures">
-            <div class="sig-block">
-                <div class="sig-line"></div>
-                <div class="sig-label">Prepared by</div>
-            </div>
-            <div class="sig-block">
-                <div class="sig-line"></div>
-                <div class="sig-label">Approved by</div>
-            </div>
-            <div class="sig-block">
-                <div class="sig-line"></div>
-                <div class="sig-label">Released by</div>
-                <div class="sig-name" id="ps-released-by">—</div>
-            </div>
+      <!-- Less: Deductions -->
+      <div style="margin-bottom:14px;">
+        <div class="ps-section-label ps-section-label--red">
+          <i class="fa fa-circle-minus"></i> Less: Deductions
         </div>
+        <div id="ps-deductions" class="ps-row-list ps-row-list--red"></div>
+        <div class="ps-total-bar ps-total-bar--red">
+          <span>Total Deductions</span>
+          <span id="ps-totalded"></span>
+        </div>
+        <div id="ps-gov-note" style="font-size:11px;color:#94a3b8;margin-top:5px;font-style:italic;"></div>
+      </div>
 
-        <!-- FOOTER -->
-        <div class="payslip-footer">
-            <div class="payslip-release-info">
-                <span>Status: <strong id="ps-status">—</strong></span>
-                <span>Released: <span id="ps-released-at">—</span></span>
-            </div>
-            <p>This is a system-generated payslip. No signature required.</p>
-            <small>Generated on: <span id="ps-generated-on">—</span></small>
-        </div>
+      <!-- Net Pay -->
+      <div class="ps-net-box ps-net-box--blue">
+        <span class="ps-net-label">NET PAY</span>
+        <span class="ps-net-amount" id="ps-net"></span>
+      </div>
 
-        <!-- ACTIONS -->
-        <div class="modal-actions">
-            <button class="btn-outline" onclick="closePayslip()">Close</button>
-            <button class="btn-outline" onclick="printPayslip()">Print</button>
-            <button class="btn-primary" onclick="downloadPayslipPDF()">Print / Save PDF</button>
+      <!-- Employer Contributions (informational, admin/principal only) -->
+      <div id="ps-employer-section" style="display:none;margin-top:14px;">
+        <div class="ps-section-label" style="background:#f8fafc;border-left:3px solid #94a3b8;color:#64748b;">
+          <i class="fa fa-building" style="color:#94a3b8;"></i> Employer Contributions
+          <span style="font-size:10px;font-weight:400;">(GEI share — not deducted from employee pay)</span>
         </div>
+        <div id="ps-employer-rows" class="ps-row-list"
+             style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;background:#f8fafc;"></div>
+        <div class="ps-total-bar"
+             style="background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;">
+          <span>Total Employer Share</span>
+          <span id="ps-employer-total" style="font-weight:700;"></span>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:5px;font-style:italic;">
+          * Employer contributions are not deducted from employee pay.
+        </div>
+      </div>
+
+      <!-- Released info -->
+      <div class="ps-released-info" id="ps-released-info"></div>
+      <div class="ps-print-footer">
+        This payslip is system-generated. Great Eastern Institute, La Paz, Tarlac.
+      </div>
 
     </div>
+
+    <!-- Modal footer -->
+    <div class="ps-modal-footer no-print">
+      <button onclick="closePayslip()" class="ps-btn ps-btn--outline">Close</button>
+      <button onclick="printPayslip()" class="ps-btn ps-btn--primary">
+        <i class="fa fa-print"></i> Print
+      </button>
+    </div>
+
+  </div>
 </div>
