@@ -49,25 +49,40 @@
             </div>
         </div>
 
-        <!-- EARNINGS -->
+        <!-- SALARY FOR PAYROLL PERIOD (Basic Pay) -->
         <div class="payslip-section">
-            <h4 class="earnings-title">EARNINGS</h4>
+            <h4 class="earnings-title">SALARY FOR PAYROLL PERIOD</h4>
 
             <div class="card">
-                <div id="ps-earnings-rows"></div>
+                <div id="ps-basicpay-rows"></div>
+            </div>
+        </div>
+
+        <!-- OVERLOAD / ADDITIONAL ALLOWANCES -->
+        <div id="ps-allowances-section" class="payslip-section" style="display:none;">
+            <h4 class="additions-title">OVERLOAD / ADDITIONAL ALLOWANCES</h4>
+
+            <div class="card">
+                <div id="ps-allowances-rows"></div>
 
                 <hr>
 
                 <div class="row total">
-                    <strong>Gross Pay</strong>
-                    <strong id="ps-gross">-</strong>
+                    <strong>Total Allowances</strong>
+                    <strong id="ps-total-allowances">-</strong>
                 </div>
             </div>
         </div>
 
-        <!-- DEDUCTIONS -->
+        <!-- GROSS PAY -->
+        <div class="gross-box">
+            <span>GROSS PAY</span>
+            <strong id="ps-gross">-</strong>
+        </div>
+
+        <!-- LESS: DEDUCTIONS -->
         <div class="payslip-section">
-            <h4 class="deductions-title">DEDUCTIONS</h4>
+            <h4 class="deductions-title">LESS: DEDUCTIONS</h4>
 
             <div class="card">
                 <div id="ps-deductions-rows"></div>
@@ -81,29 +96,10 @@
             </div>
         </div>
 
-        <!-- NET PAY (before post-deduction additions) -->
+        <!-- NET PAY -->
         <div class="net-box">
             <span>NET PAY</span>
             <strong id="ps-net">-</strong>
-        </div>
-
-        <!-- POST-DEDUCTION ADDITIONS (Rice Subsidy, Laundry — shown only when present) -->
-        <div id="ps-postded-section" class="payslip-section" style="display:none;">
-            <h4 class="additions-title">ADDITIONAL ALLOWANCES</h4>
-            <div class="card">
-                <div id="ps-postded-rows"></div>
-                <hr>
-                <div class="row total">
-                    <strong>Total Additions</strong>
-                    <strong id="ps-postded-total">-</strong>
-                </div>
-            </div>
-        </div>
-
-        <!-- TOTAL TAKE-HOME PAY (shown when post-deduction additions exist) -->
-        <div id="ps-takehome-box" class="takehome-box" style="display:none;">
-            <span>TOTAL TAKE-HOME PAY</span>
-            <strong id="ps-takehome">-</strong>
         </div>
 
         <!-- EMPLOYER CONTRIBUTIONS — admin/principal view only; hidden on print -->

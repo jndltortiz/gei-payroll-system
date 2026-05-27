@@ -74,8 +74,8 @@
           <div class="att-field">
             <label>Method / Source</label>
             <select name="source" id="edit_source">
-              <option value="MANUAL_ADMIN">Manual (Admin)</option>
-              <option value="MANUAL">Manual</option>
+              <option value="MANUAL_ADMIN">Manual</option>
+              <option value="RFID">RFID</option>
               <option value="FACIAL_RECOGNITION">Facial Recognition</option>
               <option value="AUTO">Auto-tagged</option>
             </select>
@@ -133,9 +133,9 @@ window.openEditModal = function(id, name, empNo, date, timeIn, timeOut, status, 
         ABSENT:'Absent', LEAVE:'On Leave', INCOMPLETE:'Incomplete', HOLIDAY:'Holiday',
     }[status] || status || '—';
     document.getElementById('editOldMethod').textContent  = {
-        MANUAL_ADMIN:'Manual (Admin)', MANUAL:'Manual',
-        FACIAL_RECOGNITION:'Face ID', AUTO:'Auto',
-    }[source] || source || '—';
+        MANUAL_ADMIN:'Manual', MANUAL:'Manual',
+        RFID:'RFID', FACIAL_RECOGNITION:'Face ID', AUTO:'Auto',
+    }[source] || source || 'Manual';
 
     document.getElementById('editModalSubtitle').textContent =
         `Editing record for ${name}${empNo ? ' (' + empNo + ')' : ''} · ${date}`;

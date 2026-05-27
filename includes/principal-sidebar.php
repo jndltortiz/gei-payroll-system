@@ -3,7 +3,11 @@
  * includes/principal-sidebar.php
  * Sidebar navigation for the Principal Portal.
  * Active state auto-detected from REQUEST_URI.
+ *
+ * Ensures auth.php is loaded so hasEmployeeAccess() and role helpers
+ * are always available, even on pages that only require config.php.
  */
+require_once __DIR__ . '/auth.php';
 function principalActive(string $path): string {
     $uri = $_SERVER['REQUEST_URI'] ?? '';
     return str_contains($uri, $path) ? 'active' : '';
@@ -24,7 +28,7 @@ function principalActive(string $path): string {
 
   <!-- Toggle button -->
   <button class="sidebar-toggle-btn" id="sidebarToggle" title="Collapse sidebar">
-    <i class="fa fa-bars"></i>
+    <i class="fa fa-chevron-left" id="sidebarChevron"></i>
   </button>
 
   <div class="sidebar-nav">
@@ -78,24 +82,58 @@ function principalActive(string $path): string {
     </a>
 
 
-    <div class="nav-section-label">REPORTS &amp; ANALYTICS</div>
+    <div class="nav-section-label">ANALYTICS</div>
     <a class="nav-item <?= principalActive('principal/analytics') ?>"
        href="<?= BASE_URL ?>modules/principal/analytics/index.php">
       <i class="fa fa-chart-bar"></i>
       <span>Analytics</span>
     </a>
-    <a class="nav-item <?= principalActive('principal/reports') ?>"
-       href="<?= BASE_URL ?>modules/principal/reports/index.php">
-      <i class="fa fa-file-lines"></i>
-      <span>Reports Center</span>
-    </a>
 
     <div class="nav-section-label">SYSTEM</div>
-    <a class="nav-item <?= principalActive('modules/settings') ?>"
-       href="<?= BASE_URL ?>modules/settings/index.php">
-      <i class="fa fa-gear"></i>
-      <span>Settings</span>
+    <a class="nav-item <?= principalActive('modules/notifications') ?>"
+       href="<?= BASE_URL ?>modules/notifications/index.php">
+      <i class="fa fa-bell"></i>
+      <span>Notifications</span>
     </a>
+
+    <?php if (hasEmployeeAccess()): ?>
+    <div class="nav-section-label">MY ACCOUNT</div>
+    <a class="nav-item <?= principalActive('employee/attendance') ?>"
+       href="<?= BASE_URL ?>modules/employee/attendance/index.php">
+      <i class="fa fa-user-clock"></i>
+      <span>My Attendance</span>
+    </a>
+    <a class="nav-item <?= principalActive('employee/leave') ?>"
+       href="<?= BASE_URL ?>modules/employee/leave/index.php">
+      <i class="fa fa-calendar-days"></i>
+      <span>My Leave</span>
+    </a>
+    <a class="nav-item <?= principalActive('employee/payslips') ?>"
+       href="<?= BASE_URL ?>modules/employee/payslips/index.php">
+      <i class="fa fa-file-invoice-dollar"></i>
+      <span>My Payslips</span>
+    </a>
+    <a class="nav-item <?= principalActive('employee/loans') ?>"
+       href="<?= BASE_URL ?>modules/employee/loans/index.php">
+      <i class="fa fa-hand-holding-dollar"></i>
+      <span>My Loans</span>
+    </a>
+    <a class="nav-item <?= principalActive('employee/service-credits') ?>"
+       href="<?= BASE_URL ?>modules/employee/service-credits/index.php">
+      <i class="fa fa-medal"></i>
+      <span>My Service Credits</span>
+    </a>
+    <a class="nav-item <?= principalActive('employee/profile') ?>"
+       href="<?= BASE_URL ?>modules/employee/profile/index.php">
+      <i class="fa fa-id-badge"></i>
+      <span>My Profile</span>
+    </a>
+    <a class="nav-item <?= principalActive('employee/calendar') ?>"
+       href="<?= BASE_URL ?>modules/employee/calendar/index.php">
+      <i class="fa fa-calendar-check"></i>
+      <span>My Calendar</span>
+    </a>
+    <?php endif; ?>
 
   </div><!-- .sidebar-nav -->
 
@@ -121,16 +159,24 @@ function principalActive(string $path): string {
 <script>
 (function() {
     function initSidebar() {
-        const sidebar = document.getElementById('sidebar');
-        const btn     = document.getElementById('sidebarToggle');
+        const sidebar  = document.getElementById('sidebar');
+        const btn      = document.getElementById('sidebarToggle');
+        const chevron  = document.getElementById('sidebarChevron');
         if (!sidebar || !btn) return;
-        if (localStorage.getItem('principalSidebarCollapsed') === '1') {
-            sidebar.classList.add('collapsed');
+
+        function applyState(collapsed) {
+            sidebar.classList.toggle('collapsed', collapsed);
+            if (chevron) {
+                chevron.className = collapsed ? 'fa fa-chevron-right' : 'fa fa-chevron-left';
+            }
         }
+
+        applyState(localStorage.getItem('principalSidebarCollapsed') === '1');
+
         btn.addEventListener('click', function () {
-            sidebar.classList.toggle('collapsed');
-            localStorage.setItem('principalSidebarCollapsed',
-                sidebar.classList.contains('collapsed') ? '1' : '0');
+            const next = !sidebar.classList.contains('collapsed');
+            applyState(next);
+            localStorage.setItem('principalSidebarCollapsed', next ? '1' : '0');
         });
     }
     if (document.readyState === 'loading') {

@@ -16,6 +16,7 @@ $stmt = $pdo->prepare("
         COALESCE(NULLIF(ec.daily_rate, 0), ROUND(ec.monthly_salary / 22, 2)) AS daily_rate,
         u.username,
         u.is_active AS user_is_active,
+        u.must_change_password,
         r.role_name
     FROM employees e
     LEFT JOIN departments d   ON e.department_id = d.department_id

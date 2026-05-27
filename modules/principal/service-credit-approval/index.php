@@ -10,8 +10,9 @@ $autoOpenScId = isset($_GET['view_sc']) ? (int)$_GET['view_sc'] : 0;
 $pending = $pdo->query("
     SELECT sc.*,
            CONCAT(e.first_name,' ',e.last_name)  AS employee_name,
-           e.employee_no, p.position_name, d.department_name,
+           e.employee_no, e.employment_type, p.position_name, d.department_name,
            COALESCE(NULLIF(ec.daily_rate,0), ROUND(ec.monthly_salary/22,2)) AS daily_rate,
+           COALESCE(ec.monthly_salary, 0) AS monthly_salary,
            CONCAT(uc.first_name,' ',uc.last_name) AS submitted_by_name,
            tp.period_name       AS target_period_name,
            tp.pay_period_start  AS target_period_start,
@@ -95,25 +96,173 @@ foreach ($pending as $sc) {
     ]);
 }
 
-// ── Recent activity ────────────────────────────────────────────────────────
-$history = $pdo->query("
+// ── Service Credit Records (tabbed history) ────────────────────────────────
+$hTab    = $_GET['htab']    ?? 'approved';
+$hSearch = trim($_GET['hsearch'] ?? '');
+$hFilterSY = $_GET['hsy']  ?? '';
+
+$validHTabs = ['approved','rejected','inpayroll','released','archived'];
+if (!in_array($hTab, $validHTabs)) $hTab = 'approved';
+
+// Per-tab DB status groups
+$hTabStatuses = [
+    'approved'  => "'APPROVED','PARTIALLY_APPROVED'",
+    'rejected'  => "'REJECTED'",
+    'inpayroll' => "'APPLIED'",
+    'released'  => "'RELEASED'",
+    'archived'  => "'ARCHIVED'",
+];
+
+// Count per tab (for badges)
+$hCntRaw = $pdo->query("
+    SELECT status, COUNT(*) AS cnt
+    FROM service_credits
+    WHERE status IN ('APPROVED','PARTIALLY_APPROVED','REJECTED','APPLIED','RELEASED','ARCHIVED')
+    GROUP BY status
+")->fetchAll(PDO::FETCH_KEY_PAIR);
+$hTabCounts = [
+    'approved'  => ($hCntRaw['APPROVED']  ?? 0) + ($hCntRaw['PARTIALLY_APPROVED'] ?? 0),
+    'rejected'  => $hCntRaw['REJECTED']   ?? 0,
+    'inpayroll' => $hCntRaw['APPLIED']    ?? 0,
+    'released'  => $hCntRaw['RELEASED']   ?? 0,
+    'archived'  => $hCntRaw['ARCHIVED']   ?? 0,
+];
+
+// Build WHERE for active tab
+$hWhere  = "WHERE sc.status IN (" . $hTabStatuses[$hTab] . ")";
+$hParams = [];
+
+if ($hFilterSY && preg_match('/^\d{4}-\d{4}$/', $hFilterSY)) {
+    [$hY1, $hY2] = explode('-', $hFilterSY);
+    $hWhere .= " AND sc.created_at BETWEEN :hsy1 AND :hsy2";
+    $hParams[':hsy1'] = "{$hY1}-06-01";
+    $hParams[':hsy2'] = "{$hY2}-05-31 23:59:59";
+}
+if ($hSearch !== '') {
+    $hWhere .= " AND (e.first_name LIKE :hs OR e.last_name LIKE :hs OR e.employee_no LIKE :hs)";
+    $hParams[':hs'] = "%$hSearch%";
+}
+
+// Pagination
+$hPerPage = 20;
+$hPage    = max(1, (int)($_GET['hpage'] ?? 1));
+$hOffset  = ($hPage - 1) * $hPerPage;
+
+$hTotStmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM service_credits sc
+    JOIN employees e ON e.employee_id = sc.employee_id
+    $hWhere
+");
+$hTotStmt->execute($hParams);
+$hTotal = (int)$hTotStmt->fetchColumn();
+$hPages = max(1, (int)ceil($hTotal / $hPerPage));
+
+// Main history query (includes all fields needed for detail modal)
+$histStmt = $pdo->prepare("
     SELECT sc.*,
-           CONCAT(e.first_name,' ',e.last_name)  AS employee_name,
-           p.position_name,
+           CONCAT(e.first_name,' ',e.last_name)   AS employee_name,
+           e.employee_no, e.employment_type,
+           p.position_name, d.department_name,
+           COALESCE(NULLIF(ec.daily_rate,0), ROUND(ec.monthly_salary/22,2)) AS daily_rate,
+           CONCAT(uc.first_name,' ',uc.last_name) AS submitted_by_name,
            CONCAT(ua.first_name,' ',ua.last_name) AS actioned_by_name,
+           tp.period_name       AS target_period_name,
+           tp.pay_period_start  AS target_period_start,
+           tp.pay_period_end    AS target_period_end,
+           tp.pay_date          AS target_pay_date,
            (SELECT MIN(scd.work_date) FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS first_date,
            (SELECT MAX(scd.work_date) FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS last_date,
            (SELECT COUNT(*)           FROM service_credit_dates scd WHERE scd.service_credit_id = sc.service_credit_id) AS date_count
     FROM service_credits sc
-    JOIN employees e  ON e.employee_id = sc.employee_id
-    JOIN positions p  ON p.position_id = e.position_id
-    LEFT JOIN employees ua ON ua.employee_id = (
-        SELECT employee_id FROM users WHERE user_id = sc.approved_by LIMIT 1
-    )
-    WHERE sc.status IN ('APPROVED','PARTIALLY_APPROVED','REJECTED','APPLIED','RELEASED')
+    JOIN employees e    ON e.employee_id   = sc.employee_id
+    JOIN positions p    ON p.position_id   = e.position_id
+    JOIN departments d  ON d.department_id = e.department_id
+    LEFT JOIN employee_compensations ec ON ec.employee_id = e.employee_id AND ec.is_active = 1
+    LEFT JOIN employees uc ON uc.employee_id = (SELECT employee_id FROM users WHERE user_id = sc.created_by   LIMIT 1)
+    LEFT JOIN employees ua ON ua.employee_id = (SELECT employee_id FROM users WHERE user_id = sc.approved_by  LIMIT 1)
+    LEFT JOIN payroll_periods tp ON tp.period_id = sc.target_period_id
+    $hWhere
     ORDER BY sc.updated_at DESC
-    LIMIT 30
-")->fetchAll(PDO::FETCH_ASSOC);
+    LIMIT :lim OFFSET :off
+");
+foreach ($hParams as $k => $v) $histStmt->bindValue($k, $v);
+$histStmt->bindValue(':lim', $hPerPage, PDO::PARAM_INT);
+$histStmt->bindValue(':off', $hOffset,  PDO::PARAM_INT);
+$histStmt->execute();
+$history = $histStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Batch-load child dates for history detail modal
+$historyDates = [];
+if (!empty($history)) {
+    $hIds = array_column($history, 'service_credit_id');
+    $ph   = implode(',', array_fill(0, count($hIds), '?'));
+    $dSt  = $pdo->prepare("
+        SELECT sc_date_id, service_credit_id, work_date,
+               CAST(days AS CHAR) AS days,
+               CAST(equivalent_pay AS CHAR) AS equivalent_pay,
+               status, rejection_reason
+        FROM service_credit_dates
+        WHERE service_credit_id IN ($ph)
+        ORDER BY work_date ASC
+    ");
+    $dSt->execute($hIds);
+    foreach ($dSt->fetchAll(PDO::FETCH_ASSOC) as $d) {
+        $historyDates[$d['service_credit_id']][] = [
+            'sc_date_id'       => (int)$d['sc_date_id'],
+            'work_date'        => $d['work_date'],
+            'days'             => (float)$d['days'],
+            'equivalent_pay'   => (float)$d['equivalent_pay'],
+            'status'           => $d['status'],
+            'rejection_reason' => $d['rejection_reason'],
+        ];
+    }
+}
+
+// Batch-load audit logs for history detail modal
+$historyAudit = [];
+if (!empty($history)) {
+    $hIds = array_column($history, 'service_credit_id');
+    $ph   = implode(',', array_fill(0, count($hIds), '?'));
+    $aSt  = $pdo->prepare("
+        SELECT al.record_id AS service_credit_id,
+               al.action, al.description, al.created_at,
+               CONCAT(eu.first_name,' ',eu.last_name) AS actor_name
+        FROM audit_logs al
+        LEFT JOIN users     u  ON u.user_id      = al.user_id
+        LEFT JOIN employees eu ON eu.employee_id = u.employee_id
+        WHERE al.table_name = 'service_credits' AND al.record_id IN ($ph)
+        ORDER BY al.created_at ASC
+    ");
+    $aSt->execute($hIds);
+    foreach ($aSt->fetchAll(PDO::FETCH_ASSOC) as $a) {
+        $historyAudit[$a['service_credit_id']][] = [
+            'action'      => $a['action'],
+            'description' => $a['description'],
+            'created_at'  => $a['created_at'],
+            'actor_name'  => $a['actor_name'],
+        ];
+    }
+}
+
+// Build JS payload for detail modal
+$allHistoryJs = [];
+foreach ($history as $h) {
+    $allHistoryJs[] = array_merge($h, [
+        'dates' => $historyDates[$h['service_credit_id']] ?? [],
+        'audit' => $historyAudit[$h['service_credit_id']] ?? [],
+    ]);
+}
+
+// Available school years for SY filter
+$hAllSYs = $pdo->query("
+    SELECT DISTINCT
+        CASE WHEN MONTH(created_at)>=6 THEN CONCAT(YEAR(created_at),'-',YEAR(created_at)+1)
+             ELSE CONCAT(YEAR(created_at)-1,'-',YEAR(created_at)) END AS sy
+    FROM service_credits
+    WHERE status IN ('APPROVED','PARTIALLY_APPROVED','REJECTED','APPLIED','RELEASED','ARCHIVED')
+    ORDER BY sy DESC
+")->fetchAll(PDO::FETCH_COLUMN);
 
 // ── Flash ──────────────────────────────────────────────────────────────────
 $flashOk  = $_SESSION['sc_success'] ?? '';
@@ -136,8 +285,11 @@ require_once __DIR__ . '/../../../includes/head.php';
 
 <div class="principal-page">
   <div class="principal-page-header">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <span style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#7c3aed;text-transform:uppercase;background:#f5f3ff;padding:2px 10px;border-radius:99px;">Principal Portal</span>
+    </div>
     <h1>Service Credit Approvals</h1>
-    <p>Review each work date individually — approved dates are paid as Additional Assignment Pay in the selected payroll.</p>
+    <p>Review each work date individually — approved dates are released as Additional Assignment Pay during the EOSY Accrued Pay run.</p>
   </div>
 
   <!-- Alerts -->
@@ -274,80 +426,166 @@ require_once __DIR__ . '/../../../includes/head.php';
   <?php endforeach; ?>
   <?php endif; ?>
 
-  <!-- ═══ Recent Activity ═══ -->
-  <?php if (!empty($history)): ?>
-  <div class="pr-history-section" style="margin-top:28px;">
-    <h2>Recent Activity</h2>
-    <div class="pr-history-table-wrap">
-      <table class="pr-history-table">
+  <!-- ═══ Service Credit Records ═══ -->
+  <div class="sc-pr-records-section">
+
+    <h2 class="sc-pr-records-title">Service Credit Records</h2>
+
+    <!-- Tab bar -->
+    <?php
+    $hTabDefs = [
+        'approved'  => ['Approved',   'sc-badge--approved'],
+        'rejected'  => ['Rejected',   'sc-badge--rejected'],
+        'inpayroll' => ['In Payroll', 'sc-badge--applied'],
+        'released'  => ['Released',   'sc-badge--released'],
+        'archived'  => ['Archived',   'sc-badge--archived'],
+    ];
+    ?>
+    <div class="sc-pr-hist-tabs">
+      <?php foreach ($hTabDefs as $tabKey => [$tabLabel, $badgeCls]):
+        $isActive = $hTab === $tabKey;
+        $cnt = $hTabCounts[$tabKey] ?? 0;
+        $tabUrl = '?' . http_build_query(['htab'=>$tabKey,'hsy'=>$hFilterSY,'hsearch'=>$hSearch]);
+      ?>
+      <a href="<?= $tabUrl ?>" class="sc-pr-hist-tab <?= $isActive ? 'sc-pr-hist-tab--active' : '' ?>">
+        <?= $tabLabel ?>
+        <?php if ($cnt > 0): ?>
+          <span class="sc-badge <?= $badgeCls ?>" style="font-size:10px;padding:1px 7px;margin-left:2px;"><?= $cnt ?></span>
+        <?php endif; ?>
+      </a>
+      <?php endforeach; ?>
+    </div>
+
+    <!-- Filters -->
+    <form method="GET" class="sc-pr-hist-filters">
+      <input type="hidden" name="htab" value="<?= htmlspecialchars($hTab) ?>">
+      <div class="sc-pr-hist-filter-row">
+        <div class="sc-search-wrap" style="flex:1;min-width:180px;max-width:300px;">
+          <i class="fa fa-magnifying-glass"></i>
+          <input type="text" name="hsearch" placeholder="Search employee…"
+                 value="<?= htmlspecialchars($hSearch) ?>" class="sc-search-input"
+                 oninput="debounceHist(this.form)">
+        </div>
+        <?php if (!empty($hAllSYs)): ?>
+        <select name="hsy" class="sc-select" onchange="this.form.submit()">
+          <option value="">All School Years</option>
+          <?php foreach ($hAllSYs as $sy): ?>
+          <option value="<?= htmlspecialchars($sy) ?>" <?= $hFilterSY===$sy?'selected':'' ?>>SY <?= htmlspecialchars($sy) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <?php endif; ?>
+        <?php if ($hSearch !== '' || $hFilterSY !== ''): ?>
+        <a href="?htab=<?= htmlspecialchars($hTab) ?>" class="sc-btn-ghost" style="white-space:nowrap;font-size:12px;padding:7px 14px;">
+          <i class="fa fa-rotate-left"></i> Reset
+        </a>
+        <?php endif; ?>
+      </div>
+    </form>
+
+    <!-- Records table -->
+    <?php if (empty($history)): ?>
+    <div class="sc-empty" style="padding:48px 20px;">
+      <i class="fa fa-folder-open"></i>
+      <p>No records found</p>
+      <small>No <?= htmlspecialchars($hTabDefs[$hTab][0]) ?> service credits<?= $hSearch !== '' ? ' matching your search' : '' ?>.</small>
+    </div>
+    <?php else: ?>
+    <div class="sc-table-wrap">
+      <table class="sc-table">
         <thead>
           <tr>
             <th>Employee</th>
             <th>Work Period</th>
             <th>Days</th>
-            <th>Equiv. Pay</th>
+            <th>Amount</th>
             <th>Status</th>
             <th>Actioned By</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
         <?php foreach ($history as $h):
-          $badges = [
-            'APPROVED'           => 'sc-badge--approved',
-            'PARTIALLY_APPROVED' => 'sc-badge--partial',
-            'REJECTED'           => 'sc-badge--rejected',
-            'APPLIED'            => 'sc-badge--applied',
-            'RELEASED'           => 'sc-badge--released',
+          $hBadges = [
+            'APPROVED'           => ['sc-badge--approved', 'Approved'],
+            'PARTIALLY_APPROVED' => ['sc-badge--approved', 'Approved'],
+            'REJECTED'           => ['sc-badge--rejected', 'Rejected'],
+            'APPLIED'            => ['sc-badge--applied',  'In Payroll'],
+            'RELEASED'           => ['sc-badge--released', 'Released'],
+            'ARCHIVED'           => ['sc-badge--archived', 'Archived'],
           ];
-          $statusLabels = [
-            'APPROVED'           => 'Approved',
-            'PARTIALLY_APPROVED' => 'Partial',
-            'REJECTED'           => 'Rejected',
-            'APPLIED'            => 'In Payroll',
-            'RELEASED'           => 'Released',
-          ];
-          $bc  = $badges[$h['status']]       ?? 'sc-badge--draft';
-          $slb = $statusLabels[$h['status']] ?? ucfirst(strtolower($h['status']));
-
-          $hdc = (int)($h['date_count'] ?? 0);
-          $hfd = $h['first_date'] ?? null;
-          $hld = $h['last_date']  ?? null;
+          [$hBc, $hSl] = $hBadges[$h['status']] ?? ['sc-badge--draft', ucfirst(strtolower($h['status']))];
+          $hdc  = (int)($h['date_count'] ?? 0);
+          $hfd  = $h['first_date'] ?? null;
+          $hld  = $h['last_date']  ?? null;
           $hDate = $hfd
             ? ($hdc > 1 && $hld
                 ? date('M j', strtotime($hfd)) . ' – ' . date('M j, Y', strtotime($hld))
                 : date('M j, Y', strtotime($hfd)))
             : '—';
+          $hDatesArr = $historyDates[$h['service_credit_id']] ?? [];
+          $hAuditArr = $historyAudit[$h['service_credit_id']] ?? [];
+          $hJson = htmlspecialchars(json_encode(array_merge($h, ['dates'=>$hDatesArr,'audit'=>$hAuditArr])), ENT_QUOTES);
         ?>
         <tr>
           <td>
-            <strong><?= htmlspecialchars($h['employee_name']) ?></strong>
-            <br><small style="color:#94a3b8;"><?= htmlspecialchars($h['position_name']) ?></small>
+            <div class="sc-emp-cell">
+              <div class="sc-emp-avatar"><?= strtoupper(substr($h['employee_name'],0,1) . substr(strrchr($h['employee_name'],' ')??'',1,1)) ?></div>
+              <div>
+                <span class="sc-emp-name"><?= htmlspecialchars($h['employee_name']) ?></span>
+                <span class="sc-emp-pos"><?= htmlspecialchars($h['position_name']) ?></span>
+              </div>
+            </div>
           </td>
           <td>
             <?= htmlspecialchars($hDate) ?>
-            <?php if ($hdc > 1): ?><br><small style="color:#94a3b8;"><?= $hdc ?> dates</small><?php endif; ?>
+            <?php if ($hdc > 1): ?><br><small style="color:#94a3b8;"><?= $hdc ?> date<?= $hdc!==1?'s':'' ?></small><?php endif; ?>
           </td>
           <td><?= number_format((float)$h['days'], 1) ?></td>
           <td style="font-weight:700;color:#0f766e;">₱<?= number_format((float)$h['equivalent_pay'], 2) ?></td>
-          <td><span class="sc-badge <?= $bc ?>"><?= $slb ?></span></td>
-          <td><?= $h['actioned_by_name'] ? htmlspecialchars($h['actioned_by_name']) : '<span style="color:#d1d5db;">—</span>' ?></td>
-        </tr>
-        <?php if ($h['status'] === 'REJECTED' && $h['rejection_reason']): ?>
-        <tr style="background:#fff5f5;">
-          <td colspan="6" style="padding:5px 14px 10px;">
-            <div style="display:flex;align-items:flex-start;gap:6px;font-size:12px;color:#991b1b;">
-              <i class="fa fa-circle-xmark" style="margin-top:1px;flex-shrink:0;"></i>
-              <span><strong>Rejection reason:</strong> <?= htmlspecialchars($h['rejection_reason']) ?></span>
-            </div>
+          <td><span class="sc-badge <?= $hBc ?>"><?= $hSl ?></span></td>
+          <td>
+            <?php if ($h['actioned_by_name']): ?>
+              <?= htmlspecialchars($h['actioned_by_name']) ?>
+              <?php if ($h['approved_at']): ?>
+              <br><small style="color:#94a3b8;"><?= date('M j, Y', strtotime($h['approved_at'])) ?></small>
+              <?php endif; ?>
+            <?php else: ?>
+              <span style="color:#d1d5db;">—</span>
+            <?php endif; ?>
+          </td>
+          <td>
+            <button class="sc-icon-btn sc-icon-btn--view" title="View full details"
+                    onclick="openPrHistoryDetails(<?= $hJson ?>)">
+              <i class="fa fa-eye"></i>
+            </button>
           </td>
         </tr>
-        <?php endif; ?>
         <?php endforeach; ?>
         </tbody>
       </table>
     </div>
-  </div>
-  <?php endif; ?>
+
+    <!-- Pagination -->
+    <?php if ($hPages > 1): ?>
+    <div class="sc-pagination">
+      <span>Showing <?= $hOffset+1 ?>–<?= min($hOffset+$hPerPage,$hTotal) ?> of <?= $hTotal ?></span>
+      <div class="sc-pagination-btns">
+        <?php if ($hPage>1): ?>
+        <a href="?<?= http_build_query(['htab'=>$hTab,'hsearch'=>$hSearch,'hsy'=>$hFilterSY,'hpage'=>$hPage-1]) ?>" class="sc-page-btn"><i class="fa fa-chevron-left"></i></a>
+        <?php endif; ?>
+        <?php for ($pg=max(1,$hPage-2);$pg<=min($hPages,$hPage+2);$pg++): ?>
+        <a href="?<?= http_build_query(['htab'=>$hTab,'hsearch'=>$hSearch,'hsy'=>$hFilterSY,'hpage'=>$pg]) ?>"
+           class="sc-page-btn <?= $pg===$hPage?'active':'' ?>"><?= $pg ?></a>
+        <?php endfor; ?>
+        <?php if ($hPage<$hPages): ?>
+        <a href="?<?= http_build_query(['htab'=>$hTab,'hsearch'=>$hSearch,'hsy'=>$hFilterSY,'hpage'=>$hPage+1]) ?>" class="sc-page-btn"><i class="fa fa-chevron-right"></i></a>
+        <?php endif; ?>
+      </div>
+    </div>
+    <?php endif; ?>
+    <?php endif; ?>
+
+  </div><!-- .sc-pr-records-section -->
 
 </div><!-- .principal-page -->
 </div><!-- .main-content -->
@@ -409,6 +647,7 @@ require_once __DIR__ . '/../../../includes/head.php';
 const SC_ACTION_URL   = '<?= BASE_URL ?>actions/service-credits-action.php';
 const SC_PR_RETURN    = '<?= BASE_URL ?>modules/principal/service-credit-approval/';
 const PR_PENDING_DATA = <?= json_encode(array_values($allPendingJs)) ?>;
+const PR_HISTORY_DATA = <?= json_encode(array_values($allHistoryJs)) ?>;
 const AUTO_OPEN_SC    = <?= $autoOpenScId ?>;
 
 // ── Shared badge / format helpers ─────────────────────────────────────────
@@ -559,34 +798,35 @@ function openPrViewDetails(r) {
         </div>`;
     }
 
+    const empTypeFmt = t => ({FULL_TIME:'Full-Time',PART_TIME:'Part-Time'}[t] || (t||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) || '—');
+    const empNo      = r.employee_no ? `<code style="font-size:11px;background:#f1f5f9;padding:1px 7px;border-radius:4px;">${escH(r.employee_no)}</code>` : '';
+
     document.getElementById('prViewBody').innerHTML = `
-        <div class="sc-view-header">
+        <!-- Employee profile card -->
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
             <div>
-                <div class="sc-view-emp">${escH(r.employee_name||'')}</div>
-                <div style="font-size:12px;color:#64748b;margin-top:2px;">${escH(r.position_name||'')} &middot; ${escH(r.department_name||'')}</div>
+              <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:3px;">${escH(r.employee_name||'')}</div>
+              <div style="font-size:12px;color:#64748b;">
+                ${escH(r.position_name||'')} &nbsp;&middot;&nbsp; ${escH(r.department_name||'')}
+              </div>
             </div>
-            <span class="sc-badge sc-badge--pending">Pending</span>
+            <span class="sc-badge sc-badge--pending" style="flex-shrink:0;">Pending Review</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:12px;">
+            <div><span style="color:#94a3b8;">Employee ID:</span>&nbsp;${empNo || '<span style="color:#d1d5db;">—</span>'}</div>
+            <div><span style="color:#94a3b8;">Type:</span>&nbsp;<strong>${empTypeFmt(r.employment_type)}</strong></div>
+            <div><span style="color:#94a3b8;">Daily Rate:</span>&nbsp;<strong>₱${parseFloat(r.daily_rate||0).toLocaleString('en-PH',{minimumFractionDigits:2})}</strong></div>
+            <div><span style="color:#94a3b8;">Submitted by:</span>&nbsp;${escH(r.submitted_by_name||'HR Admin')}</div>
+            <div><span style="color:#94a3b8;">Submitted on:</span>&nbsp;${fmtDateTime(r.created_at)}</div>
+          </div>
         </div>
 
-        ${r.remarks ? `<div class="sc-view-remarks"><strong>Description:</strong> ${escH(r.remarks)}</div>` : '<div style="font-size:12px;color:#94a3b8;margin-bottom:12px;font-style:italic;">No description provided.</div>'}
+        ${r.remarks ? `<div class="sc-view-remarks" style="margin-bottom:14px;"><strong>Description:</strong> ${escH(r.remarks)}</div>` : '<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;font-style:italic;">No description provided by employee.</div>'}
 
         ${dHtml}
 
-        <div class="sc-view-meta-grid">
-            <div class="sc-view-meta-item">
-                <div class="sc-view-meta-label">Daily Rate</div>
-                <div class="sc-view-meta-val">₱${parseFloat(r.daily_rate||0).toLocaleString('en-PH',{minimumFractionDigits:2})}</div>
-            </div>
-            <div class="sc-view-meta-item">
-                <div class="sc-view-meta-label">Submitted by</div>
-                <div class="sc-view-meta-val">${escH(r.submitted_by_name||'HR Admin')}</div>
-            </div>
-            <div class="sc-view-meta-item">
-                <div class="sc-view-meta-label">Submitted on</div>
-                <div class="sc-view-meta-val">${fmtDateTime(r.created_at)}</div>
-            </div>
-            ${tpHtml}
-        </div>
+        ${tpHtml ? `<div class="sc-view-meta-grid">${tpHtml}</div>` : ''}
 
         ${hHtml}`;
 
@@ -596,6 +836,155 @@ function openPrViewDetails(r) {
 
     document.getElementById('prViewOverlay').style.display = 'flex';
 }
+
+// ── Read-only history detail modal ────────────────────────────────────────
+function openPrHistoryDetails(r) {
+    const dates = (r.dates && r.dates.length > 0) ? r.dates
+        : (r.work_date ? [{sc_date_id:0,work_date:r.work_date,days:r.days||0,equivalent_pay:r.equivalent_pay||0,status:r.status||'APPROVED',rejection_reason:r.rejection_reason||null}] : []);
+
+    const statusLabels = {APPROVED:'Approved',PARTIALLY_APPROVED:'Approved',REJECTED:'Rejected',APPLIED:'In Payroll',RELEASED:'Released',ARCHIVED:'Archived'};
+    const statusBadges = {APPROVED:'sc-badge--approved',PARTIALLY_APPROVED:'sc-badge--approved',REJECTED:'sc-badge--rejected',APPLIED:'sc-badge--applied',RELEASED:'sc-badge--released',ARCHIVED:'sc-badge--archived'};
+    const stLbl = statusLabels[r.status] || r.status;
+    const stCls = statusBadges[r.status] || 'sc-badge--draft';
+
+    // Date rows — read-only (no approve/reject buttons)
+    const dRows = dates.map(d => {
+        const ds = d.status || 'APPROVED';
+        const db = DATE_BADGE[ds] || {cls:'sc-badge--approved', lbl:'Approved'};
+        const rejNote = ds === 'REJECTED' && d.rejection_reason
+            ? `<div style="margin-top:3px;font-size:11px;color:#ef4444;font-style:italic;">${escH(d.rejection_reason)}</div>` : '';
+        return `<tr style="border-bottom:1px solid #f8fafc;">
+            <td style="padding:8px 10px;"><span style="font-weight:600;">${fmtDate(d.work_date)}</span>${rejNote}</td>
+            <td style="padding:8px 10px;text-align:center;">${parseFloat(d.days).toFixed(1)}d</td>
+            <td style="padding:8px 10px;text-align:right;font-weight:600;color:${ds==='REJECTED'?'#d1d5db':'#0f766e'};">
+                ₱${parseFloat(d.equivalent_pay).toLocaleString('en-PH',{minimumFractionDigits:2})}
+            </td>
+            <td style="padding:8px 10px;text-align:center;"><span class="sc-badge ${db.cls}" style="font-size:10px;">${db.lbl}</span></td>
+        </tr>`;
+    }).join('');
+
+    const approvedCnt = dates.filter(d => d.status === 'APPROVED').length;
+    const rejectedCnt = dates.filter(d => d.status === 'REJECTED').length;
+
+    const dHtml = `<div style="margin-bottom:14px;">
+        <div style="font-size:10px;text-transform:uppercase;color:#94a3b8;letter-spacing:.5px;margin-bottom:6px;font-weight:700;">Work Dates</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:8px;">
+            ${approvedCnt > 0 ? `<span style="color:#059669;font-weight:600;">${approvedCnt} approved</span>` : ''}
+            ${rejectedCnt > 0 ? `<span style="color:#ef4444;font-weight:600;margin-left:8px;">${rejectedCnt} rejected</span>` : ''}
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+            <thead><tr style="background:#f8fafc;border-bottom:1px solid #e5e7eb;">
+                <th style="padding:8px 10px;text-align:left;font-size:11px;color:#64748b;font-weight:600;">Date</th>
+                <th style="padding:8px 10px;text-align:center;font-size:11px;color:#64748b;font-weight:600;">Day Equiv.</th>
+                <th style="padding:8px 10px;text-align:right;font-size:11px;color:#64748b;font-weight:600;">Amount</th>
+                <th style="padding:8px 10px;text-align:center;font-size:11px;color:#64748b;font-weight:600;">Status</th>
+            </tr></thead>
+            <tbody>${dRows}</tbody>
+            <tfoot style="border-top:2px solid #e5e7eb;">
+                <tr style="background:#f0fdf9;">
+                    <td style="padding:8px 10px;font-weight:700;">Total</td>
+                    <td style="padding:8px 10px;text-align:center;font-weight:700;">${parseFloat(r.days||0).toFixed(1)}d</td>
+                    <td style="padding:8px 10px;text-align:right;font-weight:700;color:#0f766e;">₱${parseFloat(r.equivalent_pay||0).toLocaleString('en-PH',{minimumFractionDigits:2})}</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>`;
+
+    // Payroll reference banner
+    let refHtml = '';
+    if (r.payroll_id) {
+        refHtml = `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#1e40af;">
+            <i class="fa fa-file-invoice-dollar" style="margin-right:6px;"></i>
+            <strong>Applied to Payroll</strong>
+            ${r.target_period_name ? ' — ' + escH(r.target_period_name) : ''}
+            ${r.applied_to_payroll_at ? ' on ' + fmtDate(r.applied_to_payroll_at) : ''}
+        </div>`;
+    } else if (r.target_period_id) {
+        const pLabel = r.target_period_name
+            || (r.target_period_start ? fmtDate(r.target_period_start) + ' – ' + fmtDate(r.target_period_end) : '—');
+        refHtml = `<div style="font-size:12px;color:#2563eb;margin-bottom:14px;">
+            <i class="fa fa-calendar-check" style="margin-right:4px;"></i> Target: <strong>${escH(pLabel)}</strong>
+        </div>`;
+    }
+
+    // Overall rejection reason (bulk reject)
+    let rejHtml = '';
+    if (r.status === 'REJECTED' && r.rejection_reason) {
+        rejHtml = `<div style="background:#fff5f5;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#991b1b;">
+            <i class="fa fa-circle-xmark" style="margin-right:6px;"></i>
+            <strong>Rejection Reason:</strong> ${escH(r.rejection_reason)}
+        </div>`;
+    }
+
+    // Activity history
+    const aLabels = {CREATE:'Created',SUBMIT:'Submitted',RESUBMIT:'Resubmitted',UPDATE:'Edited',
+                     APPROVE:'Approved (all)',APPROVE_DATE:'Date Approved',
+                     REJECT:'Rejected (all)',REJECT_DATE:'Date Rejected',
+                     ARCHIVE:'Archived',RESTORE:'Restored',DELETE:'Deleted'};
+    const aColors  = {CREATE:'#64748b',SUBMIT:'#d97706',RESUBMIT:'#d97706',UPDATE:'#2563eb',
+                      APPROVE:'#059669',APPROVE_DATE:'#0891b2',REJECT:'#ef4444',
+                      REJECT_DATE:'#f97316',ARCHIVE:'#64748b',RESTORE:'#0d9488',DELETE:'#ef4444'};
+    const aIcons   = {CREATE:'fa-plus-circle',SUBMIT:'fa-paper-plane',RESUBMIT:'fa-rotate-right',
+                      UPDATE:'fa-pen',APPROVE:'fa-circle-check',APPROVE_DATE:'fa-check',
+                      REJECT:'fa-circle-xmark',REJECT_DATE:'fa-xmark',
+                      ARCHIVE:'fa-box-archive',RESTORE:'fa-rotate-left',DELETE:'fa-trash'};
+    let hHtml = '';
+    if (r.audit && r.audit.length > 0) {
+        hHtml = `<div style="margin-top:14px;">
+            <div style="font-size:10px;text-transform:uppercase;color:#94a3b8;letter-spacing:.5px;margin-bottom:10px;font-weight:700;">Activity History</div>
+            <div class="sc-history-list">
+                ${r.audit.map(a => {
+                    const lbl=aLabels[a.action]||a.action, col=aColors[a.action]||'#64748b', ico=aIcons[a.action]||'fa-circle';
+                    return `<div class="sc-history-item">
+                        <div class="sc-history-dot" style="background:${col};"><i class="fa ${ico}"></i></div>
+                        <div class="sc-history-body">
+                            <div class="sc-history-action" style="color:${col};">${escH(lbl)}</div>
+                            <div class="sc-history-who">${escH(a.actor_name||'System')}</div>
+                            <div class="sc-history-when">${fmtDateTime(a.created_at)}</div>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+        </div>`;
+    }
+
+    const empNo = r.employee_no
+        ? `<code style="font-size:11px;background:#f1f5f9;padding:1px 7px;border-radius:4px;">${escH(r.employee_no)}</code>`
+        : '<span style="color:#d1d5db;">—</span>';
+
+    document.getElementById('prViewBody').innerHTML = `
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:3px;">${escH(r.employee_name||'')}</div>
+              <div style="font-size:12px;color:#64748b;">${escH(r.position_name||'')} &nbsp;&middot;&nbsp; ${escH(r.department_name||'')}</div>
+            </div>
+            <span class="sc-badge ${stCls}" style="flex-shrink:0;">${escH(stLbl)}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:12px;">
+            <div><span style="color:#94a3b8;">Employee ID:</span>&nbsp;${empNo}</div>
+            <div><span style="color:#94a3b8;">Submitted by:</span>&nbsp;${escH(r.submitted_by_name||'HR Admin')}</div>
+            <div><span style="color:#94a3b8;">Submitted on:</span>&nbsp;${fmtDateTime(r.created_at)}</div>
+            ${r.actioned_by_name ? `<div><span style="color:#94a3b8;">Actioned by:</span>&nbsp;<strong>${escH(r.actioned_by_name)}</strong></div>` : ''}
+            ${r.approved_at     ? `<div><span style="color:#94a3b8;">Action date:</span>&nbsp;${fmtDateTime(r.approved_at)}</div>` : ''}
+          </div>
+        </div>
+        ${r.remarks ? `<div style="font-size:13px;color:#374151;margin-bottom:14px;padding:10px 14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;"><strong>Description:</strong> ${escH(r.remarks)}</div>` : ''}
+        ${rejHtml}
+        ${refHtml}
+        ${dHtml}
+        ${hHtml}`;
+
+    document.getElementById('prViewFooter').innerHTML =
+        `<button type="button" class="sc-btn-ghost"
+                 onclick="document.getElementById('prViewOverlay').style.display='none'">Close</button>`;
+    document.getElementById('prViewOverlay').style.display = 'flex';
+}
+
+// ── Debounce for history search input ────────────────────────────────────
+let _hDebTimer;
+function debounceHist(form) { clearTimeout(_hDebTimer); _hDebTimer = setTimeout(() => form.submit(), 400); }
 
 // ── Reject date modal ─────────────────────────────────────────────────────
 function openPrRejectDate(dateId, scId, workDateLabel) {

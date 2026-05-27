@@ -1,0 +1,156 @@
+/* ── Audit Log page (aud- prefix) ────────────────────────────────────────────
+   Layout rules only. All colors use variables defined in global.css.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.aud-page { max-width: 1200px; margin: 0 auto; }
+
+/* Page header */
+.aud-hdr { margin-bottom: 20px; }
+.aud-hdr h1 {
+    font-size: 20px; font-weight: 700;
+    color: var(--text-primary);
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 4px;
+}
+.aud-hdr h1 i { color: var(--accent); font-size: 18px; }
+.aud-hdr p { font-size: 13px; color: var(--text-secondary); margin: 0; }
+
+/* Filters card */
+.aud-filters {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+}
+.aud-filter-row {
+    display: flex; flex-wrap: wrap;
+    gap: 12px; align-items: flex-end;
+}
+.aud-label {
+    display: flex; flex-direction: column;
+    gap: 4px; font-size: 11px; font-weight: 600;
+    color: var(--text-muted); letter-spacing: .4px; text-transform: uppercase;
+    min-width: 130px;
+}
+.aud-label--grow { flex: 1; min-width: 180px; }
+.aud-input {
+    height: 36px; padding: 0 10px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-main); color: var(--text-primary);
+    font-family: inherit; font-size: 13px;
+    outline: none; transition: border-color .15s;
+    width: 100%;
+}
+.aud-input:focus { border-color: var(--accent); }
+.aud-filter-btns { display: flex; gap: 8px; align-items: flex-end; }
+
+/* Buttons */
+.aud-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 36px; padding: 0 14px; border-radius: 8px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    text-decoration: none; border: none; white-space: nowrap;
+    transition: background .15s, color .15s;
+}
+.aud-btn--primary { background: var(--accent); color: #fff; }
+.aud-btn--primary:hover { background: #17a085; color: #fff; }
+.aud-btn--ghost {
+    background: var(--bg-main); color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+.aud-btn--ghost:hover { border-color: var(--accent); color: var(--accent); }
+.aud-btn--export { background: var(--green-light); color: var(--green); }
+.aud-btn--export:hover { background: #a7f3d0; color: var(--green); }
+
+/* Table card */
+.aud-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 20px;
+}
+.aud-table { width: 100%; border-collapse: collapse; }
+.aud-table thead tr {
+    background: var(--bg-main);
+    border-bottom: 2px solid var(--border);
+}
+.aud-table th {
+    padding: 10px 14px;
+    font-size: 11px; font-weight: 700;
+    color: var(--text-muted); letter-spacing: .5px; text-transform: uppercase;
+    text-align: left; white-space: nowrap;
+}
+.aud-table td { padding: 11px 14px; font-size: 13px; vertical-align: middle; }
+.aud-row {
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; transition: background .1s;
+}
+.aud-row:hover, .aud-row--active { background: var(--accent-light); }
+.aud-table tbody tr.aud-row:last-of-type { border-bottom: none; }
+
+/* Cell variants */
+.aud-cell-muted { color: var(--text-muted); font-size: 12px; }
+.aud-cell-mono  { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.aud-desc {
+    max-width: 320px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text-primary);
+}
+
+/* Badges */
+.aud-badge {
+    display: inline-block; padding: 2px 9px; border-radius: 99px;
+    font-size: 11px; font-weight: 700; letter-spacing: .3px;
+    white-space: nowrap; text-transform: uppercase;
+}
+.aud-badge--green  { background: var(--green-light);  color: var(--green);  }
+.aud-badge--yellow { background: var(--yellow-light); color: var(--yellow); }
+.aud-badge--red    { background: var(--red-light);    color: var(--red);    }
+.aud-badge--blue   { background: var(--blue-light);   color: var(--blue);   }
+.aud-badge--accent { background: var(--accent-light); color: var(--accent); }
+.aud-badge--muted  {
+    background: var(--bg-main); color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+
+/* Detail row */
+.aud-detail { display: none; background: var(--accent-light); }
+.aud-detail--open { display: table-row; }
+.aud-detail > td { padding: 0; border-bottom: 1px solid var(--accent-mid); }
+.aud-detail-inner { padding: 14px 20px; }
+.aud-dl {
+    display: grid; grid-template-columns: 110px 1fr;
+    gap: 6px 16px; font-size: 13px;
+}
+.aud-dl dt { font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
+.aud-dl dd { color: var(--text-primary); margin: 0; word-break: break-word; }
+
+/* Empty state */
+.aud-empty {
+    padding: 64px 0; text-align: center;
+    color: var(--text-muted);
+}
+.aud-empty i { font-size: 40px; margin-bottom: 12px; display: block; color: var(--accent-mid); }
+.aud-empty p { font-size: 14px; }
+
+/* Pagination */
+.aud-pager {
+    display: flex; align-items: center; gap: 4px;
+    justify-content: center; flex-wrap: wrap;
+}
+.aud-page-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 34px; height: 34px; padding: 0 10px;
+    border-radius: 8px; font-size: 13px; font-weight: 600;
+    color: var(--text-secondary); background: var(--bg-card);
+    border: 1px solid var(--border); text-decoration: none;
+    transition: background .12s, border-color .12s, color .12s;
+}
+.aud-page-btn:hover { border-color: var(--accent); color: var(--accent); }
+.aud-page-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.aud-page-ellipsis { color: var(--text-muted); font-size: 13px; padding: 0 4px; }
+.aud-page-info { font-size: 12px; color: var(--text-muted); margin-left: 8px; }

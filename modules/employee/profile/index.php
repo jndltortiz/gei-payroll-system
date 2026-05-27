@@ -6,7 +6,7 @@
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../includes/auth.php';
-requireEmployee();
+requireEmployeeAccess();
 
 $empId = (int)($_SESSION['user']['employee_id'] ?? 0);
 
@@ -121,7 +121,15 @@ function fSize(?int $bytes): string {
 }
 ?>
 <body>
-<?php include __DIR__ . '/../../../includes/employee-sidebar.php'; ?>
+<?php
+if (isAdmin()):
+    include __DIR__ . '/../../../includes/sidebar.php';
+elseif (isPrincipalRole()):
+    include __DIR__ . '/../../../includes/principal-sidebar.php';
+else:
+    include __DIR__ . '/../../../includes/employee-sidebar.php';
+endif;
+?>
 <div class="main">
   <?php include __DIR__ . '/../../../includes/header.php'; ?>
   <div class="content">
@@ -401,7 +409,7 @@ function fSize(?int $bytes): string {
                 </div>
                 <div class="emp-loan-bal">Balance: <?= fNum($ln['outstanding_balance']) ?> of <?= fNum($ln['principal_amount']) ?></div>
                 <div class="emp-leave-bar-wrap">
-                  <div class="emp-leave-bar" style="width:<?= $pctPaid ?>%;background:#2563eb;"></div>
+                  <div class="emp-leave-bar" style="width:<?= $pctPaid ?>%;"></div>
                 </div>
                 <small class="emp-loan-ded">Monthly deduction: <?= fNum($ln['monthly_deduction'] ?? 0) ?></small>
               </div>
@@ -566,7 +574,7 @@ function fSize(?int $bytes): string {
   border-radius:16px;padding:20px 24px;margin-bottom:16px;flex-wrap:wrap;
 }
 .emp-profile-avatar-hero {
-  width:68px;height:68px;background:linear-gradient(135deg,#2563eb,#1d4ed8);
+  width:68px;height:68px;background:linear-gradient(135deg,#0d3d36,#1db89a);
   color:#fff;border-radius:16px;display:flex;align-items:center;justify-content:center;
   font-size:24px;font-weight:800;flex-shrink:0;
 }
@@ -585,8 +593,8 @@ function fSize(?int $bytes): string {
   font-weight:500;color:#6b7280;white-space:nowrap;display:flex;align-items:center;
   gap:6px;border-bottom:2px solid transparent;transition:color 0.15s,border-color 0.15s;
 }
-.emp-ptab:hover { color:#2563eb; }
-.emp-ptab.active { color:#2563eb;border-bottom-color:#2563eb;font-weight:700; }
+.emp-ptab:hover { color:var(--accent); }
+.emp-ptab.active { color:var(--accent);border-bottom-color:var(--accent);font-weight:700; }
 
 .emp-profile-body { background:#f9fafb;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px; }
 .emp-tab-panel { display:none; }
@@ -599,25 +607,25 @@ function fSize(?int $bytes): string {
 .emp-info-card--full { grid-column:1/-1; }
 .emp-info-title {
   font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;
-  color:#2563eb;margin-bottom:12px;display:flex;align-items:center;gap:6px;
+  color:var(--accent);margin-bottom:12px;display:flex;align-items:center;gap:6px;
 }
 .emp-detail-row { display:flex;flex-direction:column;margin-bottom:10px; }
 .emp-dr-label { font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:2px; }
 .emp-dr-val   { font-size:13px;color:#111827;font-weight:500; }
-.emp-salary-val { color:#2563eb;font-size:15px !important;font-weight:700 !important; }
+.emp-salary-val { color:var(--accent);font-size:15px !important;font-weight:700 !important; }
 
 .emp-info-readonly-note {
   display:flex;align-items:center;gap:6px;font-size:11px;color:#9ca3af;
   margin-top:12px;padding:8px 12px;background:#f9fafb;border-radius:8px;
 }
 .emp-edit-inline-btn {
-  margin-left:auto;background:none;border:1px solid #bfdbfe;color:#2563eb;
+  margin-left:auto;background:none;border:1px solid var(--accent-mid);color:var(--accent);
   border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;
   display:flex;align-items:center;gap:4px;
 }
-.emp-edit-inline-btn:hover { background:#eff6ff; }
+.emp-edit-inline-btn:hover { background:var(--accent-light); }
 
-.emp-edu-item { border-left:3px solid #bfdbfe;padding:8px 12px;margin-bottom:8px;background:#eff6ff;border-radius:0 8px 8px 0; }
+.emp-edu-item { border-left:3px solid var(--accent-mid);padding:8px 12px;margin-bottom:8px;background:var(--accent-light);border-radius:0 8px 8px 0; }
 .emp-edu-degree { font-size:13px;font-weight:700;color:#111827; }
 .emp-edu-course { font-size:12px;color:#374151;margin-top:1px; }
 .emp-edu-meta   { font-size:11px;color:#6b7280;margin-top:2px; }
@@ -633,7 +641,7 @@ function fSize(?int $bytes): string {
 .emp-leave-name   { font-size:13px;font-weight:600;color:#111827; }
 .emp-leave-nums   { font-size:11px;color:#6b7280; }
 .emp-leave-bar-wrap { background:#e5e7eb;border-radius:999px;height:7px;overflow:hidden;margin-bottom:2px; }
-.emp-leave-bar    { background:#2563eb;height:100%;border-radius:999px;transition:width 0.4s; }
+.emp-leave-bar    { background:var(--accent);height:100%;border-radius:999px;transition:width 0.4s; }
 
 .emp-loan-item  { margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #f1f5f9; }
 .emp-loan-item:last-child { border-bottom:none; }
@@ -643,10 +651,10 @@ function fSize(?int $bytes): string {
 .emp-loan-ded   { font-size:11px;color:#9ca3af; }
 
 .emp-link-btn {
-  display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#2563eb;
-  text-decoration:none;padding:6px 12px;background:#eff6ff;border-radius:8px;
+  display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent);
+  text-decoration:none;padding:6px 12px;background:var(--accent-light);border-radius:8px;
 }
-.emp-link-btn:hover { background:#dbeafe; }
+.emp-link-btn:hover { background:var(--accent-mid); }
 
 .emp-empty-note { font-size:12px;color:#9ca3af;font-style:italic; }
 </style>

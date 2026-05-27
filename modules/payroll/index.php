@@ -7,11 +7,27 @@ requireLogin();
 $allPeriods = $pdo->query("SELECT * FROM payroll_periods ORDER BY pay_period_start DESC")->fetchAll();
 
 $selectedId = (int)($_GET['period_id'] ?? 0);
+// Only allow selecting active (non-released) periods in this module
+$activeStatuses = ['OPEN', 'PROCESSING', 'APPROVED'];
+if ($selectedId) {
+    // Reject a released period passed via URL — redirect to an active one
+    $selPeriodRow = null;
+    foreach ($allPeriods as $p) {
+        if ($p['period_id'] == $selectedId) { $selPeriodRow = $p; break; }
+    }
+    if ($selPeriodRow && $selPeriodRow['status'] === 'RELEASED') {
+        $selectedId = 0; // fall through to default
+    }
+}
 if (!$selectedId) {
     foreach ($allPeriods as $p) {
         if ($p['status'] === 'OPEN') { $selectedId = $p['period_id']; break; }
     }
-    if (!$selectedId && !empty($allPeriods)) $selectedId = $allPeriods[0]['period_id'];
+    if (!$selectedId) {
+        foreach ($allPeriods as $p) {
+            if (in_array($p['status'], $activeStatuses)) { $selectedId = $p['period_id']; break; }
+        }
+    }
 }
 
 $selectedPeriod = null;
@@ -255,22 +271,18 @@ require_once __DIR__ . '/../../includes/head.php';
                     <option value="">No pay periods found</option>
                 <?php else: ?>
                     <?php if (!empty($activePeriods)): ?>
-                    <optgroup label="Active Payrolls">
-                        <?php foreach ($activePeriods as $p): ?>
-                        <option value="<?= $p['period_id'] ?>" <?= $p['period_id'] == $selectedId ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($p['period_name']) ?>
-                        </option>
-                        <?php endforeach; ?>
-                    </optgroup>
-                    <?php endif; ?>
-                    <?php if (!empty($historyPeriods)): ?>
-                    <optgroup label="Released / Payroll History">
-                        <?php foreach ($historyPeriods as $p): ?>
-                        <option value="<?= $p['period_id'] ?>" <?= $p['period_id'] == $selectedId ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($p['period_name']) ?>
-                        </option>
-                        <?php endforeach; ?>
-                    </optgroup>
+                    <?php foreach ($activePeriods as $p):
+                        $isAccrued   = ($p['period_type'] ?? 'REGULAR') === 'ACCRUED_PAY';
+                        $optLabel    = $isAccrued
+                            ? 'Accrued Pay – ' . date('F Y', strtotime($p['pay_period_start'] ?? 'now'))
+                            : htmlspecialchars($p['period_name'] ?? '');
+                    ?>
+                    <option value="<?= $p['period_id'] ?>" <?= $p['period_id'] == $selectedId ? 'selected' : '' ?>>
+                        <?= $optLabel ?>
+                    </option>
+                    <?php endforeach; ?>
+                    <?php else: ?>
+                    <option value="" disabled>No active pay periods — see Payroll Archive for history</option>
                     <?php endif; ?>
                 <?php endif; ?>
             </select>

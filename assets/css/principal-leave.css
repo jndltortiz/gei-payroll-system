@@ -18,7 +18,7 @@
     box-shadow: var(--shadow);
     transition: box-shadow 0.15s, transform 0.15s;
 }
-a.lv-stat-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.10); transform: translateY(-1px); }
+a.lv-stat-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); }
 .lv-stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); margin-bottom: 6px; }
 .lv-stat-value { font-size: 26px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
 .lv-stat-sub   { font-size: 12px; color: var(--text-secondary); }
@@ -141,6 +141,7 @@ a.lv-stat-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.10); transform: transl
 .lv-badge--pending  { background: #fef9c3; color: #a16207; }
 .lv-badge--approved { background: var(--green-light); color: #065f46; }
 .lv-badge--rejected { background: var(--red-light); color: #991b1b; }
+.lv-badge--mixed    { background: #ede9fe; color: #7c3aed; }
 .lv-badge--partial  { background: #ede9fe; color: #7c3aed; }
 
 /* ── History Table ─────────────────────────────────────────── */
@@ -216,6 +217,11 @@ textarea.lv-form-control { resize: vertical; min-height: 80px; }
 .lv-status-badge--pending  { background: #fef9c3; color: #a16207; }
 .lv-status-badge--approved { background: var(--green-light); color: #065f46; }
 .lv-status-badge--rejected { background: var(--red-light); color: #991b1b; }
+
+/* ── Modal z-index layering ────────────────────────────────── */
+/* confirm/reject must paint above the view-details modal       */
+#confirmModal,
+#rejectModal  { z-index: 1010; }
 
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 900px) {

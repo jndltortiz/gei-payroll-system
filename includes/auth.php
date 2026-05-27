@@ -19,6 +19,30 @@ function requireLogin(): void
     }
 }
 
+/**
+ * Bare login check — no must_change_password redirect.
+ * Use ONLY on the change-password page and its action handler.
+ */
+function requireLoginOnly(): void
+{
+    if (!isLoggedIn()) {
+        header('Location: ' . BASE_URL . 'modules/auth/login.php');
+        exit;
+    }
+}
+
+/**
+ * If the current user has must_change_password = 1, redirect to the
+ * change-password page.  Call this from page-level guards only.
+ */
+function blockIfMustChangePassword(): void
+{
+    if (!empty($_SESSION['user']['must_change_password'])) {
+        header('Location: ' . BASE_URL . 'modules/auth/change-password.php');
+        exit;
+    }
+}
+
 function guestOnly(): void
 {
     if (isLoggedIn()) {
@@ -137,6 +161,21 @@ function isPrincipalRole(): bool
     ], true);
 }
 
+/**
+ * Returns true for ANY logged-in user who has a linked employee record.
+ * Covers the 'employee', 'admin', and 'principal' / 'special assistant' roles.
+ * Use as a predicate when you need to check self-service eligibility without
+ * blocking — use requireEmployeeAccess() to enforce it as a page guard.
+ */
+function hasEmployeeAccess(): bool
+{
+    if (!isLoggedIn()) {
+        return false;
+    }
+
+    return !empty($_SESSION['user']['employee_id']);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE GUARDS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,6 +186,7 @@ function isPrincipalRole(): bool
 function requirePrincipal(): void
 {
     requireLogin();
+    blockIfMustChangePassword();
 
     if (!isPrincipalRole()) {
         if (isEmployee()) {
@@ -164,6 +204,7 @@ function requirePrincipal(): void
 function requireAdminPage(): void
 {
     requireLogin();
+    blockIfMustChangePassword();
 
     if (!isAdmin()) {
         if (isPrincipalRole()) {
@@ -183,6 +224,7 @@ function requireAdminPage(): void
 function requireEmployee(): void
 {
     requireLogin();
+    blockIfMustChangePassword();
 
     if (!isEmployee()) {
         if (isPrincipalRole()) {
@@ -201,6 +243,33 @@ function requireEmployee(): void
 function requireHR(): void
 {
     requireAdminPage();
+}
+
+/**
+ * Self-service page guard — allows any role that has a linked employee record.
+ * Employee, Admin, and Principal all pass through when employee_id is set.
+ * If no employee_id is in the session, the user is redirected to their own
+ * primary portal home page (not to the employee portal).
+ *
+ * Use this instead of requireEmployee() on any self-service page that should
+ * also be accessible to Admin and Principal users.
+ */
+function requireEmployeeAccess(): void
+{
+    requireLogin();
+    blockIfMustChangePassword();
+
+    if (empty($_SESSION['user']['employee_id'])) {
+        // User is logged in but has no employee record — send them home
+        if (isPrincipalRole()) {
+            header('Location: ' . BASE_URL . 'modules/principal/dashboard/index.php');
+        } elseif (isAdmin()) {
+            header('Location: ' . BASE_URL . 'modules/dashboard/index.php');
+        } else {
+            header('Location: ' . BASE_URL . 'modules/auth/login.php');
+        }
+        exit;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -239,6 +308,30 @@ function requireEmployeeAction(): void
         echo json_encode([
             'success' => false,
             'message' => 'Access denied. Employee access required.',
+        ]);
+
+        exit;
+    }
+}
+
+/**
+ * Self-service AJAX guard — allows any role with a linked employee record.
+ * Employee, Admin, and Principal all pass when employee_id is set in session.
+ * Returns JSON 403 if not logged in or if no employee_id exists in session.
+ *
+ * Use this instead of requireEmployeeAction() on AJAX endpoints that should
+ * also be callable by Admin and Principal users for their own data.
+ */
+function requireEmployeeAjax(): void
+{
+    requireLogin();
+
+    if (empty($_SESSION['user']['employee_id'])) {
+        http_response_code(403);
+
+        echo json_encode([
+            'success' => false,
+            'message' => 'Access denied. No employee record is linked to your account.',
         ]);
 
         exit;

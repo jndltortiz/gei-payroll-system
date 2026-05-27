@@ -37,7 +37,7 @@ $remarks      = trim($_POST['remarks']  ?? '') ?: null;
 $reason       = trim($_POST['reason']   ?? '');
 
 $validStatuses = ['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'INCOMPLETE', 'LEAVE', 'HOLIDAY'];
-$validSources  = ['MANUAL_ADMIN', 'MANUAL', 'FACIAL_RECOGNITION', 'AUTO'];
+$validSources  = ['MANUAL_ADMIN', 'MANUAL', 'RFID', 'FACIAL_RECOGNITION', 'AUTO'];
 
 if (!$attendanceId) {
     echo json_encode(['success' => false, 'message' => 'Invalid attendance record ID.']);

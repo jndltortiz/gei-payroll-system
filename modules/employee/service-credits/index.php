@@ -5,7 +5,7 @@
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../includes/auth.php';
-requireEmployee();
+requireEmployeeAccess();
 
 $empId = (int)($_SESSION['user']['employee_id'] ?? 0);
 
@@ -85,29 +85,18 @@ require_once __DIR__ . '/../../../includes/head.php';
 ?>
 <body>
 <div class="layout">
-<?php include __DIR__ . '/../../../includes/employee-sidebar.php'; ?>
+<?php
+if (isAdmin()):
+    include __DIR__ . '/../../../includes/sidebar.php';
+elseif (isPrincipalRole()):
+    include __DIR__ . '/../../../includes/principal-sidebar.php';
+else:
+    include __DIR__ . '/../../../includes/employee-sidebar.php';
+endif;
+?>
 
 <div class="main">
-  <div class="header">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <i class="fa fa-medal" style="color:#0d9488;font-size:18px;"></i>
-      <div>
-        <div style="font-size:15px;font-weight:700;color:#0f172a;">Employee Portal</div>
-        <div style="font-size:12px;color:#64748b;">Great Eastern Institute</div>
-      </div>
-    </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
-      <div style="text-align:right;">
-        <div style="font-size:14px;font-weight:600;color:#0f172a;">
-          <?= htmlspecialchars(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['user']['last_name'] ?? '')) ?>
-        </div>
-        <div style="font-size:11px;color:#64748b;">Employee</div>
-      </div>
-      <div class="header-avatar">
-        <?= strtoupper(substr($_SESSION['user']['first_name'] ?? 'E', 0, 1) . substr($_SESSION['user']['last_name'] ?? 'M', 0, 1)) ?>
-      </div>
-    </div>
-  </div>
+  <?php $empPortalIcon = 'fa-medal'; include __DIR__ . '/../../../includes/employee-header.php'; ?>
 
   <div class="main-content">
   <div class="emp-page">
@@ -298,7 +287,7 @@ function openEmpScView(r) {
     const statusColors = {
         DRAFT:'#9ca3af', PENDING:'#d97706', APPROVED:'#059669',
         PARTIALLY_APPROVED:'#0e7490',
-        APPLIED:'#2563eb', RELEASED:'#7c3aed', REJECTED:'#ef4444'
+        APPLIED:'#1db89a', RELEASED:'#7c3aed', REJECTED:'#ef4444'
     };
     const st    = r.status || 'PENDING';
     const stLbl = statusLabels[st] || st;
@@ -382,7 +371,7 @@ function openEmpScView(r) {
     // Payroll reference
     let payrollRef = '<span style="color:#94a3b8;">Not yet applied</span>';
     if (r.payroll_id && (st === 'APPLIED' || st === 'RELEASED')) {
-        payrollRef = `<span style="font-weight:700;color:#2563eb;"><i class="fa fa-file-invoice-dollar" style="margin-right:4px;"></i>Payroll #${r.payroll_id}</span>`;
+        payrollRef = `<span style="font-weight:700;color:#1db89a;"><i class="fa fa-file-invoice-dollar" style="margin-right:4px;"></i>Payroll #${r.payroll_id}</span>`;
         if (r.pay_period_start && r.pay_period_end) {
             payrollRef += `<br><small style="color:#64748b;font-size:11px;">${fmtDate(r.pay_period_start)} – ${fmtDate(r.pay_period_end)}</small>`;
         }

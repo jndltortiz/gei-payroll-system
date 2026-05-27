@@ -4,18 +4,13 @@
    ============================================================ */
 
 /* ── Content area (dashboard uses .content not .main-content) ── */
-.content {
-    flex: 1; overflow-y: auto;
-    padding: 28px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
-}
+/* padding and animation inherited from global.css — no override needed */
 
 .page-header {
     display: flex; align-items: flex-start; justify-content: space-between;
     margin-bottom: 24px;
 }
-.page-title { font-size: 22px; font-weight: 700; color: var(--text-primary); }
+.page-title { font-size: var(--page-title-size, 20px); font-weight: 700; color: var(--text-primary); }
 .page-date  { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 
 /* ── Stat Cards (dashboard 4-col) ── */
@@ -31,7 +26,7 @@
     transition: transform 0.15s, box-shadow 0.15s;
     animation: fadeUp 0.4s ease both;
 }
-.stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
 .stat-card:nth-child(1) { animation-delay: 0.05s; }
 .stat-card:nth-child(2) { animation-delay: 0.1s; }
 .stat-card:nth-child(3) { animation-delay: 0.15s; }
@@ -103,6 +98,10 @@
 .badge.paid       { background: var(--green-light);  color: var(--green);  }
 .badge.pending    { background: var(--yellow-light); color: var(--yellow); }
 .badge.processing { background: var(--blue-light);   color: var(--blue);   }
+/* ── Payroll record statuses (DB values: DRAFT / APPROVED / RELEASED) ── */
+.badge.draft    { background: #f1f5f9; color: #64748b; }
+.badge.approved { background: var(--blue-light);  color: var(--blue);  }
+.badge.released { background: var(--green-light); color: var(--green); }
 
 /* ── Payroll Schedule ── */
 .payroll-schedule { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
@@ -125,7 +124,7 @@
 .schedule-amount { font-size: 14px; font-weight: 700; color: var(--accent); }
 
 /* ── Presence ── */
-.presence-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.presence-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
 .presence-tab {
     padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
     cursor: pointer; border: 1.5px solid var(--border);
@@ -140,9 +139,10 @@
 }
 .presence-name { font-weight: 500; color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
 .presence-name::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; display: inline-block; flex-shrink: 0; }
-.presence-name.present { color: var(--green); }
-.presence-name.late    { color: var(--yellow); }
-.presence-name.absent  { color: var(--red); }
+.presence-name.present   { color: var(--green);  }
+.presence-name.late      { color: var(--yellow); }
+.presence-name.half_day  { color: #f97316;       }
+.presence-name.absent    { color: var(--red);    }
 
 .pbadge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
 .pbadge.present { background: var(--green-light);  color: var(--green);  }
@@ -159,3 +159,14 @@
 .presence-stats { display: flex; gap: 14px; margin-bottom: 12px; font-size: 12px; }
 .pstat { display: flex; align-items: center; gap: 5px; color: var(--text-secondary); }
 .pstat-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+/* ── Empty states ── */
+.empty-state {
+    font-size: 13px; color: var(--text-muted);
+    text-align: center; padding: 22px 12px;
+}
+.presence-empty {
+    grid-column: 1 / -1;
+    font-size: 13px; color: var(--text-muted);
+    text-align: center; padding: 22px 0; margin: 0;
+}

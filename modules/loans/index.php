@@ -286,7 +286,16 @@ function formatEmpId(int $id): string {
           <span class="loan-status-badge loan-status--<?= strtolower($appStatus) ?>">
             <?= $appLabel ?>
           </span>
-          <button class="btn-outline btn-sm" onclick="openLoanDetails(<?= $app['loan_id'] ?>)">
+          <?php if (($app['filed_by'] ?? 'ADMIN') === 'EMPLOYEE'): ?>
+          <div style="margin-top:4px;font-size:10px;background:#dbeafe;color:#1d4ed8;
+                      padding:2px 7px;border-radius:4px;font-weight:700;text-align:center;">
+            SELF-SERVICE REQUEST
+          </div>
+          <?php endif; ?>
+          <button class="btn-outline btn-sm" onclick="openReview(<?= $app['loan_id'] ?>)" style="margin-top:4px;">
+            <i class="fa fa-magnifying-glass"></i> Review
+          </button>
+          <button class="btn-outline btn-sm" onclick="openLoanDetails(<?= $app['loan_id'] ?>)" style="margin-top:4px;">
             <i class="fa fa-eye"></i> View
           </button>
         </div>

@@ -11,7 +11,7 @@ $today = date('Y-m-d');
 $totalEmployees = $pdo->query("SELECT COUNT(*) FROM employees WHERE employee_status = 'ACTIVE'")->fetchColumn();
 
 $payrolls = $pdo->query("
-    SELECT 
+    SELECT
         e.first_name,
         e.last_name,
         d.department_name,
@@ -20,6 +20,7 @@ $payrolls = $pdo->query("
     FROM payroll_records pr
     JOIN employees e ON pr.employee_id = e.employee_id
     LEFT JOIN departments d ON e.department_id = d.department_id
+    WHERE pr.payroll_status = 'RELEASED'
     ORDER BY pr.created_at DESC
     LIMIT 5
 ")->fetchAll();
@@ -51,7 +52,7 @@ $lateEmployees = $pdo->prepare("
 $lateEmployees->execute([':today' => $today]);
 $lateEmployees = $lateEmployees->fetchAll();
 
-// ── FIX: fetch HALF_DAY employees (were previously invisible everywhere) ──
+// ── Half Day employees ──
 $halfDayEmployees = $pdo->prepare("
     SELECT e.first_name, e.last_name
     FROM attendance_records ar
@@ -62,47 +63,48 @@ $halfDayEmployees = $pdo->prepare("
 $halfDayEmployees->execute([':today' => $today]);
 $halfDayEmployees = $halfDayEmployees->fetchAll();
 
-// Absent = active employees with NO attendance record today at all
+// Absent = employees with an explicit ABSENT record today only
+// Employees with no record at all are excluded (no inference)
 $absentEmployees = $pdo->prepare("
     SELECT e.first_name, e.last_name
-    FROM employees e
-    WHERE e.employee_status = 'ACTIVE'
-    AND e.employee_id NOT IN (
-        SELECT employee_id 
-        FROM attendance_records 
-        WHERE attendance_date = :today
-    )
+    FROM attendance_records ar
+    JOIN employees e ON ar.employee_id = e.employee_id
+    WHERE ar.attendance_date = :today
+    AND ar.attendance_status = 'ABSENT'
 ");
 $absentEmployees->execute([':today' => $today]);
 $absentEmployees = $absentEmployees->fetchAll();
 
 // ── Derived counts ──
-$totalEmployeesCount = $totalEmployees;
-$presentCount  = count($presentEmployees);
-$lateCount     = count($lateEmployees);
-$halfDayCount  = count($halfDayEmployees);   // ← NEW
-$absentCount   = count($absentEmployees);
+$presentCount = count($presentEmployees);
+$lateCount    = count($lateEmployees);
+$halfDayCount = count($halfDayEmployees);
+$absentCount  = count($absentEmployees);   // explicit ABSENT records only
 
-// ── FIX: attendance rate counts PRESENT + LATE + HALF_DAY as "attended" ──
+// Total employees with any attendance record today (used for "All" tab + no-data guard)
+$todayRecordTotal = $presentCount + $lateCount + $halfDayCount + $absentCount;
+
+// Attended = PRESENT + LATE + HALF_DAY
 $presentToday = $presentCount + $lateCount + $halfDayCount;
 
-// New employees this month
+// New employees this month — ACTIVE only (excludes inactive/terminated hires)
 $newThisMonth = $pdo->prepare("
-    SELECT COUNT(*) FROM employees 
-    WHERE MONTH(hire_date) = MONTH(CURDATE()) 
+    SELECT COUNT(*) FROM employees
+    WHERE MONTH(hire_date) = MONTH(CURDATE())
     AND YEAR(hire_date) = YEAR(CURDATE())
+    AND employee_status = 'ACTIVE'
 ");
 $newThisMonth->execute();
 $newThisMonth = (int)$newThisMonth->fetchColumn();
 
-// ── Attendance rate ──
-$attendanceRate = $totalEmployees > 0 
-    ? round(($presentToday / $totalEmployees) * 100) 
-    : 0;
+// ── Attendance rate — null when no attendance data exists yet today ──
+$attendanceRate = ($todayRecordTotal > 0 && $totalEmployees > 0)
+    ? round(($presentToday / $totalEmployees) * 100)
+    : null;
 
-$totalPayroll = $pdo->query("SELECT SUM(net_pay) FROM payroll_records")->fetchColumn();
+$totalPayroll = $pdo->query("SELECT SUM(net_pay) FROM payroll_records WHERE payroll_status = 'RELEASED'")->fetchColumn();
 
-// ── FIX: weekly chart also counts HALF_DAY as attended ──
+// ── Weekly attendance chart (PRESENT + LATE + HALF_DAY = attended; ABSENT = explicit absent only) ──
 $weeklyAttendance = $pdo->query("
     SELECT
         DATE(attendance_date) as date,
@@ -140,23 +142,23 @@ for ($i = 6; $i >= 0; $i--) {
 
 $activities = [];
 
-// Attendance activity
+// Attendance activity — order by created_at so edits/backfills don't distort recency
 $attendanceLogs = $pdo->query("
-    SELECT e.first_name, e.last_name, ar.attendance_date
+    SELECT e.first_name, e.last_name, ar.created_at
     FROM attendance_records ar
     JOIN employees e ON ar.employee_id = e.employee_id
-    ORDER BY ar.attendance_date DESC
+    ORDER BY ar.created_at DESC
     LIMIT 3
 ")->fetchAll();
 
 foreach ($attendanceLogs as $log) {
     $activities[] = [
         'text' => $log['first_name'] . ' ' . $log['last_name'] . ' checked in',
-        'time' => $log['attendance_date']
+        'time' => $log['created_at']
     ];
 }
 
-// Leave activity
+// Leave activity — created_at already consistent with attendance timestamp
 $leaveLogs = $pdo->query("
     SELECT e.first_name, e.last_name, lr.created_at
     FROM leave_requests lr
@@ -171,8 +173,21 @@ foreach ($leaveLogs as $log) {
         'time' => $log['created_at']
     ];
 }
-?>
-<?php
+
+// Unified sort: newest first across both sources
+usort($activities, fn($a, $b) => strcmp($b['time'], $a['time']));
+
+// Deduplicate: drop consecutive entries with identical text (e.g. same person filing two back-to-back leaves)
+$deduped  = [];
+$prevText = null;
+foreach ($activities as $act) {
+    if ($act['text'] !== $prevText) {
+        $deduped[] = $act;
+        $prevText  = $act['text'];
+    }
+}
+$activities = $deduped;
+
 $pageTitle = 'Dashboard';
 $extraCSS  = [BASE_URL . 'assets/css/dashboard.css'];
 require_once __DIR__ . '/../../includes/head.php';
@@ -226,10 +241,10 @@ require_once __DIR__ . '/../../includes/head.php';
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </div>
         </div>
-        <div class="stat-value"><?php echo $attendanceRate; ?>%</div>
+        <div class="stat-value"><?= $attendanceRate !== null ? $attendanceRate . '%' : '—' ?></div>
         <div class="stat-sub neutral">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-          Present Today: <?php echo $presentToday; ?>
+          <?= $attendanceRate !== null ? 'Present Today: ' . $presentToday : 'No attendance records yet today' ?>
         </div>
       </div>
       <div class="stat-card">
@@ -240,9 +255,9 @@ require_once __DIR__ . '/../../includes/head.php';
           </div>
         </div>
         <div class="stat-value"><?php echo $pendingLeaves; ?></div>
-        <div class="stat-sub warning">
+        <div class="stat-sub <?= $pendingLeaves > 0 ? 'warning' : 'neutral' ?>">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          Needs approval
+          <?= $pendingLeaves > 0 ? 'Needs approval' : 'No pending requests' ?>
         </div>
       </div>
       <div class="stat-card">
@@ -255,7 +270,7 @@ require_once __DIR__ . '/../../includes/head.php';
         <div class="stat-value">₱<?php echo number_format($totalPayroll ?? 0, 2); ?></div>
         <div class="stat-sub positive">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-          For <?= date('M') ?> <?= date('d') <= 15 ? '1–15' : '16–' . date('t') ?> period
+          All released payroll periods
         </div>
       </div>
     </div>
@@ -280,15 +295,19 @@ require_once __DIR__ . '/../../includes/head.php';
           <div class="card-title">Recent Activity</div>
         </div>
         <div class="activity-list">
+            <?php if (empty($activities)): ?>
+            <p class="empty-state">No recent activity to show.</p>
+            <?php else: ?>
             <?php foreach ($activities as $act): ?>
             <div class="activity-item">
                 <div class="activity-dot green"></div>
                 <div class="activity-text">
-                <strong><?php echo $act['text']; ?></strong>
+                <strong><?php echo htmlspecialchars($act['text']); ?></strong>
                 <span><?php echo date('M d, Y', strtotime($act['time'])); ?></span>
                 </div>
             </div>
             <?php endforeach; ?>
+            <?php endif; ?>
         </div>
       </div>
     </div>
@@ -315,18 +334,22 @@ require_once __DIR__ . '/../../includes/head.php';
               </tr>
             </thead>
             <tbody>
+                <?php if (empty($payrolls)): ?>
+                <tr><td colspan="4" class="empty-state">No released payroll records yet.</td></tr>
+                <?php else: ?>
                 <?php foreach ($payrolls as $pay): ?>
                 <tr>
-                    <td><?php echo $pay['first_name'] . ' ' . $pay['last_name']; ?></td>
-                    <td><?php echo $pay['department_name']; ?></td>
+                    <td><?php echo htmlspecialchars($pay['first_name'] . ' ' . $pay['last_name']); ?></td>
+                    <td><?php echo htmlspecialchars($pay['department_name'] ?? '—'); ?></td>
                     <td>₱<?php echo number_format($pay['net_pay'], 2); ?></td>
                     <td>
-                        <span class="badge">
+                        <span class="badge <?= strtolower($pay['payroll_status']) ?>">
                             <?php echo $pay['payroll_status']; ?>
                         </span>
                     </td>
                 </tr>
                 <?php endforeach; ?>
+                <?php endif; ?>
             </tbody>
           </table>
         </div>
@@ -341,7 +364,6 @@ require_once __DIR__ . '/../../includes/head.php';
           </div>
         </div>
 
-        <!-- FIX: presence stats now includes Half Day pill -->
         <div class="presence-stats">
           <div class="pstat"><div class="pstat-dot" style="background:var(--green)"></div> <?php echo $presentCount; ?> Present</div>
           <div class="pstat"><div class="pstat-dot" style="background:var(--yellow)"></div> <?php echo $lateCount; ?> Late</div>
@@ -349,9 +371,8 @@ require_once __DIR__ . '/../../includes/head.php';
           <div class="pstat"><div class="pstat-dot" style="background:var(--red)"></div> <?php echo $absentCount; ?> Absent</div>
         </div>
 
-        <!-- FIX: filter tabs now includes Half Day tab -->
         <div class="presence-tabs">
-          <button class="presence-tab active" onclick="filterPresence('all', this)">All <strong><?php echo $totalEmployeesCount; ?></strong></button>
+          <button class="presence-tab active" onclick="filterPresence('all', this)">All <strong><?php echo $todayRecordTotal; ?></strong></button>
           <button class="presence-tab" onclick="filterPresence('present', this)">Present <strong><?php echo $presentCount; ?></strong></button>
           <button class="presence-tab" onclick="filterPresence('late', this)">Late <strong><?php echo $lateCount; ?></strong></button>
           <button class="presence-tab" onclick="filterPresence('half_day', this)">Half Day <strong><?php echo $halfDayCount; ?></strong></button>
@@ -359,6 +380,10 @@ require_once __DIR__ . '/../../includes/head.php';
         </div>
 
         <div class="presence-grid" id="presenceGrid">
+          <?php if ($todayRecordTotal === 0): ?>
+            <p class="presence-empty">No attendance records for today yet.</p>
+          <?php else: ?>
+
           <?php foreach ($presentEmployees as $emp): ?>
             <div class="presence-item" data-status="present">
                 <span class="presence-name present">
@@ -375,10 +400,9 @@ require_once __DIR__ . '/../../includes/head.php';
             </div>
           <?php endforeach; ?>
 
-          <!-- FIX: half-day employees now rendered in the grid -->
           <?php foreach ($halfDayEmployees as $emp): ?>
             <div class="presence-item" data-status="half_day">
-                <span class="presence-name half_day" style="color:#f97316;">
+                <span class="presence-name half_day">
                 <?php echo htmlspecialchars($emp['first_name'] . ' ' . $emp['last_name']); ?>
                 </span>
             </div>
@@ -391,6 +415,8 @@ require_once __DIR__ . '/../../includes/head.php';
                 </span>
             </div>
           <?php endforeach; ?>
+
+          <?php endif; ?>
         </div>
       </div>
 

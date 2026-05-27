@@ -98,7 +98,7 @@ try {
         echo json_encode(['success' => true, 'message' => 'Leave request forwarded to principal.']);
 
     } elseif ($action === 'record') {
-        // Validate: principal should have acted on all dates (no PENDING dates remaining)
+        // Validate: principal must have acted on all dates
         $stmtPending = $pdo->prepare("
             SELECT COUNT(*) FROM leave_request_dates WHERE leave_id = ? AND status = 'PENDING'
         ");
@@ -113,14 +113,116 @@ try {
             exit;
         }
 
+        $pdo->beginTransaction();
+
+        $siblingId = null;
+
+        // ── If mixed (PARTIALLY_APPROVED): split now into APPROVED + REJECTED records
+        if ($leave['status'] === 'PARTIALLY_APPROVED') {
+            $ri = $pdo->prepare("
+                SELECT MIN(leave_date) AS start_d, MAX(leave_date) AS end_d, COUNT(*) AS cnt
+                FROM leave_request_dates WHERE leave_id = ? AND status = 'REJECTED'
+            ");
+            $ri->execute([$leaveId]);
+            $ri = $ri->fetch(PDO::FETCH_ASSOC);
+
+            $ai = $pdo->prepare("
+                SELECT MIN(leave_date) AS start_d, MAX(leave_date) AS end_d, COUNT(*) AS cnt
+                FROM leave_request_dates WHERE leave_id = ? AND status = 'APPROVED'
+            ");
+            $ai->execute([$leaveId]);
+            $ai = $ai->fetch(PDO::FETCH_ASSOC);
+
+            // Insert REJECTED sibling
+            $pdo->prepare("
+                INSERT INTO leave_requests
+                    (employee_id, leave_type_id, start_date, end_date, total_days,
+                     reason, status, approved_by, approved_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'REJECTED', ?, ?, ?, NOW())
+            ")->execute([
+                $leave['employee_id'], $leave['leave_type_id'],
+                $ri['start_d'], $ri['end_d'], (int)$ri['cnt'],
+                $leave['reason'],
+                $leave['approved_by'],
+                $leave['approved_at'],
+                $leave['created_at'],
+            ]);
+            $siblingId = (int)$pdo->lastInsertId();
+
+            // Copy optional migration columns to sibling
+            try {
+                $pdo->prepare("
+                    UPDATE leave_requests
+                    SET school_year_id      = ?,
+                        is_backdated        = ?
+                    WHERE leave_id = ?
+                ")->execute([
+                    $leave['school_year_id'] ?? null,
+                    $leave['is_backdated']   ?? 0,
+                    $siblingId,
+                ]);
+            } catch (PDOException $_e) {}
+
+            // Move rejected dates to sibling
+            $pdo->prepare("
+                UPDATE leave_request_dates SET leave_id = ?
+                WHERE leave_id = ? AND status = 'REJECTED'
+            ")->execute([$siblingId, $leaveId]);
+
+            // Narrow original to approved dates only
+            $pdo->prepare("
+                UPDATE leave_requests
+                SET status     = 'APPROVED',
+                    total_days = ?,
+                    start_date = ?,
+                    end_date   = ?,
+                    updated_at = NOW()
+                WHERE leave_id = ?
+            ")->execute([(int)$ai['cnt'], $ai['start_d'], $ai['end_d'], $leaveId]);
+
+            // Audit split
+            $pdo->prepare("
+                INSERT INTO audit_logs (user_id, action, table_name, record_id, description, created_at)
+                VALUES (?, 'RECORD_SPLIT', 'leave_requests', ?, ?, NOW())
+            ")->execute([
+                $userId, $leaveId,
+                "Mixed leave #{$leaveId} split at record time: approved portion kept, REJECTED sibling #{$siblingId} created.",
+            ]);
+        }
+
+        // ── Mark original as RECORDED ────────────────────────────────────────────
         if ($hasMig016) {
             $pdo->prepare("
                 UPDATE leave_requests SET workflow_status = 'RECORDED', updated_at = NOW()
                 WHERE leave_id = ?
             ")->execute([$leaveId]);
         }
+        try {
+            $pdo->prepare("
+                UPDATE leave_requests
+                SET is_attendance_recorded = 1, recorded_at = NOW(), recorded_by = ?
+                WHERE leave_id = ?
+            ")->execute([$userId, $leaveId]);
+        } catch (PDOException $_e) {}
 
-        // Attendance sync: ABSENT → LEAVE for all approved dates
+        // ── Mark sibling as RECORDED too (if split occurred) ────────────────────
+        if ($siblingId) {
+            if ($hasMig016) {
+                $pdo->prepare("
+                    UPDATE leave_requests SET workflow_status = 'RECORDED', updated_at = NOW()
+                    WHERE leave_id = ?
+                ")->execute([$siblingId]);
+            }
+            try {
+                $pdo->prepare("
+                    UPDATE leave_requests
+                    SET is_attendance_recorded = 1, recorded_at = NOW(), recorded_by = ?
+                    WHERE leave_id = ?
+                ")->execute([$userId, $siblingId]);
+            } catch (PDOException $_e) {}
+        }
+
+        // ── Attendance sync: ABSENT → LEAVE for all APPROVED dates ───────────────
         $stmtApproved = $pdo->prepare("
             SELECT leave_date FROM leave_request_dates WHERE leave_id = ? AND status = 'APPROVED'
         ");
@@ -145,8 +247,11 @@ try {
             VALUES (?, 'RECORD_RESULT', 'leave_requests', ?, ?, NOW())
         ")->execute([
             $userId, $leaveId,
-            "Recorded result for leave #{$leaveId}. Attendance synced: {$synced} record(s) updated to LEAVE.",
+            "Recorded result for leave #{$leaveId}. Attendance synced: {$synced} record(s) updated to LEAVE."
+            . ($siblingId ? " REJECTED sibling #{$siblingId} also recorded." : ''),
         ]);
+
+        $pdo->commit();
 
         echo json_encode([
             'success' => true,

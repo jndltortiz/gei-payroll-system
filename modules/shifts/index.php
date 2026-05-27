@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/auth.php';
-requireLogin();
+requireAdminPage();
 
 // ── Flash messages ────────────────────────────────────────────────────────────
 $flashOk  = $_SESSION['sh_success'] ?? '';
@@ -39,6 +39,10 @@ require_once __DIR__ . '/../../includes/head.php';
 <div class="main-content">
 
 <div class="sh-page">
+
+  <a href="<?= BASE_URL ?>modules/settings/index.php" class="back-link">
+    <i class="fa fa-arrow-left"></i> Back to Settings
+  </a>
 
   <!-- Page Header -->
   <div class="sh-page-header">

@@ -5,7 +5,7 @@
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../includes/auth.php';
-requireEmployee();
+requireEmployeeAccess();
 
 $empId = (int)($_SESSION['user']['employee_id'] ?? 0);
 
@@ -53,29 +53,18 @@ require_once __DIR__ . '/../../../includes/head.php';
 ?>
 <body>
 <div class="layout">
-<?php include __DIR__ . '/../../../includes/employee-sidebar.php'; ?>
+<?php
+if (isAdmin()):
+    include __DIR__ . '/../../../includes/sidebar.php';
+elseif (isPrincipalRole()):
+    include __DIR__ . '/../../../includes/principal-sidebar.php';
+else:
+    include __DIR__ . '/../../../includes/employee-sidebar.php';
+endif;
+?>
 
 <div class="main">
-  <div class="header">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <i class="fa fa-file-invoice-dollar" style="color:#2563eb;font-size:18px;"></i>
-      <div>
-        <div style="font-size:15px;font-weight:700;color:#0f172a;">Employee Portal</div>
-        <div style="font-size:12px;color:#64748b;">Great Eastern Institute</div>
-      </div>
-    </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
-      <div style="text-align:right;">
-        <div style="font-size:14px;font-weight:600;color:#0f172a;">
-          <?= htmlspecialchars(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['user']['last_name'] ?? '')) ?>
-        </div>
-        <div style="font-size:11px;color:#64748b;">Employee</div>
-      </div>
-      <div class="header-avatar">
-        <?= strtoupper(substr($_SESSION['user']['first_name'] ?? 'E', 0, 1) . substr($_SESSION['user']['last_name'] ?? 'M', 0, 1)) ?>
-      </div>
-    </div>
-  </div>
+  <?php $empPortalIcon = 'fa-file-invoice-dollar'; include __DIR__ . '/../../../includes/employee-header.php'; ?>
 
   <div class="main-content">
   <div class="emp-page">
@@ -171,7 +160,7 @@ require_once __DIR__ . '/../../../includes/head.php';
           <td style="padding:14px 16px;text-align:right;color:#dc2626;font-weight:600;">
             ₱<?= number_format((float)$ps['total_deductions'], 2) ?>
           </td>
-          <td style="padding:14px 16px;text-align:right;font-weight:700;color:#2563eb;font-size:14px;">
+          <td style="padding:14px 16px;text-align:right;font-weight:700;color:var(--accent);font-size:14px;">
             ₱<?= number_format((float)$ps['net_pay'], 2) ?>
           </td>
           <td style="padding:14px 16px;text-align:center;color:#64748b;font-size:12px;">
@@ -235,6 +224,17 @@ require_once __DIR__ . '/../../../includes/head.php';
       <!-- Payroll / Payslip reference numbers -->
       <div id="ps-numbers" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;font-size:12px;color:#64748b;padding:8px 14px 0;"></div>
 
+      <!-- Accrued Pay banner (shown only for ACCRUED_PAY period_type) -->
+      <div id="ps-accrued-banner" style="display:none;margin:10px 0 0;background:linear-gradient(135deg,#7c3aed08,#7c3aed12);border:1px solid #7c3aed33;border-radius:8px;padding:10px 14px;display:none;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <i class="fa fa-star" style="color:#7c3aed;font-size:13px;"></i>
+          <div>
+            <div style="font-size:12px;font-weight:700;color:#7c3aed;">End-of-School-Year (EOSY) Accrued Pay</div>
+            <div style="font-size:11px;color:#6d28d9;margin-top:2px;">This payslip covers your Additional Assignment Pay for approved service credits earned during the school year. Basic pay reflects any remaining accrued amounts due at settlement.</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Employee info -->
       <div class="ps-emp-info">
         <div class="ps-emp-name" id="ps-empname"></div>
@@ -288,22 +288,36 @@ require_once __DIR__ . '/../../../includes/head.php';
         </div>
       </div>
 
-      <!-- Earnings -->
+      <!-- Salary for Payroll Period (Basic Pay) -->
       <div style="margin-bottom:14px;">
         <div class="ps-section-label ps-section-label--green">
-          <i class="fa fa-circle-plus"></i> Earnings
+          <i class="fa fa-money-bill-wave"></i> Salary for Payroll Period
         </div>
-        <div id="ps-earnings" class="ps-row-list ps-row-list--green"></div>
-        <div class="ps-total-bar ps-total-bar--green">
-          <span>Gross Pay</span>
-          <span id="ps-gross"></span>
+        <div id="ps-basicpay" class="ps-row-list ps-row-list--green"></div>
+      </div>
+
+      <!-- Overload / Additional Allowances -->
+      <div id="ps-allowances-section" style="display:none;margin-bottom:14px;">
+        <div class="ps-section-label ps-section-label--purple">
+          <i class="fa fa-circle-plus"></i> Overload / Additional Allowances
+        </div>
+        <div id="ps-allowances" class="ps-row-list ps-row-list--purple"></div>
+        <div class="ps-total-bar ps-total-bar--purple">
+          <span>Total Allowances</span>
+          <span id="ps-total-allowances"></span>
         </div>
       </div>
 
-      <!-- Deductions -->
+      <!-- Gross Pay -->
+      <div class="ps-net-box ps-net-box--green" style="margin-bottom:14px;">
+        <span class="ps-net-label">GROSS PAY</span>
+        <span class="ps-net-amount" id="ps-gross"></span>
+      </div>
+
+      <!-- Less: Deductions -->
       <div style="margin-bottom:14px;">
         <div class="ps-section-label ps-section-label--red">
-          <i class="fa fa-circle-minus"></i> Deductions
+          <i class="fa fa-circle-minus"></i> Less: Deductions
         </div>
         <div id="ps-deductions" class="ps-row-list ps-row-list--red"></div>
         <div class="ps-total-bar ps-total-bar--red">
@@ -319,22 +333,19 @@ require_once __DIR__ . '/../../../includes/head.php';
         <span class="ps-net-amount" id="ps-net"></span>
       </div>
 
-      <!-- Post-Deduction Additions (Rice Subsidy, Laundry) -->
-      <div id="ps-postded-section" style="display:none;margin-top:14px;">
-        <div class="ps-section-label ps-section-label--purple">
-          <i class="fa fa-circle-plus"></i> Additional Allowances
+      <!-- Employer Contributions (informational) -->
+      <div id="ps-employer-section" style="display:none;margin-top:14px;">
+        <div class="ps-section-label" style="background:#f8fafc;border-left:3px solid #94a3b8;color:#64748b;">
+          <i class="fa fa-building" style="color:#94a3b8;"></i> Employer Contributions <span style="font-size:10px;font-weight:400;">(GEI share — not deducted from your pay)</span>
         </div>
-        <div id="ps-postded" class="ps-row-list ps-row-list--purple"></div>
-        <div class="ps-total-bar ps-total-bar--purple">
-          <span>Total Additions</span>
-          <span id="ps-postded-total"></span>
+        <div id="ps-employer-rows" class="ps-row-list" style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;background:#f8fafc;"></div>
+        <div class="ps-total-bar" style="background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;">
+          <span>Total Employer Share</span>
+          <span id="ps-employer-total" style="font-weight:700;"></span>
         </div>
-      </div>
-
-      <!-- Total Take-Home Pay -->
-      <div id="ps-takehome-box" class="ps-net-box ps-net-box--purple" style="display:none;margin-top:8px;">
-        <span class="ps-net-label">TOTAL TAKE-HOME PAY</span>
-        <span class="ps-net-amount" id="ps-takehome"></span>
+        <div style="font-size:11px;color:#94a3b8;margin-top:5px;font-style:italic;">
+          * Employer contributions are not deducted from employee pay.
+        </div>
       </div>
 
       <!-- Released info -->
@@ -427,34 +438,35 @@ function viewPayslip(payrollId) {
                 attSection.style.display = 'none';
             }
 
-            // Classify allowances
-            const POST_DED = /rice|laundry/i;
-            const postDedAllowances = data.allowances.filter(a => POST_DED.test(a.name));
-            const coreAllowances    = data.allowances.filter(a => !POST_DED.test(a.name));
+            // All allowances grouped (rice, laundry, overload, custom — all before gross)
+            const allAllowances   = data.allowances.filter(a => parseFloat(a.amount || 0) !== 0);
+            const totalAllowances = allAllowances.reduce((s, a) => s + parseFloat(a.amount || 0), 0);
 
-            const postDedTotal    = postDedAllowances.reduce((s, a) => s + parseFloat(a.amount || 0), 0);
-            const coreGross       = parseFloat(r.gross_pay) - postDedTotal;
-            const intermediateNet = parseFloat(r.net_pay) - postDedTotal;
-            const finalTakeHome   = parseFloat(r.net_pay);
-
-            document.getElementById('ps-gross').textContent    = fmt(coreGross);
+            document.getElementById('ps-gross').textContent    = fmt(r.gross_pay);
             document.getElementById('ps-totalded').textContent = fmt(r.total_deductions);
-            document.getElementById('ps-net').textContent      = fmt(intermediateNet);
+            document.getElementById('ps-net').textContent      = fmt(r.net_pay);
 
-            // Earnings rows
-            const earningsEl = document.getElementById('ps-earnings');
-            earningsEl.innerHTML = '';
-            if (parseFloat(r.basic_pay) > 0) {
-                earningsEl.innerHTML += rowHtml('Basic Pay', r.basic_pay);
-            }
-            coreAllowances.forEach(a => {
-                let label = a.name;
-                if (/additional assignment/i.test(a.name)) label += ' (Overload)';
-                if (parseInt(a.is_service_credit || 0)) label += ' (Service Credit)';
-                earningsEl.innerHTML += rowHtml(label, a.amount);
-            });
-            if (!earningsEl.innerHTML) {
-                earningsEl.innerHTML = '<div style="padding:10px 14px;color:#94a3b8;font-size:12px;">No earnings recorded.</div>';
+            // Basic Pay section
+            const basicPayEl = document.getElementById('ps-basicpay');
+            basicPayEl.innerHTML = parseFloat(r.basic_pay) > 0
+                ? rowHtml('Basic Pay', r.basic_pay)
+                : '<div style="padding:10px 14px;color:#94a3b8;font-size:12px;">No basic pay recorded.</div>';
+
+            // Allowances section
+            const allowancesSection = document.getElementById('ps-allowances-section');
+            const allowancesEl      = document.getElementById('ps-allowances');
+            if (allAllowances.length) {
+                allowancesEl.innerHTML = '';
+                allAllowances.forEach(a => {
+                    let label = a.name;
+                    if (/additional assignment/i.test(a.name)) label += ' (Overload)';
+                    if (parseInt(a.is_service_credit || 0)) label += ' (Service Credit)';
+                    allowancesEl.innerHTML += rowHtml(label, a.amount);
+                });
+                document.getElementById('ps-total-allowances').textContent = fmt(totalAllowances);
+                allowancesSection.style.display = 'block';
+            } else {
+                allowancesSection.style.display = 'none';
             }
 
             // Deduction rows
@@ -471,26 +483,35 @@ function viewPayslip(payrollId) {
 
             // Government deduction footnote
             const govNote = document.getElementById('ps-gov-note');
-            if (hasGovDeductions) {
-                govNote.textContent = '* SSS, PhilHealth, and Pag-IBIG amounts reflect employee share only.';
+            govNote.textContent = hasGovDeductions
+                ? '* SSS, PhilHealth, and Pag-IBIG amounts reflect employee share only.'
+                : '';
+
+            // Accrued Pay banner
+            const accruedBanner = document.getElementById('ps-accrued-banner');
+            if (r.period_type === 'ACCRUED_PAY') {
+                accruedBanner.style.display = 'block';
             } else {
-                govNote.textContent = '';
+                accruedBanner.style.display = 'none';
             }
 
-            // Post-deduction additions
-            const postDedSection = document.getElementById('ps-postded-section');
-            const takeHomeBox    = document.getElementById('ps-takehome-box');
-            if (postDedTotal > 0) {
-                const postDedEl = document.getElementById('ps-postded');
-                postDedEl.innerHTML = '';
-                postDedAllowances.forEach(a => { postDedEl.innerHTML += rowHtml(a.name, a.amount); });
-                document.getElementById('ps-postded-total').textContent = fmt(postDedTotal);
-                document.getElementById('ps-takehome').textContent      = fmt(finalTakeHome);
-                postDedSection.style.display = 'block';
-                takeHomeBox.style.display    = 'flex';
+            // Employer contributions
+            const empSSS        = parseFloat(r.employer_sss_share        || 0);
+            const empPhilHealth = parseFloat(r.employer_philhealth_share || 0);
+            const empPagIbig    = parseFloat(r.employer_pagibig_share    || 0);
+            const empTotal      = empSSS + empPhilHealth + empPagIbig;
+            const empSection    = document.getElementById('ps-employer-section');
+
+            if (empTotal > 0) {
+                const empRows = document.getElementById('ps-employer-rows');
+                empRows.innerHTML = '';
+                if (empSSS > 0)        empRows.innerHTML += empRowHtml('SSS (Employer Share)',        empSSS);
+                if (empPhilHealth > 0) empRows.innerHTML += empRowHtml('PhilHealth (Employer Share)', empPhilHealth);
+                if (empPagIbig > 0)    empRows.innerHTML += empRowHtml('Pag-IBIG (Employer Share)',   empPagIbig);
+                document.getElementById('ps-employer-total').textContent = fmt(empTotal);
+                empSection.style.display = 'block';
             } else {
-                postDedSection.style.display = 'none';
-                takeHomeBox.style.display    = 'none';
+                empSection.style.display = 'none';
             }
 
             // Released
@@ -511,6 +532,12 @@ function rowHtml(label, amount) {
     return '<div style="display:flex;justify-content:space-between;padding:9px 14px;font-size:13px;border-bottom:1px solid rgba(0,0,0,0.05);">' +
            '<span style="color:#374151;">' + esc(label) + '</span>' +
            '<span style="font-weight:600;color:#0f172a;">' + fmt(amount) + '</span></div>';
+}
+
+function empRowHtml(label, amount) {
+    return '<div style="display:flex;justify-content:space-between;padding:8px 14px;font-size:12px;border-bottom:1px solid #e2e8f0;">' +
+           '<span style="color:#64748b;">' + esc(label) + '</span>' +
+           '<span style="font-weight:600;color:#64748b;">' + fmt(amount) + '</span></div>';
 }
 
 function closePayslipModal() {

@@ -1,11 +1,11 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
+header('Content-Type: application/json');
 requireLogin();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: ../modules/employees/index.php');
-    exit;
+    echo json_encode(['success' => false, 'message' => 'Invalid request.']); exit;
 }
 
 try {
@@ -16,8 +16,35 @@ try {
     $curr = $existing->fetch(PDO::FETCH_ASSOC);
 
     if (!$curr) {
-        header('Location: ../modules/employees/index.php?error=notfound');
-        exit;
+        echo json_encode(['success' => false, 'message' => 'Employee not found.']); exit;
+    }
+
+    // ── Duplicate email check (exclude this employee) ─────────────────────────
+    $newEmail = trim($_POST['email'] ?? '');
+    if ($newEmail !== '') {
+        $dupEmail = $pdo->prepare(
+            "SELECT employee_id FROM employees WHERE email = ? AND employee_id != ? LIMIT 1"
+        );
+        $dupEmail->execute([$newEmail, $id]);
+        if ($dupEmail->fetch()) {
+            echo json_encode(['success' => false,
+                'message' => 'This school email is already assigned to another account.']);
+            exit;
+        }
+    }
+
+    // ── Duplicate username check (exclude this employee) ──────────────────────
+    $newUsername = trim($_POST['username'] ?? '');
+    if ($newUsername !== '') {
+        $dupUser = $pdo->prepare(
+            "SELECT user_id FROM users WHERE username = ? AND employee_id != ? LIMIT 1"
+        );
+        $dupUser->execute([$newUsername, $id]);
+        if ($dupUser->fetch()) {
+            echo json_encode(['success' => false,
+                'message' => 'This username is already in use.']);
+            exit;
+        }
     }
 
     $use = function($field, $dbField = null) use ($curr) {
@@ -134,6 +161,10 @@ try {
             $userParams[':role_id'] = (int)$roleRow['role_id'];
         }
     }
+    if (isset($_POST['force_password_change'])) {
+        $userSets[]  = 'must_change_password = :must_change';
+        $userParams[':must_change'] = (int)$_POST['force_password_change'];
+    }
 
     if (!empty($userSets)) {
         $pdo->prepare(
@@ -232,10 +263,10 @@ try {
                        "Updated employee record ID {$id}"]);
     }
 
-    header('Location: ../modules/employees/index.php?success=updated');
+    echo json_encode(['success' => true, 'message' => 'Employee updated successfully.']);
     exit;
 
 } catch (PDOException $e) {
-    header('Location: ../modules/employees/index.php?error=' . urlencode($e->getMessage()));
+    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
     exit;
 }

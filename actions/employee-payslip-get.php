@@ -7,7 +7,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 header('Content-Type: application/json');
-requireEmployeeAction();
+requireEmployeeAjax();
 
 $payrollId = (int)($_GET['payroll_id'] ?? 0);
 $empId     = (int)($_SESSION['user']['employee_id'] ?? 0);
@@ -21,8 +21,12 @@ if (!$payrollId || !$empId) {
 $stmt = $pdo->prepare("
     SELECT pr.payroll_id, pr.basic_pay, pr.gross_pay, pr.total_deductions, pr.net_pay,
            pr.released_by, pr.released_at, pr.payroll_status,
+           COALESCE(pr.employer_sss_share, 0)        AS employer_sss_share,
+           COALESCE(pr.employer_philhealth_share, 0) AS employer_philhealth_share,
+           COALESCE(pr.employer_pagibig_share, 0)    AS employer_pagibig_share,
            pp.period_id, pp.period_name, pp.pay_period_start, pp.pay_period_end,
            pp.payroll_number, pp.status AS period_status,
+           COALESCE(pp.period_type, 'REGULAR') AS period_type,
            CONCAT(e.first_name, ' ', e.last_name) AS employee_name,
            COALESCE(e.employee_no, CONCAT('EMP-', LPAD(e.employee_id, 5, '0'))) AS employee_no,
            e.employment_type,

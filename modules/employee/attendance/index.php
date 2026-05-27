@@ -5,7 +5,7 @@
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../includes/auth.php';
-requireEmployee();
+requireEmployeeAccess();
 
 $empId = (int)($_SESSION['user']['employee_id'] ?? 0);
 $today = date('Y-m-d');
@@ -167,6 +167,35 @@ if ($hasCorrections) {
     $myCorrections = $cListStmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
+// ── Approved leave dates — for display-level ABSENT→LEAVE override ───────────
+// Builds a set of dates where the employee has approved leave.
+// The underlying attendance_status stays ABSENT in the DB until admin records it.
+$leaveApprovedDates = [];
+try {
+    $lvQ = $pdo->prepare("
+        SELECT lrd.leave_date
+        FROM leave_requests lr
+        JOIN leave_request_dates lrd ON lr.leave_id = lrd.leave_id
+        WHERE lr.employee_id = ? AND lr.status = 'APPROVED'
+    ");
+    $lvQ->execute([$empId]);
+    $leaveApprovedDates = array_flip($lvQ->fetchAll(PDO::FETCH_COLUMN));
+} catch (PDOException $_lvE) {
+    // Fallback: date-range based (older schema without leave_request_dates)
+    try {
+        $lvQ = $pdo->prepare("
+            SELECT start_date, end_date FROM leave_requests
+            WHERE employee_id = ? AND status = 'APPROVED'
+        ");
+        $lvQ->execute([$empId]);
+        foreach ($lvQ->fetchAll(PDO::FETCH_ASSOC) as $lr) {
+            $d = strtotime($lr['start_date']);
+            $e = strtotime($lr['end_date']);
+            while ($d <= $e) { $leaveApprovedDates[date('Y-m-d', $d)] = 1; $d = strtotime('+1 day', $d); }
+        }
+    } catch (PDOException $_lvE2) {}
+}
+
 // ── Label maps ────────────────────────────────────────────────────────────────
 $ST_LABELS = [
     'PRESENT'    => 'Present',    'LATE'    => 'Late',       'HALF_DAY'   => 'Half Day',
@@ -189,10 +218,16 @@ $CORR_STATUS_LABELS = [
 ];
 
 // Render attendance table rows (shared across all tabs)
-$renderRow = function(array $r) use ($ST_LABELS, $RV_LABELS, $hasMig007, $hasCorrections, $empId): string {
+$renderRow = function(array $r) use ($ST_LABELS, $RV_LABELS, $hasMig007, $hasCorrections, $empId, $leaveApprovedDates): string {
     $st      = $r['attendance_status'];
-    $stCls   = strtolower($st);
-    $stLabel = htmlspecialchars($ST_LABELS[$st] ?? ucfirst(strtolower($st)));
+
+    // Display-only override: ABSENT → On Leave when employee has approved leave for this date.
+    // The DB record stays ABSENT until admin records it via Leave Management.
+    $isLeaveOverride = ($st === 'ABSENT') && isset($leaveApprovedDates[$r['attendance_date']]);
+    $stCls   = $isLeaveOverride ? 'leave' : strtolower($st);
+    $stLabel = $isLeaveOverride
+        ? htmlspecialchars('On Leave')
+        : htmlspecialchars($ST_LABELS[$st] ?? ucfirst(strtolower($st)));
     $rv      = $r['review_status'] ?? 'PENDING';
     $rvCls   = 'rv-' . strtolower($rv);
     $rvLabel = htmlspecialchars($RV_LABELS[$rv] ?? $rv);
@@ -201,12 +236,12 @@ $renderRow = function(array $r) use ($ST_LABELS, $RV_LABELS, $hasMig007, $hasCor
     $dt      = strtotime($r['attendance_date']);
     $src     = $r['attendance_source'] ?? '';
     $srcLabel = match($src) {
-        'MANUAL_ADMIN'       => 'Manual (Admin)',
+        'MANUAL_ADMIN'       => 'Manual',
         'MANUAL'             => 'Manual',
-        'FACIAL_RECOGNITION' => 'Biometric',
         'RFID'               => 'RFID',
+        'FACIAL_RECOGNITION' => 'Biometric',
         'AUTO'               => 'Auto-Tagged',
-        default              => ($src ?: '—'),
+        default              => ($src ?: 'Manual'),
     };
     $late  = (int)($r['late_minutes']     ?? 0);
     $ot    = (int)($r['overtime_minutes'] ?? 0);
@@ -245,7 +280,10 @@ $renderRow = function(array $r) use ($ST_LABELS, $RV_LABELS, $hasMig007, $hasCor
         <td>$shiftHtml</td>
         <td style=\"text-align:center;\">$tinHtml</td>
         <td style=\"text-align:center;\">$toutHtml</td>
-        <td style=\"text-align:center;\"><span class=\"att-badge $stCls\">$stLabel</span></td>
+        <td style=\"text-align:center;\">
+          <span class=\"att-badge $stCls\">$stLabel</span>"
+          . ($isLeaveOverride ? ' <span title="Approved leave — attendance will be updated once admin records the result." style="font-size:10px;color:#7c3aed;vertical-align:middle;cursor:default;">&#9432;</span>' : '')
+          . "</td>
         <td><span class=\"att-method-tag\">$srcLabel</span></td>
         $rvCol
         <td><div class=\"att-action-group\">$acts</div></td>
@@ -272,8 +310,8 @@ require_once __DIR__ . '/../../../includes/head.php';
 .att-sum-card.teal .att-sum-val   { color: #0f766e; }
 .att-sum-card.teal .att-sum-icon  { color: #0f766e; }
 
-.att-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
-.att-tab:hover  { color: #2563eb; }
+.att-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.att-tab:hover  { color: var(--accent); }
 
 /* Rate ring */
 .eatt-rate-wrap { display:flex;align-items:center;gap:12px; }
@@ -292,11 +330,11 @@ require_once __DIR__ . '/../../../includes/head.php';
 .eatt-btn-correct {
     display:inline-flex;align-items:center;gap:5px;
     padding:4px 10px;border-radius:6px;
-    border:1px solid #bfdbfe;background:#eff6ff;
-    color:#1d4ed8;font-size:11px;font-weight:600;cursor:pointer;
+    border:1px solid var(--accent-mid);background:var(--accent-light);
+    color:var(--accent);font-size:11px;font-weight:600;cursor:pointer;
     transition:all .15s;white-space:nowrap;
 }
-.eatt-btn-correct:hover { background:#dbeafe; }
+.eatt-btn-correct:hover { background:var(--accent-mid); }
 
 /* Corrections panel */
 .eatt-corrections-panel {
@@ -334,7 +372,7 @@ require_once __DIR__ . '/../../../includes/head.php';
     overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.18);
 }
 .eatt-modal-header {
-    background:#1e3a5f;color:#fff;
+    background:var(--sidebar-bg);color:#fff;
     padding:18px 22px;
     display:flex;align-items:center;justify-content:space-between;
     border-radius:14px 14px 0 0;
@@ -364,18 +402,18 @@ require_once __DIR__ . '/../../../includes/head.php';
     font-size:13px;font-family:inherit;box-sizing:border-box;
 }
 .eatt-field select:focus, .eatt-field textarea:focus, .eatt-field input:focus {
-    outline:none;border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.12);
+    outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(29,184,154,.12);
 }
 .eatt-btn-cancel {
     padding:9px 20px;border-radius:8px;background:#f1f5f9;border:1px solid #e2e8f0;
     color:#64748b;font-size:13px;font-weight:600;cursor:pointer;
 }
 .eatt-btn-submit {
-    padding:9px 20px;border-radius:8px;background:#2563eb;border:none;
+    padding:9px 20px;border-radius:8px;background:var(--accent);border:none;
     color:#fff;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;
     display:inline-flex;align-items:center;gap:6px;
 }
-.eatt-btn-submit:hover { background:#1d4ed8; }
+.eatt-btn-submit:hover { background:#17a085; }
 .eatt-btn-submit:disabled { opacity:.6;cursor:not-allowed; }
 .eatt-error-box {
     padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;
@@ -399,13 +437,13 @@ require_once __DIR__ . '/../../../includes/head.php';
 
 /* Apply btn */
 .eatt-apply-btn {
-    padding:9px 16px;border-radius:8px;background:#2563eb;color:#fff;
+    padding:9px 16px;border-radius:8px;background:var(--accent);color:#fff;
     border:none;font-size:13px;font-weight:600;cursor:pointer;
     display:inline-flex;align-items:center;gap:6px;
 }
-.eatt-apply-btn:hover { background:#1d4ed8; }
+.eatt-apply-btn:hover { background:#17a085; }
 .eatt-reset-link { font-size:12px;color:#64748b;text-decoration:none;white-space:nowrap; }
-.eatt-reset-link:hover { color:#2563eb; }
+.eatt-reset-link:hover { color:var(--accent); }
 
 /* Filter row */
 .eatt-filters { display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap; }
@@ -413,15 +451,24 @@ require_once __DIR__ . '/../../../includes/head.php';
     padding:9px 12px;border-radius:8px;border:1px solid #d1d5db;
     font-size:13px;background:#fff;cursor:pointer;
 }
-.eatt-filters select:focus, .eatt-filters input:focus { outline:none;border-color:#2563eb; }
+.eatt-filters select:focus, .eatt-filters input:focus { outline:none;border-color:var(--accent); }
 
 /* File upload area */
 .eatt-file-zone {
     border:2px dashed #d1d5db;border-radius:8px;padding:14px;
     text-align:center;cursor:pointer;transition:.15s;background:#f9fafb;
 }
-.eatt-file-zone:hover { border-color:#2563eb;background:#eff6ff; }
+.eatt-file-zone:hover { border-color:var(--accent);background:var(--accent-light); }
 .eatt-file-name { font-size:12px;color:#059669;font-weight:600;margin-top:6px; }
+
+/* Tab context note */
+.tab-ctx-note {
+    display:flex;align-items:flex-start;gap:8px;
+    background:#f0f9ff;border-left:3px solid #0ea5e9;
+    color:#0369a1;font-size:12px;padding:8px 14px;border-radius:0 6px 6px 0;
+    margin-bottom:14px;
+}
+.tab-ctx-note i { margin-top:1px;flex-shrink:0;color:#0ea5e9; }
 
 /* Pending badge */
 .eatt-pending-badge {
@@ -434,30 +481,18 @@ require_once __DIR__ . '/../../../includes/head.php';
 
 <body>
 <div class="layout">
-<?php include __DIR__ . '/../../../includes/employee-sidebar.php'; ?>
+<?php
+if (isAdmin()):
+    include __DIR__ . '/../../../includes/sidebar.php';
+elseif (isPrincipalRole()):
+    include __DIR__ . '/../../../includes/principal-sidebar.php';
+else:
+    include __DIR__ . '/../../../includes/employee-sidebar.php';
+endif;
+?>
 
 <div class="main">
-  <!-- Header -->
-  <div class="header">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <i class="fa fa-user-clock" style="color:#2563eb;font-size:18px;"></i>
-      <div>
-        <div style="font-size:15px;font-weight:700;color:#0f172a;">Employee Portal</div>
-        <div style="font-size:12px;color:#64748b;">Great Eastern Institute</div>
-      </div>
-    </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
-      <div style="text-align:right;">
-        <div style="font-size:14px;font-weight:600;color:#0f172a;">
-          <?= htmlspecialchars(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['user']['last_name'] ?? '')) ?>
-        </div>
-        <div style="font-size:11px;color:#64748b;">Employee</div>
-      </div>
-      <div class="header-avatar">
-        <?= strtoupper(substr($_SESSION['user']['first_name'] ?? 'E', 0, 1) . substr($_SESSION['user']['last_name'] ?? 'M', 0, 1)) ?>
-      </div>
-    </div>
-  </div>
+  <?php $empPortalIcon = 'fa-user-clock'; include __DIR__ . '/../../../includes/employee-header.php'; ?>
 
   <div class="main-content">
   <div class="emp-page">
@@ -473,11 +508,6 @@ require_once __DIR__ . '/../../../includes/head.php';
         <a href="#corrPanel" class="eatt-pending-badge">
           <i class="fa fa-flag"></i> <?= $pendingCorrections ?> Pending Correction<?= $pendingCorrections !== 1 ? 's' : '' ?>
         </a>
-        <?php endif; ?>
-        <?php if ($hasCorrections): ?>
-        <button class="eatt-apply-btn" style="background:#1e3a5f;" onclick="openCorrectionModal(0,'')">
-          <i class="fa fa-plus"></i> Report Missing Record
-        </button>
         <?php endif; ?>
       </div>
     </div>
@@ -533,6 +563,20 @@ require_once __DIR__ . '/../../../includes/head.php';
         <button class="att-tab <?= $tab === 'history' ? 'active' : '' ?>" onclick="switchTab('history',this)">
           <i class="fa fa-clock-rotate-left"></i> Attendance History
         </button>
+      </div>
+
+      <!-- Tab context note — describes the active tab's purpose -->
+      <div id="tab-ctx-month"   class="tab-ctx-note <?= $tab !== 'month'   ? 'hidden' : '' ?>">
+        <i class="fa fa-circle-info"></i>
+        <span><strong>This Month</strong> — calendar view of your attendance for the selected month. Useful for checking daily status at a glance.</span>
+      </div>
+      <div id="tab-ctx-cutoff"  class="tab-ctx-note <?= $tab !== 'cutoff'  ? 'hidden' : '' ?>">
+        <i class="fa fa-circle-info"></i>
+        <span><strong>By Cutoff Period</strong> — payroll-aligned view (1–15 and 16–end of month). Use this tab to verify your attendance for a specific payroll cutoff before your payslip is released.</span>
+      </div>
+      <div id="tab-ctx-history" class="tab-ctx-note <?= $tab !== 'history' ? 'hidden' : '' ?>">
+        <i class="fa fa-circle-info"></i>
+        <span><strong>Attendance History</strong> — full archive with free date-range filtering. Use this tab to look up records from any past period or review patterns over time.</span>
       </div>
 
       <!-- ═══ THIS MONTH pane ═══════════════════════════════════════════════ -->
@@ -750,7 +794,7 @@ require_once __DIR__ . '/../../../includes/head.php';
     <?php if ($hasCorrections): ?>
     <div class="eatt-corrections-panel" id="corrPanel" style="margin-top:20px;">
       <div class="eatt-corr-header">
-        <i class="fa fa-flag" style="color:#2563eb;"></i>
+        <i class="fa fa-flag" style="color:var(--accent);"></i>
         My Correction Requests
         <?php if ($pendingCorrections > 0): ?>
         <span class="eatt-corr-badge"><?= $pendingCorrections ?> Pending</span>
@@ -820,7 +864,7 @@ require_once __DIR__ . '/../../../includes/head.php';
     </div>
     <div class="eatt-modal-footer">
       <?php if ($hasCorrections): ?>
-      <button class="eatt-btn-submit" style="background:#1e3a5f;" id="detailsToCorrectBtn" onclick="switchToCorrect()">
+      <button class="eatt-btn-submit" style="background:var(--sidebar-bg);" id="detailsToCorrectBtn" onclick="switchToCorrect()">
         <i class="fa fa-flag"></i> Request Correction
       </button>
       <?php endif; ?>
@@ -833,13 +877,13 @@ require_once __DIR__ . '/../../../includes/head.php';
 <?php if ($hasCorrections): ?>
 <div class="eatt-modal-backdrop" id="corrModal" onclick="if(event.target===this)closeCorrectionModal()">
   <div class="eatt-modal-box">
-    <div class="eatt-modal-header" style="background:#1e3a5f;">
+    <div class="eatt-modal-header" style="background:var(--sidebar-bg);">
       <h3><i class="fa fa-flag" style="margin-right:8px;"></i>Attendance Correction Request</h3>
       <button class="eatt-modal-close" onclick="closeCorrectionModal()"><i class="fa fa-times"></i></button>
     </div>
     <div class="eatt-modal-body">
 
-      <div style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1d4ed8;">
+      <div style="padding:10px 14px;background:var(--accent-light);border:1px solid var(--accent-mid);border-radius:8px;font-size:12px;color:#065f46;">
         <i class="fa fa-circle-info"></i>
         Your request will be sent to admin for review. This does <strong>not</strong> automatically change your record.
       </div>
@@ -874,7 +918,7 @@ require_once __DIR__ . '/../../../includes/head.php';
       <div class="eatt-field">
         <label>Supporting Proof <span style="color:#94a3b8;font-weight:400;">(optional — JPG, PNG, PDF, max 5 MB)</span></label>
         <div class="eatt-file-zone" onclick="document.getElementById('corrFile').click()"
-             ondragover="event.preventDefault();this.style.borderColor='#2563eb'" ondrop="handleCorrFileDrop(event)">
+             ondragover="event.preventDefault();this.style.borderColor='#1db89a'" ondrop="handleCorrFileDrop(event)">
           <i class="fa fa-cloud-arrow-up" style="font-size:22px;color:#94a3b8;display:block;margin-bottom:6px;"></i>
           <span style="font-size:13px;color:#64748b;">Click to browse or drag a file here</span>
           <div id="corrFileName" class="eatt-file-name"></div>
@@ -901,7 +945,10 @@ const _eattTabMap = { month:'Month', cutoff:'Cutoff', history:'History' };
 function switchTab(name, btn) {
     document.querySelectorAll('.att-tab-pane').forEach(p => p.classList.add('hidden'));
     document.querySelectorAll('.att-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-ctx-note').forEach(n => n.classList.add('hidden'));
     document.getElementById('tab' + _eattTabMap[name]).classList.remove('hidden');
+    const ctx = document.getElementById('tab-ctx-' + name);
+    if (ctx) ctx.classList.remove('hidden');
     if (btn) btn.classList.add('active');
 }
 

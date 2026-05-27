@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/auth.php';
-requireLogin();
+requireAdminPage();
 
 // ── Filters ────────────────────────────────────────────────────────────────
 $filterYear = (int)($_GET['school_year_id'] ?? 0);
@@ -22,7 +22,7 @@ if (!$filterYear && $activeYear) {
 }
 
 $departments = $pdo->query("SELECT department_id, department_name FROM departments ORDER BY department_name")->fetchAll(PDO::FETCH_ASSOC);
-$leaveTypes  = $pdo->query("SELECT leave_type_id, leave_name FROM leave_types ORDER BY leave_name")->fetchAll(PDO::FETCH_ASSOC);
+$leaveTypes  = $pdo->query("SELECT leave_type_id, leave_name, COALESCE(is_statutory,0) AS is_statutory FROM leave_types ORDER BY leave_name")->fetchAll(PDO::FETCH_ASSOC);
 
 // ── Current school year row ────────────────────────────────────────────────
 $currentYear = null;
@@ -46,6 +46,7 @@ if ($filterYear) {
             COALESCE(e.sex, '') AS sex,
             lt.leave_type_id,
             lt.leave_name,
+            COALESCE(lt.is_statutory, 0)     AS is_statutory,
             COALESCE(elc.credit_id,      0)  AS credit_id,
             COALESCE(elc.allocated_days, 0)  AS allocated_days,
             COALESCE(elc.used_days,      0)  AS used_days,
@@ -180,6 +181,10 @@ require_once __DIR__ . '/../../includes/head.php';
 <div class="main-content">
 
 <div class="lc-page">
+
+  <a href="<?= BASE_URL ?>modules/settings/index.php" class="back-link">
+    <i class="fa fa-arrow-left"></i> Back to Settings
+  </a>
 
   <!-- Page Header -->
   <div class="sy-page-header">
@@ -428,7 +433,14 @@ require_once __DIR__ . '/../../includes/head.php';
           ]);
         ?>
         <tr>
-          <td class="lc-leave-type-cell"><?= htmlspecialchars($r['leave_name']) ?></td>
+          <td class="lc-leave-type-cell">
+            <?= htmlspecialchars($r['leave_name']) ?>
+            <?php if (!empty($r['is_statutory'])): ?>
+            <span style="display:inline-block;margin-left:5px;padding:1px 7px;border-radius:999px;
+                         font-size:10px;font-weight:700;background:#ede9fe;color:#6d28d9;
+                         vertical-align:middle;white-space:nowrap;">Statutory</span>
+            <?php endif; ?>
+          </td>
           <td class="lc-num-cell">
             <?= $hasRec ? number_format((float)$r['allocated_days'], 1) : '<span class="lc-dash">—</span>' ?>
           </td>
@@ -623,8 +635,9 @@ require_once __DIR__ . '/../../includes/head.php';
               <?php foreach ($leaveTypes as $lt): ?>
               <option value="<?= $lt['leave_type_id'] ?>"
                       data-name="<?= htmlspecialchars(strtolower($lt['leave_name'])) ?>"
+                      data-statutory="<?= (int)$lt['is_statutory'] ?>"
                       <?= $lt['leave_type_id'] == $filterType ? 'selected' : '' ?>>
-                <?= htmlspecialchars($lt['leave_name']) ?>
+                <?= htmlspecialchars($lt['leave_name']) ?><?= $lt['is_statutory'] ? ' (Statutory)' : '' ?>
               </option>
               <?php endforeach; ?>
             </select>
@@ -745,7 +758,8 @@ function updateBulkPreview() {
         return;
     }
 
-    var ltName = (ltSel.options[ltSel.selectedIndex].getAttribute('data-name') || '').toLowerCase();
+    var ltName     = (ltSel.options[ltSel.selectedIndex].getAttribute('data-name') || '').toLowerCase();
+    var isStatutory = parseInt(ltSel.options[ltSel.selectedIndex].getAttribute('data-statutory') || '0') === 1;
     var isMaternity = ltName.indexOf('matern') !== -1;
     var isPaternity = ltName.indexOf('patern') !== -1;
 
@@ -756,11 +770,14 @@ function updateBulkPreview() {
     if (isMaternity) {
         eligible = eligible.filter(function(e) { return e.sex === 'FEMALE' || e.sex === ''; });
         notice.style.display = 'flex';
-        noticeText.textContent = 'Maternity leave will only be applied to female employees.';
+        noticeText.textContent = 'Maternity leave will only be applied to female employees. This is a statutory leave — it will not count toward the annual leave excess settlement.';
     } else if (isPaternity) {
         eligible = eligible.filter(function(e) { return e.sex === 'MALE' || e.sex === ''; });
         notice.style.display = 'flex';
-        noticeText.textContent = 'Paternity leave will only be applied to male employees.';
+        noticeText.textContent = 'Paternity leave will only be applied to male employees. This is a statutory leave — it will not count toward the annual leave excess settlement.';
+    } else if (isStatutory) {
+        notice.style.display = 'flex';
+        noticeText.textContent = 'This is a statutory leave type — it is tracked separately and will not count toward the annual leave excess settlement at EOSY.';
     } else {
         notice.style.display = 'none';
     }

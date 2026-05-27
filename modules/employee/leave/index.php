@@ -5,7 +5,7 @@
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../includes/auth.php';
-requireEmployee();
+requireEmployeeAccess();
 
 $empId = (int)($_SESSION['user']['employee_id'] ?? 0);
 
@@ -119,29 +119,18 @@ require_once __DIR__ . '/../../../includes/head.php';
 ?>
 <body>
 <div class="layout">
-<?php include __DIR__ . '/../../../includes/employee-sidebar.php'; ?>
+<?php
+if (isAdmin()):
+    include __DIR__ . '/../../../includes/sidebar.php';
+elseif (isPrincipalRole()):
+    include __DIR__ . '/../../../includes/principal-sidebar.php';
+else:
+    include __DIR__ . '/../../../includes/employee-sidebar.php';
+endif;
+?>
 
 <div class="main">
-  <div class="header">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <i class="fa fa-calendar-days" style="color:#2563eb;font-size:18px;"></i>
-      <div>
-        <div style="font-size:15px;font-weight:700;color:#0f172a;">Employee Portal</div>
-        <div style="font-size:12px;color:#64748b;">Great Eastern Institute</div>
-      </div>
-    </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
-      <div style="text-align:right;">
-        <div style="font-size:14px;font-weight:600;color:#0f172a;">
-          <?= htmlspecialchars(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['user']['last_name'] ?? '')) ?>
-        </div>
-        <div style="font-size:11px;color:#64748b;">Employee</div>
-      </div>
-      <div class="header-avatar">
-        <?= strtoupper(substr($_SESSION['user']['first_name'] ?? 'E', 0, 1) . substr($_SESSION['user']['last_name'] ?? 'M', 0, 1)) ?>
-      </div>
-    </div>
-  </div>
+  <?php $empPortalIcon = 'fa-calendar-days'; include __DIR__ . '/../../../includes/employee-header.php'; ?>
 
   <div class="main-content">
   <div class="emp-page">
@@ -163,9 +152,9 @@ require_once __DIR__ . '/../../../includes/head.php';
 
     <!-- KPI Cards -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
-      <div class="emp-panel" style="padding:18px 20px;background:linear-gradient(135deg,#eff6ff,#dbeafe);">
-        <div style="font-size:11px;font-weight:600;color:#1e40af;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Leave Balance</div>
-        <div style="font-size:28px;font-weight:800;color:<?= $leaveBalance < 0 ? '#dc2626' : '#1d4ed8' ?>;"><?= number_format(max(0,$leaveBalance),1) ?></div>
+      <div class="emp-panel" style="padding:18px 20px;background:linear-gradient(135deg,#e6f7f4,#b2e8df);">
+        <div style="font-size:11px;font-weight:600;color:#065f46;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Leave Balance</div>
+        <div style="font-size:28px;font-weight:800;color:<?= $leaveBalance < 0 ? '#dc2626' : '#1db89a' ?>;"><?= number_format(max(0,$leaveBalance),1) ?></div>
         <div style="font-size:11px;color:#64748b;margin-top:2px;"><?= number_format($totalUsed,1) ?> used of <?= number_format($totalAllocated,1) ?> allocated</div>
       </div>
       <div class="emp-panel" style="padding:18px 20px;">
@@ -269,7 +258,7 @@ require_once __DIR__ . '/../../../includes/head.php';
             if ($hasMig016) {
                 $wfLabel = match($wfStatus) {
                     'PENDING_REVIEW' => '<span style="font-size:10px;color:#92400e;background:#fef3c7;padding:2px 7px;border-radius:99px;">Under Admin Review</span>',
-                    'FORWARDED'      => '<span style="font-size:10px;color:#1e40af;background:#dbeafe;padding:2px 7px;border-radius:99px;">With Principal</span>',
+                    'FORWARDED'      => '<span style="font-size:10px;color:#065f46;background:#d1fae5;padding:2px 7px;border-radius:99px;">With Principal</span>',
                     'RECORDED'       => '<span style="font-size:10px;color:#065f46;background:#d1fae5;padding:2px 7px;border-radius:99px;">Finalised</span>',
                     default          => '',
                 };
@@ -328,7 +317,7 @@ require_once __DIR__ . '/../../../includes/head.php';
   <div class="emp-modal-box emp-modal-box--md" onclick="event.stopPropagation()">
 
     <div class="emp-modal-header">
-      <h3 class="emp-modal-title"><i class="fa fa-calendar-plus" style="color:#2563eb;margin-right:7px;"></i>File a Leave Request</h3>
+      <h3 class="emp-modal-title"><i class="fa fa-calendar-plus" style="color:var(--accent);margin-right:7px;"></i>File a Leave Request</h3>
       <button class="emp-modal-close" onclick="closeFileLeaveModal()">×</button>
     </div>
 
@@ -462,7 +451,7 @@ require_once __DIR__ . '/../../../includes/head.php';
                  onchange="onEmpFileSelected(this)">
         </div>
         <div id="empFilePreview" style="display:none;margin-top:8px;padding:9px 12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;align-items:center;gap:10px;font-size:13px;">
-          <i class="fa fa-file" style="color:#2563eb;font-size:16px;"></i>
+          <i class="fa fa-file" style="color:var(--accent);font-size:16px;"></i>
           <span id="empFileName" style="flex:1;">—</span>
           <button type="button" onclick="clearEmpFile()" style="background:none;border:none;cursor:pointer;color:#9ca3af;font-size:12px;"><i class="fa fa-times"></i> Remove</button>
         </div>
@@ -488,7 +477,7 @@ require_once __DIR__ . '/../../../includes/head.php';
   <div class="emp-modal-box emp-modal-box--lg" onclick="event.stopPropagation()">
 
     <div class="emp-modal-header">
-      <h3 class="emp-modal-title"><i class="fa fa-calendar-days" style="color:#2563eb;margin-right:7px;"></i>Leave Request Details</h3>
+      <h3 class="emp-modal-title"><i class="fa fa-calendar-days" style="color:var(--accent);margin-right:7px;"></i>Leave Request Details</h3>
       <button class="emp-modal-close" onclick="closeEmpLeaveDetail()">×</button>
     </div>
 
@@ -507,18 +496,18 @@ require_once __DIR__ . '/../../../includes/head.php';
 /* ── Employee leave-specific styles ──────────────────────── */
 .emp-btn-file-leave {
     display:inline-flex;align-items:center;gap:7px;
-    background:#2563eb;color:#fff;border:none;border-radius:9px;
+    background:var(--accent);color:#fff;border:none;border-radius:9px;
     padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;
     font-family:inherit;transition:background .15s;white-space:nowrap;
 }
-.emp-btn-file-leave:hover { background:#1d4ed8; }
+.emp-btn-file-leave:hover { background:#17a085; }
 .emp-btn-view-leave {
     display:inline-flex;align-items:center;gap:5px;padding:6px 12px;
-    background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;
+    background:var(--accent-light);color:var(--accent);border:1px solid var(--accent-mid);
     border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;
     font-family:inherit;transition:background .15s;
 }
-.emp-btn-view-leave:hover { background:#dbeafe; }
+.emp-btn-view-leave:hover { background:var(--accent-mid); }
 
 /* Modals */
 .emp-modal-overlay {
@@ -556,7 +545,7 @@ require_once __DIR__ . '/../../../includes/head.php';
     border:1.5px solid #e2e8f0;border-radius:8px;outline:none;color:#334155;
     transition:border-color .15s;resize:vertical;box-sizing:border-box;
 }
-.emp-form-control:focus { border-color:#2563eb; }
+.emp-form-control:focus { border-color:var(--accent); }
 
 /* Buttons */
 .emp-btn-ghost {
@@ -567,11 +556,11 @@ require_once __DIR__ . '/../../../includes/head.php';
 .emp-btn-ghost:hover { background:#f8fafc; }
 .emp-btn-primary {
     display:inline-flex;align-items:center;gap:6px;padding:9px 18px;
-    background:#2563eb;color:#fff;border:none;border-radius:8px;
+    background:var(--accent);color:#fff;border:none;border-radius:8px;
     font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:background .15s;
 }
-.emp-btn-primary:hover { background:#1d4ed8; }
-.emp-btn-primary:disabled { background:#93c5fd;cursor:not-allowed; }
+.emp-btn-primary:hover { background:#17a085; }
+.emp-btn-primary:disabled { background:#6ee7d4;cursor:not-allowed; }
 
 /* Filing Mode Selector */
 .emp-mode-selector {
@@ -584,9 +573,9 @@ require_once __DIR__ . '/../../../includes/head.php';
     justify-content:center;gap:5px;border-right:1px solid #e2e8f0;
 }
 .emp-mode-btn:last-child { border-right:none; }
-.emp-mode-btn:hover { background:#eff6ff;color:#2563eb; }
-.emp-mode-btn--active { background:#2563eb;color:#fff; }
-.emp-mode-btn--active:hover { background:#1d4ed8;color:#fff; }
+.emp-mode-btn:hover { background:var(--accent-light);color:var(--accent); }
+.emp-mode-btn--active { background:var(--accent);color:#fff; }
+.emp-mode-btn--active:hover { background:#17a085;color:#fff; }
 .emp-mode-desc { font-size:11px;color:#64748b;margin-top:5px; }
 
 /* Calendar */
@@ -613,16 +602,16 @@ require_once __DIR__ . '/../../../includes/head.php';
     font-size:13px;font-weight:500;cursor:pointer;
     transition:background .1s,color .1s;color:#374151;
 }
-.emp-cal-day:hover { background:#dbeafe;color:#1d4ed8; }
-.emp-cal-day--today    { background:#eff6ff;color:#2563eb;font-weight:700; }
-.emp-cal-day--selected { background:#2563eb;color:#fff;font-weight:700; }
-.emp-cal-day--selected:hover { background:#1d4ed8; }
+.emp-cal-day:hover { background:var(--accent-light);color:var(--accent); }
+.emp-cal-day--today    { background:var(--accent-light);color:var(--accent);font-weight:700; }
+.emp-cal-day--selected { background:var(--accent);color:#fff;font-weight:700; }
+.emp-cal-day--selected:hover { background:#17a085; }
 /* Past dates: allowed but neutral color */
 .emp-cal-day--past     { color:#94a3b8; }
 .emp-cal-day--past:hover { background:#f1f5f9;color:#475569; }
 /* Past + backdatable: slightly stronger color to indicate they're selectable */
 .emp-cal-day--backdatable { color:#374151;cursor:pointer; }
-.emp-cal-day--backdatable:hover { background:#dbeafe;color:#1d4ed8; }
+.emp-cal-day--backdatable:hover { background:var(--accent-light);color:var(--accent); }
 /* Future dates that are BLOCKED (Sick/Emergency leave) */
 .emp-cal-day--disabled {
     color:#e2e8f0 !important;cursor:not-allowed !important;
@@ -633,18 +622,18 @@ require_once __DIR__ . '/../../../includes/head.php';
 /* Selected date tags */
 .emp-selected-tag {
     display:inline-flex;align-items:center;gap:5px;padding:4px 10px;
-    background:#eff6ff;border:1px solid #bfdbfe;border-radius:99px;
-    font-size:12px;font-weight:500;color:#1d4ed8;
+    background:var(--accent-light);border:1px solid var(--accent-mid);border-radius:99px;
+    font-size:12px;font-weight:500;color:var(--accent);
 }
 .emp-selected-tag button {
-    background:none;border:none;cursor:pointer;color:#93c5fd;font-size:13px;line-height:1;padding:0;
+    background:none;border:none;cursor:pointer;color:var(--accent-mid);font-size:13px;line-height:1;padding:0;
 }
-.emp-selected-tag button:hover { color:#1d4ed8; }
+.emp-selected-tag button:hover { color:var(--accent); }
 
 /* Range preview tags */
 .emp-range-tag {
-    display:inline-block;padding:3px 9px;background:#eff6ff;border:1px solid #bfdbfe;
-    border-radius:99px;font-size:11px;font-weight:500;color:#1d4ed8;
+    display:inline-block;padding:3px 9px;background:var(--accent-light);border:1px solid var(--accent-mid);
+    border-radius:99px;font-size:11px;font-weight:500;color:var(--accent);
 }
 .emp-range-tag--past { background:#fef3c7;border-color:#fde68a;color:#92400e; }
 
@@ -654,12 +643,12 @@ require_once __DIR__ . '/../../../includes/head.php';
     cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;
     transition:border-color .15s,background .15s;
 }
-.emp-file-area:hover { border-color:#2563eb;background:#eff6ff; }
-.emp-file-area.drag-over { border-color:#2563eb;background:#eff6ff; }
+.emp-file-area:hover { border-color:var(--accent);background:var(--accent-light); }
+.emp-file-area.drag-over { border-color:var(--accent);background:var(--accent-light); }
 
 /* Detail modal */
 .emp-detail-emp-row  { display:flex;align-items:center;gap:14px;padding:16px 20px;background:#f8fafc;border-bottom:1px solid #f1f5f9; }
-.emp-detail-avatar   { width:44px;height:44px;min-width:44px;background:#dbeafe;color:#1d4ed8;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700; }
+.emp-detail-avatar   { width:44px;height:44px;min-width:44px;background:var(--accent-light);color:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700; }
 .emp-detail-info-grid { display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px; }
 .emp-detail-info-cell label { display:block;font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px; }
 .emp-detail-info-cell span  { font-size:13px;font-weight:600;color:#0f172a; }
@@ -1119,7 +1108,7 @@ function buildEmpDetailHtml(data) {
 
     let wfBadge = '';
     if      (wf === 'PENDING_REVIEW') wfBadge = '<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;">Under Admin Review</span>';
-    else if (wf === 'FORWARDED')      wfBadge = '<span style="background:#dbeafe;color:#1e40af;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;">With Principal</span>';
+    else if (wf === 'FORWARDED')      wfBadge = '<span style="background:#d1fae5;color:#065f46;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;">With Principal</span>';
     else if (wf === 'RECORDED')       wfBadge = '<span style="background:#d1fae5;color:#065f46;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;">Finalised</span>';
 
     const infoGrid = `
@@ -1180,8 +1169,8 @@ function buildEmpDetailHtml(data) {
             const icon = (a.file_type || '').includes('pdf') ? 'fa-file-pdf' : 'fa-file-image';
             return `<a href="${BASE_URL}${escHtml(a.file_path)}" target="_blank"
                 style="display:flex;align-items:center;gap:9px;padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;text-decoration:none;color:#334155;font-size:13px;transition:background .15s;"
-                onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='#f8fafc'">
-                <i class="fa ${icon}" style="color:#2563eb;"></i>
+                onmouseover="this.style.background='#e6f7f4'" onmouseout="this.style.background='#f8fafc'">
+                <i class="fa ${icon}" style="color:#1db89a;"></i>
                 <span>${escHtml(a.file_name)}</span>
             </a>`;
         }).join('');
@@ -1214,7 +1203,7 @@ function onEmpFileSelected(input) {
     document.getElementById('empFileName').textContent =
         file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
     document.getElementById('empFilePreview').style.display = 'flex';
-    document.getElementById('empFileArea').style.borderColor = '#2563eb';
+    document.getElementById('empFileArea').style.borderColor = '#1db89a';
 }
 function handleEmpFileDrop(e) {
     e.preventDefault();

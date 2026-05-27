@@ -23,6 +23,7 @@
  *   pay_per_date[]   — equivalent pay per date (parallel index)
  */
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../includes/auth.php';
 
 if (!isset($_SESSION['user'])) {
     header('Location: ' . BASE_URL . 'modules/auth/login.php'); exit;
@@ -193,8 +194,9 @@ if ($action === 'edit') {
     header("Location: $back"); exit;
 }
 
-// ── APPROVE (bulk — all dates) ────────────────────────────────────────────
+// ── APPROVE (bulk — all dates, principal only) ────────────────────────────
 if ($action === 'approve') {
+    if (!isPrincipalRole()) { $_SESSION['sc_error'] = 'Only the Principal can approve service credits.'; header("Location: $back"); exit; }
     if (!$scId) { $_SESSION['sc_error'] = 'Invalid record.'; header("Location: $back"); exit; }
     $pdo->beginTransaction();
     $stmt = $pdo->prepare("
@@ -215,13 +217,14 @@ if ($action === 'approve') {
     ")->execute([$uid, $scId]);
     $pdo->commit();
     if ($uid) scLogAudit($pdo, $uid, 'APPROVE', $scId,
-        "Approved SC #{$scId} (all dates) — merges into Additional Assignment Payment next payroll");
-    $_SESSION['sc_success'] = 'Approved. Will be included in the next payroll as Additional Assignment Payment.';
+        "Approved SC #{$scId} (all dates) — will be released in EOSY Accrued Pay run");
+    $_SESSION['sc_success'] = 'Approved. Service credit will be released during the EOSY Accrued Pay run as Additional Assignment Payment.';
     header("Location: $back"); exit;
 }
 
-// ── REJECT (bulk — all pending dates) ─────────────────────────────────────
+// ── REJECT (bulk — all pending dates, principal only) ─────────────────────
 if ($action === 'reject') {
+    if (!isPrincipalRole()) { $_SESSION['sc_error'] = 'Only the Principal can reject service credits.'; header("Location: $back"); exit; }
     $reason = trim($_POST['rejection_reason'] ?? '');
     if (!$scId) { $_SESSION['sc_error'] = 'Invalid record.'; header("Location: $back"); exit; }
     if (!$reason) { $_SESSION['sc_error'] = 'Please provide a rejection reason.'; header("Location: $back"); exit; }
@@ -242,8 +245,9 @@ if ($action === 'reject') {
     header("Location: $back"); exit;
 }
 
-// ── APPROVE DATE (per-date) ───────────────────────────────────────────────
+// ── APPROVE DATE (per-date, principal only) ───────────────────────────────
 if ($action === 'approve_date') {
+    if (!isPrincipalRole()) { $_SESSION['sc_error'] = 'Only the Principal can approve individual work dates.'; header("Location: $back"); exit; }
     if (!$scDateId || !$scId) { $_SESSION['sc_error'] = 'Invalid parameters.'; header("Location: $back"); exit; }
     $check = $pdo->prepare("
         SELECT sc_date_id FROM service_credit_dates
@@ -260,21 +264,20 @@ if ($action === 'approve_date') {
         SET status='APPROVED', approved_by=?, approved_at=NOW()
         WHERE sc_date_id=?
     ")->execute([$uid, $scDateId]);
-    $newStatus = recomputeParentStatus($pdo, $scId);
+    $newStatus = recomputeParentStatus($pdo, $scId, $uid);
     $pdo->commit();
     if ($uid) scLogAudit($pdo, $uid, 'APPROVE_DATE', $scId,
         "Approved date #$scDateId of SC #$scId → parent now $newStatus");
-    $msg = match($newStatus) {
-        'APPROVED'           => 'All dates approved — service credit is now fully approved.',
-        'PARTIALLY_APPROVED' => 'Date approved. Some dates are still pending or were rejected.',
-        default              => 'Date approved.',
-    };
+    $msg = ($newStatus === 'PENDING')
+        ? 'Date approved.'
+        : 'Review complete — service credit processed.';
     $_SESSION['sc_success'] = $msg;
     header("Location: $back"); exit;
 }
 
-// ── REJECT DATE (per-date) ────────────────────────────────────────────────
+// ── REJECT DATE (per-date, principal only) ────────────────────────────────
 if ($action === 'reject_date') {
+    if (!isPrincipalRole()) { $_SESSION['sc_error'] = 'Only the Principal can reject individual work dates.'; header("Location: $back"); exit; }
     $reason = trim($_POST['rejection_reason'] ?? '');
     if (!$scDateId || !$scId) { $_SESSION['sc_error'] = 'Invalid parameters.'; header("Location: $back"); exit; }
     if (!$reason) { $_SESSION['sc_error'] = 'Please provide a rejection reason.'; header("Location: $back"); exit; }
@@ -293,7 +296,7 @@ if ($action === 'reject_date') {
         SET status='REJECTED', rejection_reason=?, approved_by=?, approved_at=NOW()
         WHERE sc_date_id=?
     ")->execute([$reason, $uid, $scDateId]);
-    $newStatus = recomputeParentStatus($pdo, $scId);
+    $newStatus = recomputeParentStatus($pdo, $scId, $uid);
     $pdo->commit();
     if ($uid) scLogAudit($pdo, $uid, 'REJECT_DATE', $scId,
         "Rejected date #$scDateId of SC #$scId: $reason → parent now $newStatus");
@@ -309,7 +312,7 @@ if ($action === 'archive') {
     $row = $check->fetch();
     if (!$row) { $_SESSION['sc_error'] = 'Record not found.'; header("Location: $back"); exit; }
     if (!in_array($row['status'], ['DRAFT','REJECTED','PARTIALLY_APPROVED','APPLIED','RELEASED'])) {
-        $_SESSION['sc_error'] = 'Only Draft, Rejected, Partially Approved, Applied, or Released credits can be archived.';
+        $_SESSION['sc_error'] = 'Only Draft, Rejected, Applied, or Released credits can be archived.';
         header("Location: $back"); exit;
     }
     $pdo->prepare("
@@ -350,6 +353,7 @@ if ($action === 'delete') {
         $_SESSION['sc_error'] = 'Only Draft credits can be deleted.';
         header("Location: $back"); exit;
     }
+    $pdo->prepare("DELETE FROM service_credit_dates WHERE service_credit_id=?")->execute([$scId]);
     $pdo->prepare("DELETE FROM service_credits WHERE service_credit_id=?")->execute([$scId]);
     if ($uid) scLogAudit($pdo, $uid, 'DELETE', $scId, "Deleted draft SC #{$scId}");
     $_SESSION['sc_success'] = 'Draft deleted.';
@@ -377,62 +381,105 @@ function scInsertDateRows(PDO $pdo, int $scId, array $rows): void
 }
 
 /**
- * Recompute parent status + approved amounts after a per-date action.
- * - Any PENDING dates remaining → parent stays PENDING, no amount change.
- * - All reviewed, some APPROVED + some REJECTED → PARTIALLY_APPROVED; update amounts to approved-only.
- * - All APPROVED → APPROVED; amounts stay as total.
- * - All REJECTED → REJECTED; amounts unchanged (for historical display).
+ * Recompute parent status after a per-date action.
+ * - Any PENDING dates remaining  → parent stays PENDING.
+ * - All APPROVED                 → parent APPROVED.
+ * - All REJECTED                 → parent REJECTED.
+ * - Mixed (some APPROVED + some REJECTED) → split: original becomes APPROVED
+ *   for the approved dates; a new sibling record is created as REJECTED
+ *   for the rejected dates. PARTIALLY_APPROVED is never written.
  */
-function recomputeParentStatus(PDO $pdo, int $scId): string
+function recomputeParentStatus(PDO $pdo, int $scId, int $uid): string
 {
     $row = $pdo->prepare("
         SELECT
             SUM(status = 'PENDING')  AS pending_cnt,
             SUM(status = 'APPROVED') AS approved_cnt,
             SUM(status = 'REJECTED') AS rejected_cnt,
-            SUM(CASE WHEN status = 'APPROVED' THEN days          ELSE 0 END) AS approved_days,
-            SUM(CASE WHEN status = 'APPROVED' THEN equivalent_pay ELSE 0 END) AS approved_pay
+            SUM(CASE WHEN status = 'APPROVED' THEN days           ELSE 0 END) AS approved_days,
+            SUM(CASE WHEN status = 'APPROVED' THEN equivalent_pay ELSE 0 END) AS approved_pay,
+            SUM(CASE WHEN status = 'REJECTED' THEN days           ELSE 0 END) AS rejected_days,
+            SUM(CASE WHEN status = 'REJECTED' THEN equivalent_pay ELSE 0 END) AS rejected_pay
         FROM service_credit_dates
         WHERE service_credit_id = ?
     ");
     $row->execute([$scId]);
     $c = $row->fetch(PDO::FETCH_ASSOC);
 
-    $pendingCnt  = (int)$c['pending_cnt'];
-    $approvedCnt = (int)$c['approved_cnt'];
-    $rejectedCnt = (int)$c['rejected_cnt'];
+    $pendingCnt   = (int)$c['pending_cnt'];
+    $approvedCnt  = (int)$c['approved_cnt'];
+    $rejectedCnt  = (int)$c['rejected_cnt'];
     $approvedDays = (float)$c['approved_days'];
     $approvedPay  = (float)$c['approved_pay'];
+    $rejectedDays = (float)$c['rejected_days'];
+    $rejectedPay  = (float)$c['rejected_pay'];
 
     if ($pendingCnt > 0) {
-        // Still has pending dates — keep parent PENDING, no status change
         return 'PENDING';
     }
 
     if ($approvedCnt > 0 && $rejectedCnt > 0) {
-        $newStatus = 'PARTIALLY_APPROVED';
-    } elseif ($approvedCnt > 0) {
-        $newStatus = 'APPROVED';
-    } else {
-        $newStatus = 'REJECTED';
-    }
+        // Split: keep original for approved dates, create sibling for rejected dates
+        $parent = $pdo->prepare("SELECT * FROM service_credits WHERE service_credit_id = ?");
+        $parent->execute([$scId]);
+        $p = $parent->fetch(PDO::FETCH_ASSOC);
 
-    if ($newStatus === 'APPROVED' || $newStatus === 'PARTIALLY_APPROVED') {
+        $firstRej = $pdo->prepare("
+            SELECT work_date FROM service_credit_dates
+            WHERE service_credit_id = ? AND status = 'REJECTED'
+            ORDER BY work_date ASC LIMIT 1
+        ");
+        $firstRej->execute([$scId]);
+        $rejWorkDate = $firstRej->fetchColumn() ?: $p['work_date'];
+
+        $pdo->prepare("
+            INSERT INTO service_credits
+                (employee_id, work_date, days, equivalent_pay, remarks, target_period_id,
+                 status, is_approved, approved_by, approved_at, created_by, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'REJECTED', 0, ?, NOW(), ?, NOW())
+        ")->execute([
+            $p['employee_id'], $rejWorkDate, $rejectedDays, $rejectedPay,
+            $p['remarks'], $p['target_period_id'], $uid, $p['created_by'],
+        ]);
+        $newScId = (int)$pdo->lastInsertId();
+
+        $pdo->prepare("
+            UPDATE service_credit_dates
+            SET service_credit_id = ?
+            WHERE service_credit_id = ? AND status = 'REJECTED'
+        ")->execute([$newScId, $scId]);
+
         $pdo->prepare("
             UPDATE service_credits
-            SET status=?, is_approved=1, days=?, equivalent_pay=?, updated_at=NOW()
-            WHERE service_credit_id=?
-        ")->execute([$newStatus, $approvedDays, $approvedPay, $scId]);
-    } else {
-        // REJECTED: keep original amounts, just update status
-        $pdo->prepare("
-            UPDATE service_credits
-            SET status='REJECTED', is_approved=0, updated_at=NOW()
-            WHERE service_credit_id=?
-        ")->execute([$scId]);
+            SET status = 'APPROVED', is_approved = 1, days = ?, equivalent_pay = ?,
+                approved_by = ?, approved_at = NOW(), updated_at = NOW()
+            WHERE service_credit_id = ?
+        ")->execute([$approvedDays, $approvedPay, $uid, $scId]);
+
+        scLogAudit($pdo, $uid, 'APPROVE', $scId,
+            "Approved — rejected dates split to SC #{$newScId}");
+        scLogAudit($pdo, $uid, 'REJECT', $newScId,
+            "Rejected — split from SC #{$scId}");
+
+        return 'APPROVED';
     }
 
-    return $newStatus;
+    if ($approvedCnt > 0) {
+        $pdo->prepare("
+            UPDATE service_credits
+            SET status = 'APPROVED', is_approved = 1, days = ?, equivalent_pay = ?,
+                approved_by = ?, approved_at = NOW(), updated_at = NOW()
+            WHERE service_credit_id = ?
+        ")->execute([$approvedDays, $approvedPay, $uid, $scId]);
+        return 'APPROVED';
+    }
+
+    $pdo->prepare("
+        UPDATE service_credits
+        SET status = 'REJECTED', is_approved = 0, updated_at = NOW()
+        WHERE service_credit_id = ?
+    ")->execute([$scId]);
+    return 'REJECTED';
 }
 
 function scLogAudit(PDO $pdo, int $uid, string $action, int $scId, string $desc): void

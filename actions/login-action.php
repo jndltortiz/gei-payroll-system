@@ -17,11 +17,12 @@ if ($username === '' || $password === '') {
 }
 
 $sql = "
-    SELECT 
+    SELECT
         u.user_id,
         u.username,
         u.password_hash,
         u.is_active,
+        u.must_change_password,
         r.role_name,
         e.employee_id,
         e.first_name,
@@ -56,18 +57,25 @@ if (!password_verify($password, $user['password_hash'])) {
 }
 
 $_SESSION['user'] = [
-    'user_id' => $user['user_id'],
-    'employee_id' => $user['employee_id'],
-    'username' => $user['username'],
-    'role_name' => $user['role_name'],
-    'first_name' => $user['first_name'] ?? '',
-    'last_name' => $user['last_name'] ?? ''
+    'user_id'             => $user['user_id'],
+    'employee_id'         => $user['employee_id'],
+    'username'            => $user['username'],
+    'role_name'           => $user['role_name'],
+    'first_name'          => $user['first_name'] ?? '',
+    'last_name'           => $user['last_name']  ?? '',
+    'must_change_password'=> (int)($user['must_change_password'] ?? 0),
 ];
 
 $updateLogin = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE user_id = :user_id");
 $updateLogin->execute(['user_id' => $user['user_id']]);
 
 setFlash('success', 'Login successful.');
+
+// ── Force password change — redirect before entering any portal ───────────────
+if ((int)($user['must_change_password'] ?? 0) === 1) {
+    header('Location: ' . BASE_URL . 'modules/auth/change-password.php');
+    exit;
+}
 
 // ── Role-based redirect ───────────────────────────────────────────────────────
 switch ($user['role_name']) {

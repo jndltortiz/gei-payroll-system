@@ -104,22 +104,11 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
 <?php include __DIR__ . '/../../includes/header.php'; ?>
 <div class="main-content">
 
-<!-- ── Breadcrumb ── -->
-<nav style="display:flex;align-items:center;gap:8px;font-size:12px;color:#94a3b8;margin-bottom:18px;">
-    <a href="<?= $userIsPrincipal ? BASE_URL.'modules/principal/payroll-approval/index.php' : BASE_URL.'modules/payroll/index.php' ?>"
-       style="color:#2563eb;text-decoration:none;font-weight:600;">
-        <i class="fa fa-chevron-left"></i>
-        <?= $userIsPrincipal ? 'Payroll Approvals' : 'Payroll Management' ?>
-    </a>
-    <span>/</span>
-    <span>Payroll Archive</span>
-</nav>
-
 <!-- ── Page header ── -->
 <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
     <div>
         <h1 style="font-size:18px;font-weight:700;color:#0f172a;margin:0 0 2px;">
-            <i class="fa fa-box-archive" style="color:#7c3aed;margin-right:8px;"></i>Payroll Archive
+            Payroll Archive
         </h1>
         <p style="font-size:12px;color:#94a3b8;margin:0;">All released payroll periods — searchable and sortable.</p>
     </div>

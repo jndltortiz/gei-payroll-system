@@ -11,7 +11,7 @@
     justify-content: space-between;
     margin-bottom: 24px;
 }
-.page-title    { font-size: 26px; font-weight: 700; color: #0f172a; margin: 0 0 4px; }
+.page-title    { font-size: var(--page-title-size, 20px); font-weight: 700; color: #0f172a; margin: 0 0 4px; }
 .page-subtitle { font-size: 13px; color: #64748b; margin: 0; }
 
 /* ── Stat Cards Row (6-card grid) ───────────────────────────── */
@@ -23,23 +23,23 @@
     text-decoration: none;
 }
 .lm-stat-card {
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
     padding: 16px 18px;
-    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    box-shadow: var(--shadow);
     display: flex;
     align-items: center;
     gap: 14px;
     text-decoration: none;
     color: inherit;
     cursor: default;
-    transition: box-shadow 0.15s, transform 0.15s;
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
 a.lm-stat-card {
     cursor: pointer;
 }
-a.lm-stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.10); transform: translateY(-1px); }
+a.lm-stat-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); }
 .lm-stat-card--active {
     box-shadow: 0 0 0 2px #2563eb, 0 4px 12px rgba(37,99,235,.12);
 }
@@ -192,6 +192,7 @@ a.lm-stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.10); transform: transl
 .lm-badge--pending    { background: #fef9c3; color: #a16207; }
 .lm-badge--approved   { background: #d1fae5; color: #065f46; }
 .lm-badge--rejected   { background: #fee2e2; color: #991b1b; }
+.lm-badge--mixed      { background: #ede9fe; color: #6d28d9; }
 .lm-badge--backdated  { background: #ede9fe; color: #6d28d9; margin-left: 4px; font-size: 10px; }
 .lm-badge--forwarded  { background: #dbeafe; color: #1e40af; }
 .lm-badge--partial    { background: #ede9fe; color: #7c3aed; }

@@ -1,9 +1,6 @@
 <?php
-require_once '../../config/config.php';
-if (!isset($_SESSION['user'])) {
-    header('Location: ' . BASE_URL . 'modules/auth/login.php');
-    exit;
-}
+require_once __DIR__ . '/../../includes/auth.php';
+requireAdminPage();
 
 /*
  * REQUIRED SQL MIGRATIONS (run once if columns don't exist):
@@ -97,6 +94,17 @@ try {
     ")->fetchColumn();
 } catch (PDOException $_e) {}
 
+// Migration 020: leave_allocation_days + period_type + ACCRUED_PAY support
+$hasMig020 = false;
+try {
+    $hasMig020 = (bool)$pdo->query("
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME   = 'payroll_settings'
+          AND COLUMN_NAME  = 'leave_allocation_days'
+    ")->fetchColumn();
+} catch (PDOException $_e) {}
+
 // Fetch government rate tables
 $sssRates    = $pdo->query("SELECT * FROM sss_contribution_table WHERE is_active = 1 ORDER BY min_salary LIMIT 6")->fetchAll();
 $sssTotal    = $pdo->query("SELECT COUNT(*) FROM sss_contribution_table WHERE is_active = 1")->fetchColumn();
@@ -125,6 +133,10 @@ require_once __DIR__ . '/../../includes/head.php';
 
         <div class="main-content">
         <div class="ps-content">
+
+            <a href="<?= BASE_URL ?>modules/settings/index.php" class="back-link">
+                <i class="fa fa-arrow-left"></i> Back to Settings
+            </a>
 
             <!-- Page Header -->
             <div class="ps-page-header">
@@ -539,6 +551,18 @@ require_once __DIR__ . '/../../includes/head.php';
                                 </div>
                             </div>
                             <?php endif; ?>
+                            <?php if ($hasMig020): ?>
+                            <div class="ps-form-group mt-3">
+                                <label class="ps-form-label">Default Leave Allocation (days)</label>
+                                <input type="number" class="ps-form-input" name="leave_allocation_days" id="leaveAllocationDays"
+                                       min="0" max="365" step="0.5"
+                                       value="<?= htmlspecialchars($settings['leave_allocation_days'] ?? 30) ?>">
+                                <div class="ps-info-note mt-2">
+                                    <i class="bi bi-info-circle"></i>
+                                    Fallback threshold for EOSY excess leave settlement — used only for employees with no leave credit records. Employees with records on the Leave Credits page use their own allocated days instead. GEI default: 30 days.
+                                </div>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -662,9 +686,17 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <strong><?= $statusCounts['OPEN'] ?></strong> open
                             </span>
                         </div>
-                        <button type="button" class="ps-btn-primary" onclick="openCreatePeriodsModal()">
-                            <i class="bi bi-plus-lg"></i> Create Pay Periods
-                        </button>
+                        <div style="display:flex;gap:8px;">
+                            <button type="button" class="ps-btn-primary" onclick="openCreatePeriodsModal()">
+                                <i class="bi bi-plus-lg"></i> Create Pay Periods
+                            </button>
+                            <?php if ($hasMig020): ?>
+                            <button type="button" class="ps-btn-secondary" onclick="openCreateAccruedPayModal()"
+                                    style="white-space:nowrap;" title="Create a single EOSY Accrued Pay period">
+                                <i class="bi bi-calendar-check"></i> Add Accrued Pay Period
+                            </button>
+                            <?php endif; ?>
+                        </div>
                     </div>
 
                     <!-- Period filter tabs -->
@@ -708,6 +740,7 @@ require_once __DIR__ . '/../../includes/head.php';
                         <thead>
                             <tr>
                                 <th>Period Name</th>
+                                <th>Type</th>
                                 <th>Start Date</th>
                                 <th>End Date</th>
                                 <th>Pay Date</th>
@@ -718,9 +751,21 @@ require_once __DIR__ . '/../../includes/head.php';
                         <tbody>
                         <?php foreach ($existingPeriods as $p):
                             $sc = $statusColors[$p['status']] ?? ['bg'=>'#f3f4f6','color'=>'#374151'];
+                            $ptype = $p['period_type'] ?? 'REGULAR';
                         ?>
                         <tr data-status="<?= $p['status'] ?>" data-year="<?= substr($p['pay_period_start'],0,4) ?>">
                             <td><strong><?= htmlspecialchars($p['period_name']) ?></strong></td>
+                            <td>
+                                <?php if ($ptype === 'ACCRUED_PAY'): ?>
+                                <span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;white-space:nowrap;">
+                                    ACCRUED PAY
+                                </span>
+                                <?php else: ?>
+                                <span style="background:#f0fdf4;color:#166534;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:600;white-space:nowrap;">
+                                    Regular
+                                </span>
+                                <?php endif; ?>
+                            </td>
                             <td><?= date('M d, Y', strtotime($p['pay_period_start'])) ?></td>
                             <td><?= date('M d, Y', strtotime($p['pay_period_end'])) ?></td>
                             <td><?= date('M d, Y', strtotime($p['pay_date'])) ?></td>
@@ -753,7 +798,7 @@ require_once __DIR__ . '/../../includes/head.php';
                         </tr>
                         <?php endforeach; ?>
                         <tr id="ppNoResults" style="display:none;">
-                            <td colspan="6" style="text-align:center;padding:24px;color:#94a3b8;font-size:13px;">
+                            <td colspan="7" style="text-align:center;padding:24px;color:#94a3b8;font-size:13px;">
                                 No periods match the selected filter.
                             </td>
                         </tr>
@@ -790,6 +835,7 @@ require_once __DIR__ . '/../../includes/head.php';
 <!-- ========== MODALS ========== -->
 <?php include __DIR__ . '/modals/modal-pay-periods.php'; ?>
 <?php include __DIR__ . '/modals/modal-edit-period.php'; ?>
+<?php if ($hasMig020): include __DIR__ . '/modals/modal-accrued-pay-period.php'; endif; ?>
 <?php include 'modals/modal-add-deduction.php'; ?>
 <?php include 'modals/modal-edit-deduction.php'; ?>
 <?php include 'modals/modal-add-allowance.php'; ?>
@@ -813,6 +859,8 @@ window.PAYROLL_SETTINGS = <?= json_encode([
     'weekend_pay_date_rule'   => $hasMig010 ? ($settings['weekend_pay_date_rule'] ?? 'ADVANCE') : 'ADVANCE',
     'attendance_source'       => $hasMig010 ? ($settings['attendance_source'] ?? 'REFERENCE') : 'REFERENCE',
     'has_mig010'              => $hasMig010,
+    'leave_allocation_days'   => $hasMig020 ? (float)($settings['leave_allocation_days'] ?? 30.00) : 30.00,
+    'has_mig020'              => $hasMig020,
 ]) ?>;
 
 window.DEPARTMENTS   = <?= json_encode($departments) ?>;

@@ -12,7 +12,7 @@
 
 /* ── Page Header ── */
 .ps-page-header  { margin-bottom: 18px; }
-.ps-page-title   { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
+.ps-page-title   { font-size: var(--page-title-size, 20px); font-weight: 700; color: #0f172a; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
 .ps-page-title i { color: #0d9488; font-size: 20px; }
 .ps-page-sub     { font-size: 13.5px; color: #64748b; margin: 0; }
 

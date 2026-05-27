@@ -14,7 +14,7 @@
     display: flex; align-items: center; justify-content: center;
     color: #fff; font-size: 20px; flex-shrink: 0;
 }
-.sc-page-header h1 { font-size: 22px; font-weight: 700; margin: 0 0 3px; color: #0f172a; }
+.sc-page-header h1 { font-size: var(--page-title-size, 20px); font-weight: 700; margin: 0 0 3px; color: #0f172a; }
 .sc-page-header p  { font-size: 13px; color: #64748b; margin: 0; }
 
 /* ── Buttons ──────────────────────────────────────────────────── */
@@ -59,9 +59,11 @@
     gap: 14px; margin-bottom: 20px;
 }
 .sc-stat-card {
-    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
     padding: 18px 20px; display: flex; align-items: center; gap: 16px;
+    box-shadow: var(--shadow); transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
+.sc-stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
 .sc-stat-icon {
     width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
     display: flex; align-items: center; justify-content: center; font-size: 18px;
@@ -398,3 +400,56 @@
     cursor: pointer; transition: background .15s; font-family: inherit;
 }
 .sc-pr-btn-details:hover { background: #f1f5f9; border-color: #94a3b8; }
+
+/* ── Principal Portal: Service Credit Records section ───────────────────── */
+.sc-pr-records-section {
+    margin-top: 32px;
+}
+.sc-pr-records-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 16px;
+}
+
+/* History tab bar */
+.sc-pr-hist-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.sc-pr-hist-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #64748b;
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+}
+.sc-pr-hist-tab:hover { color: #0f172a; }
+.sc-pr-hist-tab--active {
+    color: #0f766e;
+    border-bottom-color: #0f766e;
+    font-weight: 600;
+}
+
+/* History filter row */
+.sc-pr-hist-filters { margin-bottom: 14px; }
+.sc-pr-hist-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+    .sc-pr-hist-tab { padding: 8px 10px; font-size: 12px; }
+    .sc-pr-hist-filter-row { flex-direction: column; align-items: stretch; }
+}

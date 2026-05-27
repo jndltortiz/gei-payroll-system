@@ -36,11 +36,11 @@ if (strlen($_POST['password']) < 8) {
 }
 
 // ── Duplicate email check ─────────────────────────────────────────────────────
-$emailCheck = $pdo->prepare("SELECT employee_id FROM employees WHERE email = ?");
+$emailCheck = $pdo->prepare("SELECT employee_id FROM employees WHERE email = ? LIMIT 1");
 $emailCheck->execute([$email]);
 if ($emailCheck->fetch()) {
     echo json_encode(['success' => false,
-        'message' => 'An employee with that email already exists.']); exit;
+        'message' => 'This school email is already assigned to another account.']); exit;
 }
 
 // ── Generate employee number ──────────────────────────────────────────────────
@@ -151,15 +151,16 @@ try {
 
     // ── User account ──────────────────────────────────────────────────────────
     // Look up role_id dynamically so any role (Admin, Accounting, Employee, Principal) works
-    $roleName = trim($_POST['role'] ?? 'Employee');
-    $roleStmt = $pdo->prepare("SELECT role_id FROM roles WHERE role_name = ? LIMIT 1");
+    $roleName   = trim($_POST['role'] ?? 'Employee');
+    $roleStmt   = $pdo->prepare("SELECT role_id FROM roles WHERE role_name = ? LIMIT 1");
     $roleStmt->execute([$roleName]);
-    $roleRow  = $roleStmt->fetch();
-    $roleId   = $roleRow ? (int)$roleRow['role_id'] : 3; // fallback: Employee
+    $roleRow    = $roleStmt->fetch();
+    $roleId     = $roleRow ? (int)$roleRow['role_id'] : 3; // fallback: Employee
+    $mustChange = isset($_POST['force_password_change']) ? (int)$_POST['force_password_change'] : 1;
     $pdo->prepare("
-        INSERT INTO users (username, password_hash, role_id, employee_id, is_active)
-        VALUES (?, ?, ?, ?, 1)
-    ")->execute([$username, password_hash($_POST['password'], PASSWORD_DEFAULT), $roleId, $empId]);
+        INSERT INTO users (username, password_hash, role_id, employee_id, is_active, must_change_password)
+        VALUES (?, ?, ?, ?, 1, ?)
+    ")->execute([$username, password_hash($_POST['password'], PASSWORD_DEFAULT), $roleId, $empId, $mustChange]);
 
     // ── Educational credentials (multiple entries) ────────────────────────────
     $eduDegrees = $_POST['edu_degree'] ?? [];

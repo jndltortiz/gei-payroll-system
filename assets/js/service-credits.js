@@ -202,14 +202,6 @@ function openEditModal(r) {
     openModal('createModal');
 }
 
-// ── Reject modal ──────────────────────────────────────────────────────────
-function openRejectModal(id, name) {
-    document.getElementById('rejectScId').value          = id;
-    document.getElementById('rejectEmpName').textContent = name;
-    document.getElementById('rejectReason').value        = '';
-    openModal('rejectModal');
-}
-
 // ── View modal (admin — read-only per-date breakdown) ─────────────────────
 function openViewModal(r) {
     const statusLabel = SC_STATUS_LABELS[r.status] || r.status;

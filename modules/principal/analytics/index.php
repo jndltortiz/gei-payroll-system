@@ -146,6 +146,45 @@ $avgWaitSC = round((float)$pdo->query("
     FROM service_credits WHERE status = 'PENDING'
 ")->fetchColumn());
 
+// ── Department attendance rate — this month ───────────────────────────────────
+$deptAtt = $pdo->query("
+    SELECT d.department_name,
+           COUNT(DISTINCT e.employee_id) AS emp_count,
+           COALESCE(SUM(ar.attendance_status IN ('PRESENT','LATE','HALF_DAY')), 0) AS attended,
+           COUNT(ar.attendance_id) AS total_records
+    FROM departments d
+    LEFT JOIN employees e ON e.department_id=d.department_id AND e.employee_status='ACTIVE'
+    LEFT JOIN attendance_records ar ON ar.employee_id=e.employee_id
+          AND YEAR(ar.attendance_date)=YEAR(CURDATE())
+          AND MONTH(ar.attendance_date)=MONTH(CURDATE())
+    GROUP BY d.department_id, d.department_name
+    HAVING COUNT(DISTINCT e.employee_id) > 0
+    ORDER BY (COALESCE(SUM(ar.attendance_status IN ('PRESENT','LATE','HALF_DAY')),0) / GREATEST(COUNT(ar.attendance_id),1)) DESC
+")->fetchAll(PDO::FETCH_ASSOC);
+
+// ── Leave credit utilization (active school year) — migration-safe ────────────
+$lcRows       = [];
+$lcSchoolYear = '';
+try {
+    $syRow = $pdo->query("SELECT school_year_id, year_name FROM school_years WHERE is_active=1 LIMIT 1")->fetch();
+    if ($syRow) {
+        $lcSchoolYear = $syRow['year_name'];
+        $lcStmt = $pdo->prepare("
+            SELECT lt.leave_name,
+                   COALESCE(SUM(elc.allocated_days), 0) AS total_allocated,
+                   COALESCE(SUM(elc.used_days), 0)      AS total_used,
+                   COUNT(DISTINCT elc.employee_id)       AS emp_count
+            FROM employee_leave_credits elc
+            JOIN leave_types lt ON elc.leave_type_id=lt.leave_type_id
+            WHERE elc.school_year_id=?
+            GROUP BY lt.leave_type_id, lt.leave_name
+            ORDER BY total_allocated DESC
+        ");
+        $lcStmt->execute([$syRow['school_year_id']]);
+        $lcRows = $lcStmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+} catch (PDOException $e) {}
+
 // ── JSON for Charts ───────────────────────────────────────────────────────────
 $payrollTrendJson = json_encode(array_values(array_map(fn($r) => [
     'label' => date('M j', strtotime($r['pay_period_start'])) . '–' . date('M j', strtotime($r['pay_period_end'])),
@@ -479,6 +518,69 @@ require_once __DIR__ . '/../../../includes/head.php';
       <?php endif; ?>
     </div>
 
+    <!-- ── Row 5: Dept Attendance + Leave Credit Utilization ───────────────────── -->
+    <div class="pan-grid-1-1">
+
+      <div class="pan-panel" style="margin-bottom:0;">
+        <div class="pan-panel-header">
+          <div class="pan-panel-title">
+            <i class="fa fa-building-user" style="color:#0f766e;"></i>
+            Dept Attendance Rate
+          </div>
+          <span class="pan-panel-meta"><?= date('F Y') ?></span>
+        </div>
+        <?php if (empty($deptAtt)): ?>
+          <div class="pan-empty"><i class="fa fa-building-user"></i><p>No department attendance data this month.</p></div>
+        <?php else: ?>
+          <?php foreach ($deptAtt as $da):
+            $rate   = $da['total_records'] > 0
+                ? min(100, round(($da['attended'] / $da['total_records']) * 100)) : 0;
+            $barCol = $rate >= 90 ? '#0f766e' : ($rate >= 70 ? '#d97706' : '#ef4444');
+          ?>
+          <div class="pan-dept-row">
+            <div class="pan-dept-name"><?= htmlspecialchars($da['department_name']) ?></div>
+            <div class="pan-dept-track">
+              <div class="pan-dept-bar" style="width:<?= $rate ?>%;background:<?= $barCol ?>;"></div>
+            </div>
+            <div class="pan-dept-pct"><?= $rate ?>%</div>
+          </div>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </div>
+
+      <div class="pan-panel" style="margin-bottom:0;">
+        <div class="pan-panel-header">
+          <div class="pan-panel-title">
+            <i class="fa fa-battery-three-quarters" style="color:#6366f1;"></i>
+            Leave Credit Utilization
+          </div>
+          <span class="pan-panel-meta"><?= $lcSchoolYear ? htmlspecialchars($lcSchoolYear) : 'Active year' ?></span>
+        </div>
+        <?php if (empty($lcRows)): ?>
+          <div class="pan-empty"><i class="fa fa-battery-three-quarters"></i><p>No leave credit data<?= $lcSchoolYear ? '' : ' — no active school year set' ?>.</p></div>
+        <?php else: ?>
+          <?php foreach ($lcRows as $lc):
+            $alloc = (float)$lc['total_allocated'];
+            $used  = (float)$lc['total_used'];
+            $util  = $alloc > 0 ? min(100, round($used / $alloc * 100)) : 0;
+            $barCol = $util >= 90 ? '#ef4444' : ($util >= 70 ? '#d97706' : '#0f766e');
+          ?>
+          <div class="pan-lc-row">
+            <div>
+              <div class="pan-lc-name"><?= htmlspecialchars($lc['leave_name']) ?></div>
+              <div class="pan-lc-meta"><?= $lc['emp_count'] ?> employee<?= $lc['emp_count'] != 1 ? 's' : '' ?> · <?= number_format($used,1) ?> / <?= number_format($alloc,1) ?> days used</div>
+            </div>
+            <div class="pan-lc-track">
+              <div class="pan-lc-bar" style="width:<?= $util ?>%;background:<?= $barCol ?>;"></div>
+            </div>
+            <div class="pan-lc-pct"><?= $util ?>%</div>
+          </div>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </div>
+
+    </div><!-- row 5 -->
+
   </div><!-- .principal-page -->
   </div><!-- .main-content -->
 </div><!-- .main -->
@@ -489,9 +591,11 @@ require_once __DIR__ . '/../../../includes/head.php';
 <script>
 const BASE_URL = '<?= BASE_URL ?>';
 
-Chart.defaults.font.family = "'Plus Jakarta Sans', 'DM Sans', sans-serif";
-Chart.defaults.font.size   = 12;
-Chart.defaults.color       = '#6b8886';
+Chart.defaults.font.family  = "'Plus Jakarta Sans', 'DM Sans', sans-serif";
+Chart.defaults.font.size    = 12;
+Chart.defaults.color        = '#6b8886';
+Chart.defaults.animation    = false;
+Chart.defaults.transitions  = {};
 
 // ── Payroll Cost Trend (Line) ─────────────────────────────────────────────────
 (function () {

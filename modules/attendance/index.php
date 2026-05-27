@@ -52,6 +52,28 @@ $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
 $stmt->execute();
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// Employees with approved leave on the filter date — used for leave-sync indicators
+$approvedLeaveEmpIds = [];
+try {
+    $lvSt = $pdo->prepare("
+        SELECT DISTINCT lr.employee_id
+        FROM leave_requests lr
+        JOIN leave_request_dates lrd ON lr.leave_id = lrd.leave_id
+        WHERE lrd.leave_date = ? AND lr.status = 'APPROVED'
+    ");
+    $lvSt->execute([$filterDate]);
+    $approvedLeaveEmpIds = array_flip($lvSt->fetchAll(PDO::FETCH_COLUMN));
+} catch (PDOException $_lvEx) {
+    try {
+        $lvSt = $pdo->prepare("
+            SELECT DISTINCT employee_id FROM leave_requests
+            WHERE ? BETWEEN start_date AND end_date AND status = 'APPROVED'
+        ");
+        $lvSt->execute([$filterDate]);
+        $approvedLeaveEmpIds = array_flip($lvSt->fetchAll(PDO::FETCH_COLUMN));
+    } catch (PDOException $_lvEx2) {}
+}
+
 // ── CUTOFF tab ────────────────────────────────────────────────────────────────
 $cutoffPeriod = $_GET['cutoff'] ?? '';
 $cutoffDept   = $_GET['cdept']  ?? '';
@@ -188,8 +210,12 @@ $hRows = $hStmt->fetchAll(PDO::FETCH_ASSOC);
 $depts     = $pdo->query("SELECT department_id, department_name FROM departments ORDER BY department_name")->fetchAll();
 $positions = $pdo->query("SELECT position_id, position_name FROM positions ORDER BY position_name")->fetchAll();
 
-// ── DTR Attachments — all recent uploads, no date filter ────────────────────
-$dtrFiles = [];
+// ── DTR Attachments — active uploads (archived filtered out by default) ──────
+$dtrFiles       = [];
+$dtrArchivedCnt = 0;
+$hasMig023Dtr   = false;
+$showDtrArchived = isset($_GET['dtr_archived']);
+
 if ($hasMig007) {
     try {
         $hasDeptColDtr = (bool)$pdo->query("
@@ -197,12 +223,29 @@ if ($hasMig007) {
             WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='dtr_attachments' AND COLUMN_NAME='department_id'
         ")->fetchColumn();
 
+        $hasMig023Dtr = (bool)$pdo->query("
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='dtr_attachments' AND COLUMN_NAME='is_archived'
+        ")->fetchColumn();
+
         $dtrDeptCol   = $hasDeptColDtr ? 'da.department_id, dept.department_name AS dtr_dept_name,' : "NULL AS department_id, NULL AS dtr_dept_name,";
         $dtrDeptJoin  = $hasDeptColDtr ? "LEFT JOIN departments dept ON da.department_id = dept.department_id" : "";
+        $dtrArchCol   = $hasMig023Dtr  ? 'COALESCE(da.is_archived,0) AS is_archived,' : '0 AS is_archived,';
+
+        $dtrWhere = '';
+        if ($hasMig023Dtr) {
+            if ($showDtrArchived) {
+                $dtrWhere = 'WHERE da.is_archived = 1';
+            } else {
+                $dtrWhere = 'WHERE COALESCE(da.is_archived,0) = 0';
+            }
+            $dtrArchivedCnt = (int)$pdo->query("SELECT COUNT(*) FROM dtr_attachments WHERE is_archived = 1")->fetchColumn();
+        }
 
         $dtrStmt = $pdo->query("
             SELECT da.attachment_id, da.cutoff_start, da.cutoff_end,
                    da.file_name, da.file_path, da.file_type, da.notes, da.created_at,
+                   {$dtrArchCol}
                    {$dtrDeptCol}
                    COALESCE(
                        CONCAT(emp.first_name, ' ', emp.last_name),
@@ -213,6 +256,7 @@ if ($hasMig007) {
             LEFT JOIN users    u   ON da.uploaded_by  = u.user_id
             LEFT JOIN employees emp ON u.employee_id  = emp.employee_id
             {$dtrDeptJoin}
+            {$dtrWhere}
             ORDER BY da.created_at DESC
             LIMIT 50
         ");
@@ -461,8 +505,9 @@ require_once __DIR__ . '/../../includes/head.php';
                             $canTimeout = $r['time_in'] && !$r['time_out'];
                             $empNameEsc = addslashes($r['first_name'] . ' ' . $r['last_name']);
                             $sourceLabel = [
-                                'MANUAL_ADMIN'      => 'Manual (Admin)',
+                                'MANUAL_ADMIN'      => 'Manual',
                                 'MANUAL'            => 'Manual',
+                                'RFID'              => 'RFID',
                                 'FACIAL_RECOGNITION'=> 'Face ID',
                                 'AUTO'              => 'Auto',
                             ][$r['attendance_source'] ?? ''] ?? ($r['attendance_source'] ?? 'Manual');
@@ -489,7 +534,15 @@ require_once __DIR__ . '/../../includes/head.php';
                             <td><?= $r['position_name']   ? '<span class="att-role-tag">'.htmlspecialchars($r['position_name']).'</span>'   : '—' ?></td>
                             <td><span class="att-time <?= $timeClass ?>"><?= $tin ?></span></td>
                             <td><?= $tout ?></td>
-                            <td><span class="att-badge <?= $stClass ?>"><?= $stLabel ?></span></td>
+                            <td>
+                                <span class="att-badge <?= $stClass ?>"><?= $stLabel ?></span>
+                                <?php if ($stRaw === 'ABSENT' && isset($approvedLeaveEmpIds[(int)$r['employee_id']])): ?>
+                                <span title="Employee has an approved leave for this date. Run &quot;Record Result&quot; in Leave Management to sync attendance."
+                                      style="display:inline-flex;align-items:center;gap:3px;margin-left:4px;font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;border:1px solid #c4b5fd;border-radius:6px;padding:2px 6px;cursor:default;">
+                                    <i class="fa fa-calendar-check" style="font-size:9px;"></i> On Leave
+                                </span>
+                                <?php endif; ?>
+                            </td>
                             <td><span class="att-method-tag"><?= htmlspecialchars($sourceLabel) ?></span></td>
                             <td>
                                 <div class="att-action-group">
@@ -660,8 +713,9 @@ require_once __DIR__ . '/../../includes/head.php';
                         </select>
                         <select name="hmth" onchange="this.form.submit()">
                             <option value="">All Methods</option>
-                            <option value="MANUAL_ADMIN"      <?= $hMethod==='MANUAL_ADMIN'      ?'selected':'' ?>>Manual (Admin)</option>
-                            <option value="MANUAL"            <?= $hMethod==='MANUAL'            ?'selected':'' ?>>Manual</option>
+                            <option value="MANUAL_ADMIN"      <?= $hMethod==='MANUAL_ADMIN'      ?'selected':'' ?>>Manual</option>
+                            <option value="MANUAL"            <?= $hMethod==='MANUAL'            ?'selected':'' ?>>Manual (Self)</option>
+                            <option value="RFID"              <?= $hMethod==='RFID'              ?'selected':'' ?>>RFID</option>
                             <option value="FACIAL_RECOGNITION"<?= $hMethod==='FACIAL_RECOGNITION'?'selected':'' ?>>Face ID</option>
                             <option value="AUTO"              <?= $hMethod==='AUTO'              ?'selected':'' ?>>Auto-tagged</option>
                         </select>
@@ -716,11 +770,12 @@ require_once __DIR__ . '/../../includes/head.php';
                             $canTimeout = $r['time_in'] && !$r['time_out'];
                             $empNameEsc = addslashes($r['first_name'].' '.$r['last_name']);
                             $srcLabel = [
-                                'MANUAL_ADMIN'      => 'Manual (Admin)',
+                                'MANUAL_ADMIN'      => 'Manual',
                                 'MANUAL'            => 'Manual',
+                                'RFID'              => 'RFID',
                                 'FACIAL_RECOGNITION'=> 'Face ID',
                                 'AUTO'              => 'Auto',
-                            ][$r['attendance_source'] ?? ''] ?? ($r['attendance_source'] ?? '—');
+                            ][$r['attendance_source'] ?? ''] ?? ($r['attendance_source'] ?? 'Manual');
                         ?>
                         <tr>
                             <td style="white-space:nowrap;font-weight:600;"><?= date('M j, Y', strtotime($r['attendance_date'])) ?></td>
@@ -986,10 +1041,25 @@ require_once __DIR__ . '/../../includes/head.php';
                 <?php if (!empty($dtrFiles)): ?>
                 <span class="att-dtr-count"><?= count($dtrFiles) ?></span>
                 <?php endif; ?>
-                <button class="att-btn outline" onclick="openDtrModal()"
-                        style="margin-left:auto;font-size:12px;padding:6px 14px;border-color:#3b82f6;color:#1d4ed8;">
-                    <i class="fa fa-file-arrow-up"></i> Upload DTR
-                </button>
+                <div style="display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap;">
+                    <?php if ($hasMig023Dtr): ?>
+                    <?php if ($dtrArchivedCnt > 0): ?>
+                    <a href="?tab=<?= $tab ?>&dtr_archived<?= $showDtrArchived ? '=1' : '' ?>"
+                       class="att-btn outline"
+                       style="font-size:11px;padding:5px 11px;<?= $showDtrArchived ? 'background:#fef3c7;border-color:#f59e0b;color:#92400e;' : 'color:#64748b;' ?>">
+                        <?php if ($showDtrArchived): ?>
+                        <i class="fa fa-eye"></i> Active Files
+                        <?php else: ?>
+                        <i class="fa fa-archive"></i> Archived (<?= $dtrArchivedCnt ?>)
+                        <?php endif; ?>
+                    </a>
+                    <?php endif; ?>
+                    <?php endif; ?>
+                    <button class="att-btn outline" onclick="openDtrModal()"
+                            style="font-size:12px;padding:6px 14px;border-color:#3b82f6;color:#1d4ed8;">
+                        <i class="fa fa-file-arrow-up"></i> Upload DTR
+                    </button>
+                </div>
             </div>
 
             <?php if (!empty($dtrFiles)): ?>
@@ -1008,10 +1078,14 @@ require_once __DIR__ . '/../../includes/head.php';
                     default => '#6b7280',
                 };
             ?>
-            <div class="att-dtr-item">
-                <i class="fa <?= $ftIcon ?>" style="color:<?= $ftColor ?>;font-size:22px;flex-shrink:0;"></i>
+            <div class="att-dtr-item <?= (int)($df['is_archived']??0) ? 'att-dtr-item--archived' : '' ?>">
+                <i class="fa <?= $ftIcon ?>" style="color:<?= $ftColor ?>;font-size:22px;flex-shrink:0;<?= (int)($df['is_archived']??0)?'opacity:.4;':'' ?>"></i>
                 <div class="att-dtr-info">
-                    <div class="att-dtr-filename"><?= htmlspecialchars($df['file_name']) ?></div>
+                    <div class="att-dtr-filename"><?= htmlspecialchars($df['file_name']) ?>
+                        <?php if ((int)($df['is_archived']??0)): ?>
+                        <span style="font-size:10px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:4px;padding:1px 6px;margin-left:4px;font-weight:700;">Archived</span>
+                        <?php endif; ?>
+                    </div>
                     <div class="att-dtr-meta">
                         <strong>Period:</strong>
                         <?= date('M j, Y', strtotime($df['cutoff_start'])) ?>
@@ -1026,11 +1100,35 @@ require_once __DIR__ . '/../../includes/head.php';
                         <?php endif; ?>
                     </div>
                 </div>
-                <a href="<?= BASE_URL ?>actions/download-dtr.php?id=<?= $df['attachment_id'] ?>"
-                   target="_blank" class="att-btn outline"
-                   style="font-size:12px;padding:6px 12px;white-space:nowrap;flex-shrink:0;">
-                    <i class="fa fa-download"></i> Download
-                </a>
+                <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;flex-wrap:wrap;">
+                    <?php if (!(int)($df['is_archived']??0)): ?>
+                    <a href="<?= BASE_URL ?>actions/download-dtr.php?id=<?= $df['attachment_id'] ?>"
+                       target="_blank" class="att-btn outline"
+                       style="font-size:12px;padding:6px 12px;white-space:nowrap;">
+                        <i class="fa fa-download"></i> Download
+                    </a>
+                    <?php if ($hasMig023Dtr): ?>
+                    <button class="att-btn outline" title="Archive this DTR (file kept, hidden from active list)"
+                            onclick="dtrAction('archive', <?= $df['attachment_id'] ?>, '<?= htmlspecialchars(addslashes($df['file_name'])) ?>')"
+                            style="font-size:12px;padding:6px 12px;white-space:nowrap;color:#92400e;border-color:#fde68a;">
+                        <i class="fa fa-archive"></i> Archive
+                    </button>
+                    <?php endif; ?>
+                    <?php else: ?>
+                    <?php if ($hasMig023Dtr): ?>
+                    <button class="att-btn outline" title="Restore this upload to active list"
+                            onclick="dtrAction('unarchive', <?= $df['attachment_id'] ?>, '<?= htmlspecialchars(addslashes($df['file_name'])) ?>')"
+                            style="font-size:12px;padding:6px 12px;white-space:nowrap;color:#059669;border-color:#6ee7b7;">
+                        <i class="fa fa-rotate-left"></i> Restore
+                    </button>
+                    <button class="att-btn outline" title="Permanently delete this DTR record and file"
+                            onclick="dtrAction('delete', <?= $df['attachment_id'] ?>, '<?= htmlspecialchars(addslashes($df['file_name'])) ?>')"
+                            style="font-size:12px;padding:6px 12px;white-space:nowrap;color:#dc2626;border-color:#fca5a5;">
+                        <i class="fa fa-trash"></i> Delete
+                    </button>
+                    <?php endif; ?>
+                    <?php endif; ?>
+                </div>
             </div>
             <?php endforeach; ?>
             </div>
@@ -1148,6 +1246,32 @@ require_once __DIR__ . '/../../includes/head.php';
 
 <script src="<?= BASE_URL ?>assets/js/attendance.js"></script>
 <script>
+const _ATT_BASE = '<?= BASE_URL ?>';
+
+// ── DTR archive / delete ──────────────────────────────────────────────────────
+window.dtrAction = function(action, id, name) {
+    const msgs = {
+        archive:   `Archive "${name}"?\n\nThe file will be hidden from the active list but kept on disk and in the audit trail.`,
+        unarchive: `Restore "${name}" to the active list?`,
+        delete:    `Permanently delete "${name}"?\n\nThis removes the database record and the physical file. This cannot be undone.`,
+    };
+    if (!confirm(msgs[action] || 'Proceed?')) return;
+    const fd = new FormData();
+    fd.append('action',        action);
+    fd.append('attachment_id', id);
+    fetch(_ATT_BASE + 'actions/dtr-action.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                alert(d.message);
+                location.reload();
+            } else {
+                alert('Error: ' + d.message);
+            }
+        })
+        .catch(() => alert('Request failed — check your connection.'));
+};
+
 // Auto-Absent modal helpers (inline — simple enough)
 window.openAutoAbsentModal = function() {
     document.getElementById('autoAbsentModal').style.display = 'flex';

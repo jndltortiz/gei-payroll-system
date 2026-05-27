@@ -50,7 +50,7 @@ if (_dateEl) {
       }
     }
   });
-});
+})();
 
   function filterPresence(filter, btn) {
     document.querySelectorAll('.presence-tab').forEach(t => t.classList.remove('active'));

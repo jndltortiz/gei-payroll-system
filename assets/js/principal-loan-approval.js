@@ -71,6 +71,7 @@ function buildPrincipalReviewContent(loan, activeLoans) {
              </div>`).join('')
         : '<div class="review-no-loans">No other active loans</div>';
 
+    const _reviewLoanId = loan.loan_id;
     document.getElementById('principalReviewBody').innerHTML = `
       <!-- App ID + status badge -->
       <div class="review-app-id" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
@@ -146,6 +147,14 @@ function buildPrincipalReviewContent(loan, activeLoans) {
         <div class="review-active-loans-box">${activeLoanHtml}</div>
       </div>
 
+      <!-- Attached Documents -->
+      <div>
+        <div class="review-section-label">ATTACHED DOCUMENTS</div>
+        <div id="principal-review-docs-area" style="min-height:30px;">
+          <div style="font-size:12px;color:#94a3b8;"><i class="fa fa-spinner fa-spin"></i> Loading…</div>
+        </div>
+      </div>
+
       <!-- Principal notes -->
       <div>
         <div class="review-section-label">PRINCIPAL NOTES (OPTIONAL)</div>
@@ -158,18 +167,21 @@ function buildPrincipalReviewContent(loan, activeLoans) {
 
       <!-- Action buttons -->
       <div class="loan-modal-footer" style="margin:0;padding-top:16px;flex-wrap:wrap;gap:8px;">
-        <button class="btn-deny" onclick="openDenyReason(${loan.loan_id},'${esc(loan.employee_name)}')">
+        <button class="btn-deny" onclick="openDenyReason(${_reviewLoanId},'${esc(loan.employee_name)}')">
           <i class="fa fa-times"></i> Reject Record
         </button>
-        <button class="btn-outline" onclick="openReturnForCorrection(${loan.loan_id},'${esc(loan.employee_name)}')"
+        <button class="btn-outline" onclick="openReturnForCorrection(${_reviewLoanId},'${esc(loan.employee_name)}')"
                 style="color:#b45309;border-color:#f59e0b;background:#fffbeb;">
           <i class="fa fa-rotate-left"></i> Return for Correction
         </button>
-        <button class="btn-approve" onclick="openConfirmApprove(${loan.loan_id})">
+        <button class="btn-approve" onclick="openConfirmApprove(${_reviewLoanId})">
           <i class="fa fa-check"></i> Approve for Payroll Deduction
         </button>
       </div>
     `;
+
+    // Load documents into review modal
+    _loadPrincipalDocs(_reviewLoanId, 'principal-review-docs-area');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -501,10 +513,67 @@ function buildPrincipalDetailsContent(loan, schedule, paymentLog) {
         </table>
       </div>
 
+      <!-- Attached Documents (read-only) -->
+      <div class="sched-label" style="margin-top:14px">ATTACHED DOCUMENTS</div>
+      <div id="principal-details-docs-area" style="min-height:30px;">
+        <div style="font-size:12px;color:#94a3b8;"><i class="fa fa-spinner fa-spin"></i> Loading…</div>
+      </div>
+
       <div class="loan-modal-footer" style="margin:0;padding-top:16px;justify-content:flex-end;">
         <button class="btn-outline" onclick="closePrincipalDetails()">Close</button>
       </div>
     `;
+
+    // Load documents into details modal
+    _loadPrincipalDocs(loan.loan_id, 'principal-details-docs-area');
+}
+
+// ─── Document viewer (read-only for principal) ───────────────────
+async function _loadPrincipalDocs(loanId, containerId) {
+    const area = document.getElementById(containerId);
+    if (!area) return;
+    try {
+        const res  = await fetch(`${BASE_URL}actions/loan-document-action.php?action=list&loan_id=${loanId}`);
+        const data = await res.json();
+        if (!data.success) {
+            area.innerHTML = `<div style="font-size:12px;color:#94a3b8;padding:4px 0;">${esc(data.message)}</div>`;
+            return;
+        }
+        if (!data.documents || !data.documents.length) {
+            area.innerHTML = `<div style="font-size:12px;color:#94a3b8;padding:4px 0;">No documents attached.</div>`;
+            return;
+        }
+        area.innerHTML = data.documents.map(doc => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                      border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:#fafafa;">
+            <i class="fa ${doc.mime_type === 'application/pdf' ? 'fa-file-pdf' : 'fa-file-image'}"
+               style="font-size:18px;color:${doc.mime_type === 'application/pdf' ? '#ef4444' : '#3b82f6'};flex-shrink:0;"></i>
+            <div style="flex:1;min-width:0;">
+              <a href="${esc(doc.url)}" target="_blank"
+                 style="font-size:13px;font-weight:600;color:#0369a1;text-decoration:none;word-break:break-all;">
+                ${esc(doc.original_name)}
+              </a>
+              <div style="font-size:11px;color:#94a3b8;margin-top:2px;">
+                ${doc.size_kb} KB
+                &bull; Uploaded ${fmt(doc.created_at)}
+                ${doc.uploaded_by_name ? '&bull; by ' + esc(doc.uploaded_by_name) : ''}
+                &bull; <span style="background:${doc.filed_by_role === 'EMPLOYEE' ? '#dbeafe' : '#f0fdf4'};
+                              color:${doc.filed_by_role === 'EMPLOYEE' ? '#1d4ed8' : '#166534'};
+                              padding:1px 5px;border-radius:3px;font-weight:600;font-size:10px;">
+                  ${doc.filed_by_role === 'EMPLOYEE' ? 'EMPLOYEE' : 'ADMIN'}
+                </span>
+              </div>
+            </div>
+            <a href="${esc(doc.url)}" target="_blank" download
+               title="Download"
+               style="padding:6px 10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;
+                      color:#0369a1;font-size:12px;text-decoration:none;white-space:nowrap;flex-shrink:0;">
+              <i class="fa fa-download"></i> Open
+            </a>
+          </div>`).join('');
+    } catch {
+        area.innerHTML = `<div style="font-size:12px;color:#94a3b8;">Could not load documents.</div>`;
+    }
 }
 
 // ─── Close modals on overlay click ──────────────────────────────

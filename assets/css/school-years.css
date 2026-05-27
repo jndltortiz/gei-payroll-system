@@ -14,7 +14,7 @@
     flex-wrap: wrap;
 }
 .sy-page-header h1 {
-    font-size: 22px;
+    font-size: var(--page-title-size, 20px);
     font-weight: 700;
     color: #0f172a;
     margin: 0 0 4px;

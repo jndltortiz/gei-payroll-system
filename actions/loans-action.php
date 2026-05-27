@@ -3,12 +3,14 @@
  * actions/loans-action.php
  * Handles all loan CRUD and lifecycle operations.
  * POST: action (add|approve|deny|pause|resume|cancel|archive|
- *                get_review|get_details|record_payment|adjust|complete)
+ *                get_review|get_details|record_payment|adjust|complete|edit_returned)
  * Returns JSON.
  *
  * Role guards:
  *   add / record_payment / adjust / complete / pause / resume / cancel / archive → Admin only
- *   approve / deny                                                                → Admin OR Principal
+ *   edit_returned                                                                 → Admin only
+ *   approve / deny                                                                → Principal only
+ *   return_for_correction                                                         → Admin OR Principal
  *   get_review / get_details                                                      → Admin OR Principal
  */
 require_once __DIR__ . '/../config/config.php';
@@ -87,12 +89,22 @@ if ($action === 'get_review' || $action === 'get_details') {
         $schedule[] = ['month'=>$i, 'date'=>$pd->format('M d, Y'), 'amount'=>$amt, 'status'=>$st];
     }
 
+    // Fetch loan types for the edit form (only needed for RETURNED loans)
+    $loanTypesArr = [];
+    if ($loan['status'] === 'RETURNED') {
+        try {
+            $ltStmt = $pdo->query("SELECT loan_type_id, loan_name FROM loan_types WHERE is_active=1 ORDER BY loan_name ASC");
+            $loanTypesArr = $ltStmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) { $loanTypesArr = []; }
+    }
+
     echo json_encode([
         'success'      => true,
         'loan'         => $loan,
         'active_loans' => $activeLoansList,
         'schedule'     => $schedule,
         'payment_log'  => $paymentLog,
+        'loan_types'   => $loanTypesArr,
     ]);
     exit;
 }
@@ -252,9 +264,9 @@ if ($action === 'deny') {
     exit;
 }
 
-// ── RETURN FOR CORRECTION — Principal only ────────────────────────────────────
+// ── RETURN FOR CORRECTION — Admin OR Principal ────────────────────────────────
 if ($action === 'return_for_correction') {
-    requirePrincipalAction();
+    requireAdminOrPrincipalAction();
 
     $loanId = (int)($_POST['loan_id']    ?? 0);
     $reason = trim($_POST['return_reason'] ?? '');
@@ -277,6 +289,87 @@ if ($action === 'return_for_correction') {
                        "Principal returned loan #{$loanId} for correction — {$reason}"]);
 
         echo json_encode(['success'=>true,'message'=>'Loan document returned for correction. Admin will be notified.']);
+    } catch (PDOException $e) {
+        echo json_encode(['success'=>false,'message'=>'DB error: '.$e->getMessage()]);
+    }
+    exit;
+}
+
+// ── EDIT & RESUBMIT RETURNED LOAN — Admin only ────────────────────────────────
+if ($action === 'edit_returned') {
+    requireAdminAction();
+
+    $loanId       = (int)($_POST['loan_id']           ?? 0);
+    $typeId       = (int)($_POST['loan_type_id']      ?? 0);
+    $providerName = trim($_POST['provider_name']      ?? '');
+    $ref          = trim($_POST['account_reference']  ?? '');
+    $amount       = max(0, (float)($_POST['total_amount']       ?? 0));
+    $monthly      = max(0, (float)($_POST['monthly_deduction']  ?? 0));
+    $interest     = max(0, (float)($_POST['interest_rate']      ?? 0));
+    $payableRaw   = trim($_POST['total_payable']      ?? '');
+    $balanceRaw   = trim($_POST['current_balance']    ?? '');
+    $startDt      = trim($_POST['start_date']         ?? '');
+    $remarks      = trim($_POST['reason']             ?? '');
+
+    if (!$loanId || !$typeId || !$providerName || !$amount || !$monthly || !$startDt) {
+        echo json_encode(['success'=>false,'message'=>'Please fill in all required fields (loan type, provider, amount, amortization, start date).']);
+        exit;
+    }
+
+    // Verify the loan exists and is currently in RETURNED status
+    $check = $pdo->prepare("SELECT loan_id, employee_id FROM employee_loans WHERE loan_id=? AND status='RETURNED'");
+    $check->execute([$loanId]);
+    if (!$check->fetch()) {
+        echo json_encode(['success'=>false,'message'=>'Loan not found or is not in RETURNED status — cannot edit.']);
+        exit;
+    }
+
+    // Total payable must be >= principal; balance capped at principal
+    $payable = ($payableRaw !== '' && (float)$payableRaw > 0)
+        ? max($amount, (float)$payableRaw)
+        : $amount;
+    $currentBalance = ($balanceRaw !== '' && (float)$balanceRaw > 0)
+        ? min($amount, max(0, (float)$balanceRaw))
+        : $amount;
+
+    $term    = $monthly > 0 ? (int)ceil($payable / $monthly) : 0;
+    $endDate = $term > 0 ? date('Y-m-d', strtotime($startDt . " +{$term} months")) : null;
+
+    try {
+        $updated = $pdo->prepare("
+            UPDATE employee_loans
+            SET loan_type_id      = ?,
+                provider_name     = ?,
+                account_reference = ?,
+                total_amount      = ?,
+                balance_amount    = ?,
+                monthly_deduction = ?,
+                interest_rate     = ?,
+                total_payable     = ?,
+                start_date        = ?,
+                end_date          = ?,
+                reason            = ?,
+                status            = 'PENDING',
+                return_reason     = NULL
+            WHERE loan_id = ? AND status = 'RETURNED'
+        ");
+        $updated->execute([
+            $typeId, $providerName, $ref ?: null, $amount, $currentBalance,
+            $monthly, $interest, $payable, $startDt, $endDate, $remarks,
+            $loanId
+        ]);
+
+        if ($updated->rowCount() === 0) {
+            echo json_encode(['success'=>false,'message'=>'Update failed — loan may have already been processed.']);
+            exit;
+        }
+
+        if ($uid) $pdo->prepare("INSERT INTO audit_logs(user_id,action,table_name,record_id,description) VALUES(?,?,?,?,?)")
+            ->execute([$uid, 'RESUBMIT', 'employee_loans', $loanId,
+                       "Admin edited and resubmitted returned loan #{$loanId} for Principal review"
+                       .($ref ? " (Ref: {$ref})" : '')]);
+
+        echo json_encode(['success'=>true,'message'=>'Loan record updated and resubmitted for Principal review.']);
     } catch (PDOException $e) {
         echo json_encode(['success'=>false,'message'=>'DB error: '.$e->getMessage()]);
     }
@@ -525,6 +618,215 @@ if ($action === 'adjust') {
         echo json_encode(['success'=>true,'message'=>'Loan terms updated successfully.']);
     } catch (PDOException $e) {
         echo json_encode(['success'=>false,'message'=>'DB error: '.$e->getMessage()]);
+    }
+    exit;
+}
+
+// ── EMPLOYEE SELF-SERVICE REQUEST ────────────────────────────────────────────
+if ($action === 'request') {
+    requireEmployeeAjax();
+
+    $empId   = (int)($_SESSION['user']['employee_id'] ?? 0);
+    if (!$empId) { echo json_encode(['success'=>false,'message'=>'Employee profile not linked to your account.']); exit; }
+
+    $typeId       = (int)($_POST['loan_type_id']     ?? 0);
+    $providerName = trim($_POST['provider_name']     ?? '');
+    $amount       = max(0, (float)($_POST['total_amount']      ?? 0));
+    $monthly      = max(0, (float)($_POST['monthly_deduction'] ?? 0));
+    $startDt      = trim($_POST['start_date'] ?? date('Y-m-d'));
+    $remarks      = trim($_POST['reason']     ?? '');
+    // Financial detail fields captured from employee's loan approval letter (all optional)
+    $ref            = trim($_POST['account_reference'] ?? '');
+    $interest       = max(0, (float)($_POST['interest_rate']  ?? 0));
+    $userPayableRaw = trim($_POST['total_payable']     ?? '');
+    $userBalanceRaw = trim($_POST['current_balance']   ?? '');
+
+    if (!$typeId || !$amount || !$monthly || !$startDt) {
+        echo json_encode(['success'=>false,'message'=>'Please fill in all required fields (loan type, amount, monthly amortization, start date).']);
+        exit;
+    }
+    if (!$providerName) {
+        echo json_encode(['success'=>false,'message'=>'Please enter the provider or lending institution name.']);
+        exit;
+    }
+
+    // Prevent duplicate pending/active loan of same type for same employee
+    $dupCheck = $pdo->prepare("
+        SELECT loan_id FROM employee_loans
+        WHERE employee_id = ? AND loan_type_id = ? AND status IN ('ACTIVE','PENDING','PAUSED','RETURNED')
+        LIMIT 1
+    ");
+    $dupCheck->execute([$empId, $typeId]);
+    if ($dupCheck->fetchColumn()) {
+        echo json_encode(['success'=>false,'message'=>'You already have an active or pending loan of this type. Please wait for it to be resolved before filing a new request.']);
+        exit;
+    }
+
+    // Duplicate external reference number (if provided)
+    if ($ref !== '') {
+        $refCheck = $pdo->prepare("
+            SELECT loan_id FROM employee_loans
+            WHERE account_reference = ? AND status NOT IN ('CANCELLED','DENIED','ARCHIVED')
+            LIMIT 1
+        ");
+        $refCheck->execute([$ref]);
+        if ($refCheck->fetchColumn()) {
+            echo json_encode(['success'=>false,'message'=>'A loan with this reference number already exists in the system. Please contact HR Admin if this is an existing loan.']);
+            exit;
+        }
+    }
+
+    // Use employee-supplied total_payable (from their letter); must be >= principal
+    $payable = ($userPayableRaw !== '' && (float)$userPayableRaw > 0)
+        ? max($amount, (float)$userPayableRaw)
+        : $amount;
+    // Use employee-supplied current balance; cap at total_amount; default = total_amount (fresh loan)
+    $currentBalance = ($userBalanceRaw !== '' && (float)$userBalanceRaw > 0)
+        ? min($amount, max(0, (float)$userBalanceRaw))
+        : $amount;
+
+    $term    = $monthly > 0 ? (int)ceil($payable / $monthly) : 0;
+    $endDate = $term > 0 ? date('Y-m-d', strtotime($startDt . " +{$term} months")) : null;
+
+    try {
+        // Try INSERT with filed_by column (migration 019); fall back without it
+        try {
+            $ins = $pdo->prepare("
+                INSERT INTO employee_loans
+                    (employee_id, loan_type_id, account_reference, provider_name, total_amount,
+                     balance_amount, monthly_deduction, interest_rate, total_payable, start_date,
+                     end_date, status, reason, filed_by)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,'PENDING',?,'EMPLOYEE')
+            ");
+            $ins->execute([$empId, $typeId, $ref ?: null, $providerName, $amount,
+                           $currentBalance, $monthly, $interest, $payable, $startDt, $endDate, $remarks]);
+        } catch (PDOException $e) {
+            // Migration 019 not yet run — insert without filed_by
+            $ins = $pdo->prepare("
+                INSERT INTO employee_loans
+                    (employee_id, loan_type_id, account_reference, provider_name, total_amount,
+                     balance_amount, monthly_deduction, interest_rate, total_payable, start_date,
+                     end_date, status, reason)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,'PENDING',?)
+            ");
+            $ins->execute([$empId, $typeId, $ref ?: null, $providerName, $amount,
+                           $currentBalance, $monthly, $interest, $payable, $startDt, $endDate, $remarks]);
+        }
+        $lid = (int)$pdo->lastInsertId();
+
+        // If employee entered a lower current balance (partially-paid existing loan), log prior payments
+        $priorPaid = round($amount - $currentBalance, 2);
+        if ($priorPaid > 0.00) {
+            try {
+                $pdo->prepare("
+                    INSERT INTO loan_payment_log (loan_id, payment_date, amount, payment_channel, notes, encoded_by)
+                    VALUES (?, ?, ?, 'PRIOR_PAYMENTS', 'Balance at time of entry — payments made before system recording', ?)
+                ")->execute([$lid, $startDt, $priorPaid, $uid]);
+            } catch (PDOException $e) { /* loan_payment_log not yet set up */ }
+        }
+
+        $auditNote = "Employee self-service loan request #{$lid} for ₱" . number_format($amount,2) . " — pending Principal review";
+        if ($ref) $auditNote .= " (Ref: {$ref})";
+        if ($uid) $pdo->prepare("INSERT INTO audit_logs(user_id,action,table_name,record_id,description) VALUES(?,?,?,?,?)")
+            ->execute([$uid,'CREATE','employee_loans',$lid,$auditNote]);
+
+        echo json_encode(['success'=>true,'message'=>'Your loan request has been submitted for Principal review.','loan_id'=>$lid]);
+    } catch (PDOException $e) {
+        echo json_encode(['success'=>false,'message'=>'DB error: '.$e->getMessage()]);
+    }
+    exit;
+}
+
+// ── EMPLOYEE CANCEL OWN PENDING REQUEST ──────────────────────────────────────
+if ($action === 'cancel_own') {
+    requireEmployeeAjax();
+
+    $empId  = (int)($_SESSION['user']['employee_id'] ?? 0);
+    $loanId = (int)($_POST['loan_id'] ?? 0);
+    if (!$empId || !$loanId) {
+        echo json_encode(['success'=>false,'message'=>'Invalid request.']); exit;
+    }
+
+    // Only allow cancelling own PENDING loans filed by the employee themselves
+    $row = $pdo->prepare("
+        SELECT loan_id, filed_by FROM employee_loans
+        WHERE loan_id = ? AND employee_id = ? AND status = 'PENDING'
+        LIMIT 1
+    ");
+    $row->execute([$loanId, $empId]);
+    $loan = $row->fetch();
+
+    if (!$loan) {
+        echo json_encode(['success'=>false,'message'=>'Loan request not found or cannot be cancelled.']); exit;
+    }
+
+    // Check filed_by if column exists; if column doesn't exist, allow cancel for any own pending
+    $filedBy = $loan['filed_by'] ?? 'EMPLOYEE';
+    if ($filedBy !== 'EMPLOYEE') {
+        echo json_encode(['success'=>false,'message'=>'Only loan requests you filed yourself can be cancelled here. Contact HR Admin to cancel admin-filed loans.']); exit;
+    }
+
+    try {
+        $pdo->prepare("UPDATE employee_loans SET status='CANCELLED' WHERE loan_id=?")
+            ->execute([$loanId]);
+
+        if ($uid) $pdo->prepare("INSERT INTO audit_logs(user_id,action,table_name,record_id,description) VALUES(?,?,?,?,?)")
+            ->execute([$uid,'CANCEL','employee_loans',$loanId,
+                       "Employee cancelled their own pending loan request #{$loanId}"]);
+
+        echo json_encode(['success'=>true,'message'=>'Loan request cancelled.']);
+    } catch (PDOException $e) {
+        echo json_encode(['success'=>false,'message'=>'DB error: '.$e->getMessage()]);
+    }
+    exit;
+}
+
+// ── SET NEXT-DEDUCTION CONTROL (Admin) ───────────────────────────────────────
+if ($action === 'set_deduction_control') {
+    requireAdminAction();
+
+    $loanId   = (int)($_POST['loan_id']   ?? 0);
+    $skipNext = (int)($_POST['skip_next'] ?? 0); // 1 = skip, 0 = don't skip
+    $override = trim($_POST['override_amount'] ?? '');
+    if (!$loanId) { echo json_encode(['success'=>false,'message'=>'Invalid loan ID.']); exit; }
+
+    // Validate override amount
+    $overrideAmt = null;
+    if ($override !== '') {
+        $overrideAmt = max(0, (float)$override);
+        if ($overrideAmt <= 0) $overrideAmt = null;
+    }
+
+    // Can only control ACTIVE loans
+    $check = $pdo->prepare("SELECT loan_id, balance_amount FROM employee_loans WHERE loan_id=? AND status='ACTIVE'");
+    $check->execute([$loanId]);
+    if (!$check->fetch()) {
+        echo json_encode(['success'=>false,'message'=>'Loan not found or not active.']); exit;
+    }
+
+    try {
+        $pdo->prepare("
+            UPDATE employee_loans
+            SET skip_next_deduction=?, next_deduction_override=?
+            WHERE loan_id=?
+        ")->execute([$skipNext ? 1 : 0, $overrideAmt, $loanId]);
+
+        if ($uid) {
+            $note = $skipNext
+                ? "Admin set skip-next-deduction for loan #{$loanId}"
+                : ($overrideAmt !== null
+                    ? "Admin set next deduction override to ₱" . number_format($overrideAmt,2) . " for loan #{$loanId}"
+                    : "Admin cleared deduction controls for loan #{$loanId}");
+            $pdo->prepare("INSERT INTO audit_logs(user_id,action,table_name,record_id,description) VALUES(?,?,?,?,?)")
+                ->execute([$uid,'ADJUST','employee_loans',$loanId,$note]);
+        }
+
+        $msg = $skipNext ? 'Next payroll deduction will be skipped for this loan.'
+             : ($overrideAmt !== null ? 'Next deduction override set to ₱' . number_format($overrideAmt,2) . '.'
+             : 'Deduction controls cleared — normal deduction will apply.');
+        echo json_encode(['success'=>true,'message'=>$msg]);
+    } catch (PDOException $e) {
+        echo json_encode(['success'=>false,'message'=>'DB error (migration 019 may not be applied): '.$e->getMessage()]);
     }
     exit;
 }

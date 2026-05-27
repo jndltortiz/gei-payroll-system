@@ -3,12 +3,16 @@ require_once __DIR__ . '/../../config/config.php';
 
 $pageTitle = 'Leave Management';
 
-// ── Migration guard ──────────────────────────────────────────────────────────
+// ── Migration guards ─────────────────────────────────────────────────────────
 $hasMig016 = (bool)$pdo->query("SHOW COLUMNS FROM `leave_requests` LIKE 'workflow_status'")->fetch();
+$hasMig022 = false;
+try {
+    $hasMig022 = (bool)$pdo->query("SHOW COLUMNS FROM `leave_requests` LIKE 'is_attendance_recorded'")->fetch();
+} catch (PDOException $_e) {}
 
 // ── Current tab ─────────────────────────────────────────────────────────────
 $tab = $_GET['tab'] ?? 'pending_review';
-$validTabs = ['pending_review','awaiting','approved','rejected','history'];
+$validTabs = ['pending_review','awaiting','to_record','approved','rejected','history'];
 if (!in_array($tab, $validTabs)) $tab = 'pending_review';
 
 // ── Filters ──────────────────────────────────────────────────────────────────
@@ -46,6 +50,25 @@ if ($hasMig016) {
     $sAwaiting      = 0;
 }
 
+// "To Be Recorded": principal has decided but admin hasn't recorded yet (migration 022)
+$sToRecord = 0;
+if ($hasMig022) {
+    $sToRecord = (int)$pdo->query("
+        SELECT COUNT(*) FROM leave_requests
+        WHERE status IN ('APPROVED','REJECTED','PARTIALLY_APPROVED') AND is_attendance_recorded = 0
+    ")->fetchColumn();
+} elseif ($hasMig016) {
+    $sToRecord = (int)$pdo->query("
+        SELECT COUNT(*) FROM leave_requests lr
+        WHERE lr.workflow_status = 'FORWARDED'
+          AND lr.status IN ('APPROVED','REJECTED','PARTIALLY_APPROVED')
+          AND NOT EXISTS (
+            SELECT 1 FROM leave_request_dates lrd
+            WHERE lrd.leave_id = lr.leave_id AND lrd.status = 'PENDING'
+          )
+    ")->fetchColumn();
+}
+
 $sApprovedMonth = $pdo->query("
     SELECT COUNT(*) FROM leave_requests
     WHERE status = 'APPROVED' AND DATE_FORMAT(updated_at,'%Y-%m') = '{$thisM}'
@@ -73,6 +96,7 @@ $sOnLeaveNextMonth = $pdo->query("
 // ── Tab counts for badges ────────────────────────────────────────────────────
 $cPendingReview = (int)$sPendingReview;
 $cAwaiting      = (int)$sAwaiting;
+$cToRecord      = (int)$sToRecord;
 
 // ── Filter options ────────────────────────────────────────────────────────────
 $departments = $pdo->query("SELECT department_id, department_name FROM departments ORDER BY department_name")->fetchAll();
@@ -124,13 +148,29 @@ if ($tab === 'pending_review') {
     $extra   = buildFilters($hasMig016, $fDept, $fType, $fMonth, $fSY, $fSearch, $params);
     $sql     = $baseSelect . " WHERE ({$wClause}){$extra} ORDER BY lr.created_at ASC";
 
+} elseif ($tab === 'to_record') {
+    // Principal has decided (APPROVED or REJECTED) but admin hasn't recorded attendance yet
+    if ($hasMig022) {
+        $wClause = "lr.status IN ('APPROVED','REJECTED','PARTIALLY_APPROVED') AND lr.is_attendance_recorded = 0";
+    } elseif ($hasMig016) {
+        $wClause = "lr.workflow_status = 'FORWARDED' AND lr.status IN ('APPROVED','REJECTED','PARTIALLY_APPROVED')
+            AND NOT EXISTS (SELECT 1 FROM leave_request_dates lrd WHERE lrd.leave_id=lr.leave_id AND lrd.status='PENDING')";
+    } else {
+        $wClause = "1=0"; // not available without mig016
+    }
+    $extra = buildFilters($hasMig016, $fDept, $fType, $fMonth, $fSY, $fSearch, $params);
+    $sql   = $baseSelect . " WHERE ({$wClause}){$extra} ORDER BY lr.updated_at ASC";
+
 } elseif ($tab === 'approved') {
     $extra = buildFilters($hasMig016, $fDept, $fType, $fMonth, $fSY, $fSearch, $params);
-    $sql   = $baseSelect . " WHERE lr.status = 'APPROVED'{$extra} ORDER BY lr.updated_at DESC";
+    // With migration 022: only show fully recorded approvals; fallback shows all approved
+    $recFilter = $hasMig022 ? " AND lr.is_attendance_recorded = 1" : "";
+    $sql   = $baseSelect . " WHERE lr.status = 'APPROVED'{$recFilter}{$extra} ORDER BY lr.updated_at DESC";
 
 } elseif ($tab === 'rejected') {
     $extra = buildFilters($hasMig016, $fDept, $fType, $fMonth, $fSY, $fSearch, $params);
-    $sql   = $baseSelect . " WHERE lr.status = 'REJECTED'{$extra} ORDER BY lr.updated_at DESC";
+    $recFilter = $hasMig022 ? " AND lr.is_attendance_recorded = 1" : "";
+    $sql   = $baseSelect . " WHERE lr.status = 'REJECTED'{$recFilter}{$extra} ORDER BY lr.updated_at DESC";
 
 } else { // history
     $extra = buildFilters($hasMig016, $fDept, $fType, $fMonth, $fSY, $fSearch, $params);
@@ -146,12 +186,51 @@ $approvedCounts = [];
 if ($records) {
     $ids    = implode(',', array_map('intval', array_column($records, 'leave_id')));
     $acRows = $pdo->query("
-        SELECT leave_id, COUNT(*) AS approved_cnt, SUM(status='PENDING') AS pending_cnt, SUM(status='REJECTED') AS rejected_cnt
+        SELECT leave_id,
+               COUNT(*)                  AS approved_cnt,
+               SUM(status='PENDING')     AS pending_cnt,
+               SUM(status='REJECTED')    AS rejected_cnt,
+               MIN(leave_date)           AS actual_start,
+               MAX(leave_date)           AS actual_end,
+               GROUP_CONCAT(leave_date ORDER BY leave_date SEPARATOR ',') AS all_dates
         FROM leave_request_dates WHERE leave_id IN ({$ids}) GROUP BY leave_id
     ")->fetchAll();
     foreach ($acRows as $r) {
         $approvedCounts[$r['leave_id']] = $r;
     }
+}
+
+// ── Date formatter for leave table ───────────────────────────────────────────
+function formatLeaveDates(string $allDatesStr): string {
+    $dates = array_values(array_filter(array_map('trim', explode(',', $allDatesStr))));
+    if (empty($dates)) return '—';
+    if (count($dates) === 1) return date('M j, Y', strtotime($dates[0]));
+
+    $ts    = array_map('strtotime', $dates);
+    $first = $ts[0];
+    $last  = $ts[count($ts) - 1];
+
+    // Detect consecutive range
+    $consecutive = true;
+    for ($i = 1; $i < count($ts); $i++) {
+        if ($ts[$i] !== strtotime('+1 day', $ts[$i - 1])) { $consecutive = false; break; }
+    }
+
+    if ($consecutive) {
+        // Range: "May 21–May 22, 2026" or "May 28–Jun 3, 2026"
+        return date('M j', $first) . '–' . date('M j, Y', $last);
+    }
+
+    // Non-consecutive — group by month if all same month
+    $months = array_unique(array_map(fn($t) => date('Y-m', $t), $ts));
+    if (count($months) === 1) {
+        // "May 22, 26, 28, 30, 2026"
+        $days = array_map(fn($t) => (int) date('j', $t), $ts);
+        return date('M', $first) . ' ' . implode(', ', $days) . ', ' . date('Y', $first);
+    }
+
+    // Spans multiple months — show first–last range
+    return date('M j', $first) . '–' . date('M j, Y', $last);
 }
 
 $pageTitle     = 'Leave Management';
@@ -237,12 +316,32 @@ require_once __DIR__ . '/../../includes/head.php';
             Awaiting Principal
             <?php if ($cAwaiting > 0): ?><span class="lm-tab-badge lm-tab-badge--blue"><?= $cAwaiting ?></span><?php endif; ?>
         </a>
-        <a href="?tab=approved<?= $fDept?"&dept={$fDept}":'' ?>" class="lm-tab <?= $tab==='approved'?'lm-tab--active':'' ?>">Approved</a>
-        <a href="?tab=rejected<?= $fDept?"&dept={$fDept}":'' ?>" class="lm-tab <?= $tab==='rejected'?'lm-tab--active':'' ?>">Rejected</a>
+        <a href="?tab=to_record<?= $fDept?"&dept={$fDept}":'' ?>"
+           class="lm-tab <?= $tab==='to_record'?'lm-tab--active':'' ?>"
+           <?= ($cToRecord > 0 && $tab!=='to_record') ? 'style="color:#d97706;"' : '' ?>>
+            <i class="fa fa-pen-to-square"></i> To Be Recorded
+            <?php if ($cToRecord > 0): ?><span class="lm-tab-badge lm-tab-badge--amber"><?= $cToRecord ?></span><?php endif; ?>
+        </a>
+        <a href="?tab=approved<?= $fDept?"&dept={$fDept}":'' ?>" class="lm-tab <?= $tab==='approved'?'lm-tab--active':'' ?>">
+            <i class="fa fa-circle-check"></i> Approved
+        </a>
+        <a href="?tab=rejected<?= $fDept?"&dept={$fDept}":'' ?>" class="lm-tab <?= $tab==='rejected'?'lm-tab--active':'' ?>">
+            <i class="fa fa-circle-xmark"></i> Rejected
+        </a>
         <a href="?tab=history" class="lm-tab <?= $tab==='history'?'lm-tab--active':'' ?>">
             <i class="fa fa-clock-rotate-left"></i> History
         </a>
     </div>
+
+    <?php if ($cToRecord > 0 && $tab !== 'to_record'): ?>
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;margin-bottom:12px;font-size:13px;color:#92400e;">
+        <i class="fa fa-triangle-exclamation" style="color:#d97706;"></i>
+        <strong><?= $cToRecord ?> leave decision<?= $cToRecord !== 1 ? 's' : '' ?> need to be recorded in attendance.</strong>
+        <a href="?tab=to_record" style="margin-left:auto;color:#d97706;font-weight:600;text-decoration:none;">
+            View &rarr;
+        </a>
+    </div>
+    <?php endif; ?>
 
     <!-- FILTERS -->
     <form class="lm-filter-bar" method="GET" action="">
@@ -286,8 +385,15 @@ require_once __DIR__ . '/../../includes/head.php';
             <div>
                 <div class="lm-table-title">
                     <?php
-                    $tabLabels = ['pending_review'=>'Pending Admin Review','awaiting'=>'Awaiting Principal Decision','approved'=>'Approved Requests','rejected'=>'Rejected Requests','history'=>'Leave History'];
-                    echo htmlspecialchars($tabLabels[$tab] ?? 'Leave Records');
+                    $tabLabels = [
+                        'pending_review' => 'Pending Admin Review',
+                        'awaiting'       => 'Awaiting Principal Decision',
+                        'to_record'      => 'To Be Recorded — Principal Decided, Attendance Pending',
+                        'approved'       => 'Approved &amp; Recorded',
+                        'rejected'       => 'Rejected &amp; Recorded',
+                        'history'        => 'Leave History',
+                    ];
+                    echo $tabLabels[$tab] ?? 'Leave Records';
                     ?>
                 </div>
                 <div class="lm-table-sub"><?= count($records) ?> record<?= count($records)!==1?'s':'' ?></div>
@@ -316,17 +422,22 @@ require_once __DIR__ . '/../../includes/head.php';
             </thead>
             <tbody>
             <?php foreach ($records as $r):
-                $wfStatus   = $r['workflow_status'] ?? 'PENDING_REVIEW';
-                $dateFrom   = date('M d', strtotime($r['start_date']));
-                $dateTo     = date('M d, Y', strtotime($r['end_date']));
-                $dateStr    = ($r['start_date'] === $r['end_date']) ? date('M d, Y', strtotime($r['start_date'])) : "{$dateFrom}–{$dateTo}";
-                $ac         = $approvedCounts[$r['leave_id']] ?? [];
+                $wfStatus    = $r['workflow_status'] ?? 'PENDING_REVIEW';
+                $ac          = $approvedCounts[$r['leave_id']] ?? [];
+                $dStart      = $ac['actual_start'] ?? $r['start_date'];
+                $dEnd        = $ac['actual_end']   ?? $r['end_date'];
+                $dateStr     = !empty($ac['all_dates'])
+                    ? formatLeaveDates($ac['all_dates'])
+                    : (($dStart === $dEnd)
+                        ? date('M j, Y', strtotime($dStart))
+                        : date('M j', strtotime($dStart)) . '–' . date('M j, Y', strtotime($dEnd)));
                 $isBackdated = !empty($r['is_backdated']);
 
                 $statusBadge = match(strtoupper($r['status'])) {
-                    'APPROVED' => ['lm-badge--approved','Approved'],
-                    'REJECTED' => ['lm-badge--rejected','Rejected'],
-                    default    => ['lm-badge--pending','Pending'],
+                    'APPROVED'           => ['lm-badge--approved','Approved'],
+                    'REJECTED'           => ['lm-badge--rejected','Rejected'],
+                    'PARTIALLY_APPROVED' => ['lm-badge--mixed','Mixed'],
+                    default              => ['lm-badge--pending','Pending'],
                 };
                 $wfBadge = match($wfStatus) {
                     'FORWARDED' => ['lm-wf--forwarded','Forwarded'],
@@ -373,23 +484,19 @@ require_once __DIR__ . '/../../includes/head.php';
                         <button class="lm-btn lm-btn--view" onclick="openViewModal(<?= $r['leave_id'] ?>)">
                             <i class="fa fa-eye"></i> View
                         </button>
-                        <?php if ($wfStatus === 'PENDING_REVIEW'): ?>
-                            <button class="lm-btn lm-btn--forward"
-                                    onclick="openForwardModal(<?= $r['leave_id'] ?>, <?= htmlspecialchars(json_encode($r['employee_name'])) ?>)">
-                                <i class="fa fa-paper-plane"></i> Forward
-                            </button>
-                        <?php elseif ($wfStatus === 'FORWARDED' && strtoupper($r['status']) !== 'PENDING'): ?>
-                            <?php
-                            // All dates decided — admin can now record result
-                            $pendingLeft = (int)($ac['pending_cnt'] ?? 0);
-                            if ($pendingLeft === 0):
-                            ?>
+                        <?php if ($tab === 'to_record'): ?>
+                            <!-- In "To Be Recorded" tab: always show the Record button -->
                             <button class="lm-btn lm-btn--record"
                                     onclick="doRecord(<?= $r['leave_id'] ?>)">
                                 <i class="fa fa-check-double"></i> Record
                             </button>
-                            <?php endif; ?>
-                        <?php elseif ($wfStatus === 'FORWARDED' && !empty($ac) && ($ac['pending_cnt'] ?? 0) == 0): ?>
+                        <?php elseif ($wfStatus === 'PENDING_REVIEW'): ?>
+                            <button class="lm-btn lm-btn--forward"
+                                    onclick="openForwardModal(<?= $r['leave_id'] ?>, <?= htmlspecialchars(json_encode($r['employee_name'])) ?>)">
+                                <i class="fa fa-paper-plane"></i> Forward
+                            </button>
+                        <?php elseif ($wfStatus === 'FORWARDED' && strtoupper($r['status']) !== 'PENDING'
+                                      && ($ac['pending_cnt'] ?? 0) == 0): ?>
                             <button class="lm-btn lm-btn--record"
                                     onclick="doRecord(<?= $r['leave_id'] ?>)">
                                 <i class="fa fa-check-double"></i> Record

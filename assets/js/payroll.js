@@ -166,30 +166,20 @@ window.openPayslip = function(el) {
         { name: 'SSS Loan',       is_gov: false, is_loan: true,  amount: Number(el.dataset.sssLoan || 0) },
     ].filter(row => Number(row.amount) !== 0);
 
-    const POST_DED = /rice|laundry/i;
     const allAllowances = parseJsonData(el.dataset.allowances, fallbackAllowances)
-        .filter(r => Number(r.amount) !== 0);
-    const postDedAllowances = allAllowances.filter(r =>  POST_DED.test(r.name));
-    const coreAllowances    = allAllowances.filter(r => !POST_DED.test(r.name))
+        .filter(r => Number(r.amount) !== 0)
         .map(r => ({
             ...r,
             name: /additional assignment/i.test(r.name) ? r.name + ' (Overload)' : r.name
         }));
 
-    const earningsRows = [
-        { name: 'Basic Salary', amount: basic },
-        ...coreAllowances
-    ];
-
     const allDeductions = parseJsonData(el.dataset.deductions, fallbackDeductions)
         .filter(r => Number(r.amount) !== 0);
 
-    const postDedTotal = postDedAllowances.reduce((s, r) => s + Number(r.amount), 0);
     let storedGross = Number(el.dataset.gross || 0);
     if (!storedGross) {
-        storedGross = earningsRows.reduce((s, r) => s + Number(r.amount), 0) + postDedTotal;
+        storedGross = basic + allAllowances.reduce((s, r) => s + Number(r.amount), 0);
     }
-    const coreGross = storedGross - postDedTotal;
 
     let totalDed = Number(el.dataset.totalDeductions || 0);
     if (!totalDed && allDeductions.length) {
@@ -198,8 +188,6 @@ window.openPayslip = function(el) {
 
     let storedNet = Number(el.dataset.net || 0);
     if (!storedNet) storedNet = storedGross - totalDed;
-    const intermediateNet = storedNet - postDedTotal;
-    const finalTakeHome   = storedNet;
 
     // Employee info — use formatted employee_no for the ID field
     document.getElementById("ps-name").innerText     = el.dataset.name || '';
@@ -216,25 +204,25 @@ window.openPayslip = function(el) {
     const payrollNoEl = document.getElementById("ps-payroll-no");
     if (payrollNoEl) payrollNoEl.innerText = el.dataset.payrollno || "—";
 
-    renderPayslipRows("ps-earnings-rows", earningsRows, "No earnings");
-    document.getElementById("ps-gross").innerText = peso(coreGross);
+    // Basic Pay section
+    renderPayslipRows("ps-basicpay-rows", [{ name: 'Basic Pay', amount: basic }], "");
+
+    // Allowances section (all allowances: rice, laundry, overload, custom)
+    const totalAllowances   = allAllowances.reduce((s, r) => s + Number(r.amount), 0);
+    const allowancesSection = document.getElementById("ps-allowances-section");
+    if (allAllowances.length) {
+        renderPayslipRows("ps-allowances-rows", allAllowances, "");
+        document.getElementById("ps-total-allowances").innerText = peso(totalAllowances);
+        if (allowancesSection) allowancesSection.style.display = '';
+    } else {
+        if (allowancesSection) allowancesSection.style.display = 'none';
+    }
+
+    document.getElementById("ps-gross").innerText = peso(storedGross);
 
     renderGroupedDeductionRows("ps-deductions-rows", allDeductions);
     document.getElementById("ps-totalded").innerText = peso(totalDed);
-    document.getElementById("ps-net").innerText      = peso(intermediateNet);
-
-    const postDedSection = document.getElementById("ps-postded-section");
-    const takeHomeBox    = document.getElementById("ps-takehome-box");
-    if (postDedTotal > 0) {
-        renderPayslipRows("ps-postded-rows", postDedAllowances, "");
-        document.getElementById("ps-postded-total").innerText = peso(postDedTotal);
-        document.getElementById("ps-takehome").innerText      = peso(finalTakeHome);
-        if (postDedSection) postDedSection.style.display = '';
-        if (takeHomeBox)    takeHomeBox.style.display    = '';
-    } else {
-        if (postDedSection) postDedSection.style.display = 'none';
-        if (takeHomeBox)    takeHomeBox.style.display    = 'none';
-    }
+    document.getElementById("ps-net").innerText      = peso(storedNet);
 
     const statusEl = document.getElementById("ps-status");
     if (statusEl) statusEl.innerText = el.dataset.payrollStatus || '—';

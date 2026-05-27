@@ -100,6 +100,76 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
+// ── Create ACCRUED_PAY period ───────────────────────────────────────────────
+if (($_POST['create_for'] ?? '') === 'accrued_pay') {
+    $periodName = trim($_POST['period_name']      ?? '');
+    $startDate  = trim($_POST['pay_period_start'] ?? '');
+    $endDate    = trim($_POST['pay_period_end']   ?? '');
+    $payDate    = trim($_POST['pay_date']         ?? '');
+
+    $dateRx = '/^\d{4}-\d{2}-\d{2}$/';
+    if (!$periodName) {
+        echo json_encode(['success' => false, 'message' => 'Period name is required.']);
+        exit;
+    }
+    if (!preg_match($dateRx, $startDate) || !preg_match($dateRx, $endDate) || !preg_match($dateRx, $payDate)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid date format. Use YYYY-MM-DD.']);
+        exit;
+    }
+    if ($startDate > $endDate) {
+        echo json_encode(['success' => false, 'message' => 'Period start must be before period end.']);
+        exit;
+    }
+
+    // Check if period_type column exists (migration 020)
+    $hasPeriodType = false;
+    try {
+        $hasPeriodType = (bool)$pdo->query("
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME   = 'payroll_periods'
+              AND COLUMN_NAME  = 'period_type'
+        ")->fetchColumn();
+    } catch (PDOException $_e) {}
+
+    if (!$hasPeriodType) {
+        echo json_encode(['success' => false, 'message' => 'Migration 020 has not been run. Please run migrations/020_accrued_pay.sql first.']);
+        exit;
+    }
+
+    // Prevent duplicate (same name or same date range)
+    $dup = $pdo->prepare("SELECT COUNT(*) FROM payroll_periods WHERE pay_period_start = ? AND pay_period_end = ?");
+    $dup->execute([$startDate, $endDate]);
+    if ((int)$dup->fetchColumn() > 0) {
+        echo json_encode(['success' => false, 'message' => 'A period with these dates already exists.']);
+        exit;
+    }
+
+    $settings = $pdo->query("SELECT * FROM payroll_settings LIMIT 1")->fetch();
+    $yr = date('Y', strtotime($startDate));
+    $mo = date('m', strtotime($startDate));
+    $seqStmt = $pdo->prepare("SELECT COUNT(*) FROM payroll_periods WHERE YEAR(pay_period_start) = ? AND MONTH(pay_period_start) = ?");
+    $seqStmt->execute([$yr, $mo]);
+    $seq = (int)$seqStmt->fetchColumn() + 1;
+    $payrollNumber = 'AP-' . $yr . '-' . $mo . '-' . str_pad($seq, 3, '0', STR_PAD_LEFT);
+
+    $pdo->prepare("
+        INSERT INTO payroll_periods
+            (payroll_number, period_name, period_type, pay_period_start, pay_period_end, pay_date, status)
+        VALUES (?, ?, 'ACCRUED_PAY', ?, ?, ?, 'OPEN')
+    ")->execute([$payrollNumber, $periodName, $startDate, $endDate, $payDate]);
+
+    $uid = $_SESSION['user']['user_id'] ?? null;
+    if ($uid) {
+        $newId = (int)$pdo->lastInsertId();
+        $pdo->prepare("INSERT INTO audit_logs (user_id, action, table_name, record_id, description) VALUES (?,?,?,?,?)")
+            ->execute([$uid, 'CREATE', 'payroll_periods', $newId, "Created ACCRUED_PAY period: {$periodName}"]);
+    }
+
+    echo json_encode(['success' => true, 'message' => "Accrued Pay period \"{$periodName}\" created.", 'created' => 1]);
+    exit;
+}
+
 $createFor = $_POST['create_for'] ?? 'month'; // 'month' or 'year'
 $month     = (int)($_POST['month'] ?? 0);
 $year      = (int)($_POST['year']  ?? 0);

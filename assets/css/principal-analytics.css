@@ -70,14 +70,16 @@
     display: grid;
     grid-template-columns: 2fr 1fr;
     gap: 16px;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
+    align-items: start;
 }
 
 .pan-grid-1-1 {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
+    align-items: start;
 }
 
 /* ── Panel ── */
@@ -118,12 +120,12 @@
 
 /* ── Chart Wrap ── */
 .pan-chart-wrap {
-    height: 220px;
+    height: 170px;
     position: relative;
 }
 
 .pan-chart-wrap--sm {
-    height: 180px;
+    height: 150px;
 }
 
 /* ── Chart Legend ── */
@@ -263,8 +265,8 @@
 }
 
 .pan-donut-wrap {
-    height: 180px;
-    width: 180px;
+    height: 140px;
+    width: 140px;
     position: relative;
     flex-shrink: 0;
 }
@@ -318,6 +320,44 @@
 .pan-empty p {
     font-size: 13px;
     margin: 0;
+}
+
+/* ── Dept Attendance Bars ── */
+.pan-dept-row {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+}
+.pan-dept-row:last-child { margin-bottom: 0; }
+.pan-dept-name {
+    font-size: 12px; color: var(--text-primary); font-weight: 600;
+    min-width: 90px; max-width: 130px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pan-dept-track {
+    flex: 1; height: 8px; background: var(--bg-main);
+    border-radius: 99px; overflow: hidden;
+}
+.pan-dept-bar { height: 100%; border-radius: 99px; }
+.pan-dept-pct {
+    font-size: 12px; font-weight: 700;
+    color: var(--text-secondary); min-width: 36px; text-align: right;
+}
+
+/* ── Leave credit progress ── */
+.pan-lc-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.pan-lc-row:last-child { border-bottom: none; }
+.pan-lc-name { flex: 1; font-size: 13px; color: var(--text-primary); font-weight: 600; }
+.pan-lc-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.pan-lc-track {
+    width: 100px; height: 6px; background: var(--bg-main);
+    border-radius: 99px; overflow: hidden; flex-shrink: 0;
+}
+.pan-lc-bar { height: 100%; border-radius: 99px; }
+.pan-lc-pct {
+    font-size: 11px; font-weight: 700; color: var(--text-secondary);
+    min-width: 32px; text-align: right; flex-shrink: 0;
 }
 
 /* ── Responsive ── */

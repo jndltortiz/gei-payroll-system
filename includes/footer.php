@@ -26,5 +26,6 @@
   </div>
 </div>
 <script src="<?= BASE_URL ?>assets/js/gei-ui.js?v=1"></script>
+<script src="<?= BASE_URL ?>assets/js/notifications.js?v=1"></script>
 </body>
 </html>

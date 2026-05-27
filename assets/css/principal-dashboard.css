@@ -15,7 +15,7 @@
 }
 
 .pdb-greeting h1 {
-    font-size: 22px;
+    font-size: var(--page-title-size, 20px);
     font-weight: 700;
     color: var(--text-primary);
     margin: 0 0 4px;
@@ -118,7 +118,7 @@
 .pdb-card--teal::before   { background: #0f766e; }
 
 .pdb-card:hover {
-    box-shadow: 0 8px 28px rgba(0,0,0,0.11);
+    box-shadow: var(--shadow-hover);
     transform: translateY(-2px);
     text-decoration: none;
     color: inherit;

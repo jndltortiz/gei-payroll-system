@@ -5,7 +5,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 
 header('Content-Type: application/json');
-requireLogin();
+requireAdminAction();
 
 $body = json_decode(file_get_contents('php://input'), true);
 if (!$body) {
@@ -159,6 +159,26 @@ try {
             SET weekend_pay_date_rule = ?, attendance_source = ?
             WHERE setting_id = ?
         ")->execute([$weekendRule, $attendanceSrc, $exists ?: $pdo->lastInsertId()]);
+    }
+
+    // Migration 020: save leave_allocation_days if column exists
+    $hasMig020 = false;
+    try {
+        $hasMig020 = (bool)$pdo->query("
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME   = 'payroll_settings'
+              AND COLUMN_NAME  = 'leave_allocation_days'
+        ")->fetchColumn();
+    } catch (PDOException $_e) {}
+
+    if ($hasMig020) {
+        $leaveAllocationDays = max(0.0, (float)($body['leave_allocation_days'] ?? 30.00));
+        $pdo->prepare("
+            UPDATE payroll_settings
+            SET leave_allocation_days = ?
+            WHERE setting_id = ?
+        ")->execute([$leaveAllocationDays, $exists ?: $pdo->lastInsertId()]);
     }
 
     // Audit log

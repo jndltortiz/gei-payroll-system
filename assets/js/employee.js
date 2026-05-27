@@ -201,6 +201,28 @@ window.openEditWizard = function(id) {
             setId('editUsername', d.username);
             setId('editRole',     d.role_name);
 
+            // Force-change toggle — reflect current DB state
+            const forceToggle = document.getElementById('editForceToggle');
+            const forceHidden = document.getElementById('editForceHidden');
+            const mustChange  = parseInt(d.must_change_password ?? 0);
+            if (forceToggle && forceHidden) {
+                if (mustChange === 1) {
+                    forceToggle.classList.add('on');
+                    forceHidden.value = '1';
+                } else {
+                    forceToggle.classList.remove('on');
+                    forceHidden.value = '0';
+                }
+            }
+
+            // Clear any previous email/username inline errors
+            ['editEmailError','editUsernameWarn'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) { el.style.display = 'none'; el.textContent = ''; }
+            });
+            const editEmailEl = document.getElementById('editEmail');
+            if (editEmailEl) editEmailEl.classList.remove('input-error');
+
             // Education entries
             const eduC = document.getElementById('editEduEntriesContainer');
             if (eduC) {
@@ -568,9 +590,28 @@ window.confirmSave = async function(type) {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-floppy-disk"></i> Save Employee'; }
         }
     } else {
-        // Edit — form POST with redirect
+        // Edit — AJAX (so we can handle duplicate-email / username errors)
         closeModal('saveEditModal');
-        form.submit();
+        const btn = form.querySelector('.btn-save');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Saving…'; }
+
+        try {
+            const res  = await fetch(BASE_URL + 'actions/employee-update.php',
+                                     { method: 'POST', body: new FormData(form) });
+            const data = await res.json();
+            if (data.success) {
+                if (typeof showToast === 'function') showToast(data.message, 'success', 5000);
+                setTimeout(() => location.reload(), 1200);
+            } else {
+                if (typeof showToast === 'function') showToast(data.message || 'Failed to update.', 'error');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-floppy-disk"></i> Update Employee'; }
+                openModal('editEmployeeModal');
+            }
+        } catch {
+            if (typeof showToast === 'function') showToast('Network error. Please try again.', 'error');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-floppy-disk"></i> Update Employee'; }
+            openModal('editEmployeeModal');
+        }
     }
 };
 
@@ -651,23 +692,98 @@ window.autoFillUsername = function(emailId, usernameId) {
     username.value = prefix.toLowerCase().replace(/[^a-z0-9.]/g, '');
 };
 
+// ================================
+// EMAIL / USERNAME DUPLICATE CHECK
+// ================================
+/**
+ * Called on blur of email fields.
+ * prefix: 'add' | 'edit'
+ * employeeId: numeric id when editing, 0 for create
+ */
+async function _checkEmailUniqueness(prefix, employeeId) {
+    const emailEl    = document.getElementById(prefix + 'Email');
+    const emailErr   = document.getElementById(prefix + 'EmailError');
+    const userWarn   = document.getElementById(prefix + 'UsernameWarn');
+    const userInput  = document.getElementById(prefix + 'Username');
+    if (!emailEl) return;
+
+    const email = emailEl.value.trim();
+
+    // Clear previous messages
+    if (emailErr)  { emailErr.style.display = 'none';  emailErr.textContent  = ''; }
+    if (userWarn)  { userWarn.style.display = 'none';  userWarn.textContent  = ''; }
+    if (emailEl)    emailEl.classList.remove('input-error');
+
+    if (!email) return;
+
+    try {
+        const params = new URLSearchParams({ email });
+        if (employeeId) params.set('employee_id', employeeId);
+        const res  = await fetch(BASE_URL + 'actions/check-email.php?' + params.toString());
+        const data = await res.json();
+
+        // Email error
+        if (!data.email_ok && emailErr) {
+            emailErr.innerHTML  = '<i class="fa fa-triangle-exclamation"></i> ' + escHtml(data.email_error);
+            emailErr.style.display = '';
+            emailEl.classList.add('input-error');
+        }
+
+        // Username conflict — update the hidden field to the safe suggestion
+        if (data.suggested_username && userInput) {
+            userInput.value = data.suggested_username;
+        }
+        if (!data.username_ok && userWarn) {
+            const orig = (email.split('@')[0] || '').toLowerCase().replace(/[^a-z0-9.]/g, '');
+            userWarn.innerHTML  = '<i class="fa fa-info-circle"></i> "' + escHtml(orig)
+                + '" is taken — will use "' + escHtml(data.suggested_username) + '"';
+            userWarn.style.display = '';
+        }
+    } catch (e) {
+        // Network failure — silent; backend will catch it
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-    ['addEmail', 'editEmail'].forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.addEventListener('blur', function() {
+    // ── Add modal email blur ──────────────────────────────────────────────────
+    const addEmailEl = document.getElementById('addEmail');
+    if (addEmailEl) {
+        addEmailEl.addEventListener('blur', function() {
+            // Auto-complete domain
             if (this.value && !this.value.includes('@')) {
                 this.value = this.value.toLowerCase() + '@gei.edu.ph';
-                autoFillUsername(id, id === 'addEmail' ? 'addUsername' : 'editUsername');
+                autoFillUsername('addEmail', 'addUsername');
             } else if (this.value.includes('@') && !this.value.toLowerCase().endsWith('@gei.edu.ph')) {
                 const prefix = this.value.split('@')[0];
                 this.value   = prefix.toLowerCase() + '@gei.edu.ph';
             }
+            autoFillUsername('addEmail', 'addUsername');
+            _checkEmailUniqueness('add', 0);
         });
-        el.addEventListener('focus', function() {
+        addEmailEl.addEventListener('focus', function() {
             if (!this.value) this.placeholder = 'firstname.lastname';
         });
-    });
+    }
+
+    // ── Edit modal email blur ─────────────────────────────────────────────────
+    const editEmailEl = document.getElementById('editEmail');
+    if (editEmailEl) {
+        editEmailEl.addEventListener('blur', function() {
+            if (this.value && !this.value.includes('@')) {
+                this.value = this.value.toLowerCase() + '@gei.edu.ph';
+                autoFillUsername('editEmail', 'editUsername');
+            } else if (this.value.includes('@') && !this.value.toLowerCase().endsWith('@gei.edu.ph')) {
+                const prefix = this.value.split('@')[0];
+                this.value   = prefix.toLowerCase() + '@gei.edu.ph';
+            }
+            autoFillUsername('editEmail', 'editUsername');
+            const empId = parseInt(document.getElementById('editEmployeeId')?.value || '0');
+            _checkEmailUniqueness('edit', empId);
+        });
+        editEmailEl.addEventListener('focus', function() {
+            if (!this.value) this.placeholder = 'firstname.lastname';
+        });
+    }
 });
 
 // ================================

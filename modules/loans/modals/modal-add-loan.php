@@ -192,6 +192,22 @@ if (!isset($loanTypes)) $loanTypes = [];
                   placeholder="Brief description of loan purpose or additional notes…"></textarea>
       </div>
 
+      <!-- Document Upload (optional) -->
+      <div class="lf-field" style="margin-top:10px;">
+        <label style="display:flex;align-items:center;gap:6px;">
+          Supporting Documents
+          <span style="font-size:10px;background:#f0fdf4;color:#166534;padding:2px 6px;border-radius:4px;font-weight:600;">OPTIONAL</span>
+        </label>
+        <input type="file" id="al-files" multiple accept=".pdf,.jpg,.jpeg,.png"
+               style="width:100%;padding:8px 10px;border:1px dashed #cbd5e1;border-radius:8px;
+                      font-size:12px;color:#64748b;box-sizing:border-box;cursor:pointer;margin-top:4px;">
+        <div id="al-file-list" style="font-size:11px;color:#64748b;margin-top:4px;"></div>
+        <small style="font-size:11px;color:#9ca3af;margin-top:3px;display:block;">
+          Attach loan approval documents, vouchers, or relevant files (PDF, JPG, PNG — max 5 MB each).
+          Files are uploaded after the loan record is created.
+        </small>
+      </div>
+
       <div id="al-salary-warning" style="display:none"
            class="loan-notice loan-notice--warn"></div>
 

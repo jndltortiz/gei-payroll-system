@@ -5,7 +5,7 @@
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../includes/auth.php';
-requireEmployee();
+requireEmployeeAccess();
 
 $empId = (int)($_SESSION['user']['employee_id'] ?? 0);
 
@@ -160,34 +160,19 @@ require_once __DIR__ . '/../../../includes/head.php';
 ?>
 <body>
 <div class="layout">
-<?php include __DIR__ . '/../../../includes/employee-sidebar.php'; ?>
+<?php
+if (isAdmin()):
+    include __DIR__ . '/../../../includes/sidebar.php';
+elseif (isPrincipalRole()):
+    include __DIR__ . '/../../../includes/principal-sidebar.php';
+else:
+    include __DIR__ . '/../../../includes/employee-sidebar.php';
+endif;
+?>
 
 <div class="main">
 
-  <!-- ── Topbar ────────────────────────────────────────────────────────────── -->
-  <div class="header">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <i class="fa fa-house" style="color:#2563eb;font-size:18px;"></i>
-      <div>
-        <div style="font-size:15px;font-weight:700;color:#0f172a;">Employee Portal</div>
-        <div style="font-size:12px;color:#64748b;">Great Eastern Institute</div>
-      </div>
-    </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
-      <div style="text-align:right;">
-        <div style="font-size:14px;font-weight:600;color:#0f172a;">
-          <?= htmlspecialchars(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['user']['last_name'] ?? '')) ?>
-        </div>
-        <div style="font-size:11px;color:#64748b;">Employee</div>
-      </div>
-      <div class="header-avatar">
-        <?= strtoupper(
-            substr($_SESSION['user']['first_name'] ?? 'E', 0, 1) .
-            substr($_SESSION['user']['last_name']  ?? 'M', 0, 1)
-        ) ?>
-      </div>
-    </div>
-  </div><!-- .header -->
+  <?php $empPortalIcon = 'fa-house'; include __DIR__ . '/../../../includes/employee-header.php'; ?>
 
   <div class="main-content">
   <div class="emp-page">
@@ -277,7 +262,7 @@ require_once __DIR__ . '/../../../includes/head.php';
       <div class="emp-panel">
         <div class="emp-panel-header">
           <div class="emp-panel-title">
-            <i class="fa fa-file-invoice-dollar" style="color:#2563eb;"></i>
+            <i class="fa fa-file-invoice-dollar" style="color:var(--accent);"></i>
             Latest Released Payslip
           </div>
           <?php if ($latestPayslip): ?>
@@ -299,7 +284,7 @@ require_once __DIR__ . '/../../../includes/head.php';
             <div class="emp-pstat-label">Total Deductions</div>
             <div class="emp-pstat-value emp-pstat-value--red">₱<?= number_format((float)$latestPayslip['total_deductions'], 2) ?></div>
           </div>
-          <div class="emp-pstat" style="grid-column:span 2; background:#eff6ff; border:1px solid #bfdbfe;">
+          <div class="emp-pstat" style="grid-column:span 2; background:var(--accent-light); border:1px solid var(--accent-mid);">
             <div class="emp-pstat-label">Net Pay Received</div>
             <div class="emp-pstat-value emp-pstat-value--blue" style="font-size:18px;">₱<?= number_format((float)$latestPayslip['net_pay'], 2) ?></div>
           </div>

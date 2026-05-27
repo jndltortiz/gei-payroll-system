@@ -30,6 +30,18 @@
     --header-height:  64px;
     --radius:         12px;
     --shadow:         0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+    --shadow-hover:   0 4px 20px rgba(0,0,0,0.10), 0 1px 6px rgba(0,0,0,0.05);
+    /* Typography scale */
+    --page-title-size:    20px;
+    --section-title-size: 15px;
+    --card-title-size:    14px;
+    /* Spacing */
+    --content-pad:    24px 28px;
+    --card-pad:       20px 22px;
+    --btn-height:     36px;
+    /* Table */
+    --th-pad:         10px 14px;
+    --td-pad:         11px 14px;
 }
 
 /* ── Reset ── */
@@ -173,9 +185,9 @@ body {
     padding-left: 13px;
 }
 .nav-item i   { flex-shrink: 0; width: 22px; font-size: 15px; text-align: center; }
-.nav-item span { overflow: hidden; transition: opacity 0.2s; }
-.sidebar.collapsed .nav-item span { opacity: 0; pointer-events: none; }
-.sidebar.collapsed .nav-item { justify-content: center; padding: 12px 0; }
+.nav-item span { overflow: hidden; transition: opacity 0.2s, max-width 0.28s ease; max-width: 180px; }
+.sidebar.collapsed .nav-item { justify-content: center; padding: 12px 0; gap: 0; }
+.sidebar.collapsed .nav-item span { opacity: 0; pointer-events: none; max-width: 0; }
 
 /* Footer */
 .sidebar-footer {
@@ -193,13 +205,15 @@ body {
     display: flex; align-items: center; justify-content: center;
     font-size: 13px; font-weight: 700;
 }
-.sidebar-user-info { overflow: hidden; transition: opacity 0.2s; }
+.sidebar-user-info { overflow: hidden; transition: opacity 0.2s, max-width 0.28s ease; max-width: 180px; }
 .sidebar-user-info strong {
     display: block; font-size: 13px; color: #fff;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .sidebar-user-info span { font-size: 11px; color: rgba(255,255,255,0.45); }
-.sidebar.collapsed .sidebar-user-info { opacity: 0; pointer-events: none; }
+.sidebar.collapsed .sidebar-user-info { opacity: 0; pointer-events: none; max-width: 0; }
+.sidebar.collapsed .sidebar-footer { padding: 10px 0; }
+.sidebar.collapsed .sidebar-user { justify-content: center; }
 
 .nav-item--logout { color: rgba(255,100,100,0.7); margin-top: 2px; }
 .nav-item--logout:hover { background: rgba(239,68,68,0.12); color: #f87171; }
@@ -225,6 +239,7 @@ body {
 .header-portal-text span   { font-size: 12px; color: var(--text-secondary); }
 
 .header-right { display: flex; align-items: center; gap: 16px; }
+.notif-wrap { position: relative; }
 .notif-btn {
     width: 36px; height: 36px; border-radius: 50%;
     border: 1px solid var(--border); background: var(--bg-card);
@@ -237,6 +252,98 @@ body {
     width: 8px; height: 8px; border-radius: 50%;
     background: var(--yellow); border: 2px solid var(--bg-card);
 }
+.notif-badge {
+    position: absolute; top: -5px; right: -5px;
+    min-width: 18px; height: 18px; border-radius: 9px;
+    background: #ef4444; color: #fff;
+    font-size: 10px; font-weight: 700;
+    display: none; align-items: center; justify-content: center;
+    padding: 0 4px; border: 2px solid var(--bg-card);
+    line-height: 1;
+}
+
+/* ── Notification Dropdown ───────────────────────────────────────────────── */
+.notif-dropdown {
+    position: absolute; top: calc(100% + 10px); right: 0;
+    width: 340px; max-height: 460px;
+    background: #fff; border: 1px solid #e2e8f0;
+    border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.13);
+    z-index: 2000; display: none; flex-direction: column;
+    overflow: hidden;
+}
+.notif-dropdown.open { display: flex; }
+
+.notif-dd-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid #f1f5f9;
+    flex-shrink: 0;
+}
+.notif-dd-title {
+    font-size: 13px; font-weight: 700; color: #0f172a;
+}
+.notif-dd-markall {
+    font-size: 11px; font-weight: 600; color: var(--accent);
+    background: none; border: none; cursor: pointer; padding: 0;
+    font-family: inherit;
+}
+.notif-dd-markall:hover { text-decoration: underline; }
+
+.notif-dd-body {
+    flex: 1; overflow-y: auto; scrollbar-width: thin;
+    scrollbar-color: #e2e8f0 transparent;
+    max-height: 340px;
+}
+
+.notif-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 11px 14px;
+    border-bottom: 1px solid #f8fafc;
+    text-decoration: none; color: inherit;
+    cursor: pointer; transition: background .12s;
+    position: relative;
+}
+.notif-item:hover { background: #f8fafc; }
+.notif-item.unread { background: #f0fdf9; }
+.notif-item.unread:hover { background: #e6f7f4; }
+
+.notif-icon {
+    width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; margin-top: 1px;
+}
+.notif-item-content { flex: 1; min-width: 0; }
+.notif-item-title {
+    font-size: 13px; font-weight: 600; color: #0f172a;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.3;
+}
+.notif-item-msg {
+    font-size: 11px; color: #64748b; margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.notif-item-time { font-size: 10px; color: #94a3b8; margin-top: 4px; }
+.notif-unread-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); flex-shrink: 0; margin-top: 6px;
+}
+
+.notif-empty {
+    text-align: center; padding: 40px 20px;
+    color: #94a3b8;
+}
+.notif-empty i { font-size: 28px; margin-bottom: 10px; display: block; }
+.notif-empty p { font-size: 13px; font-weight: 500; }
+
+.notif-dd-footer {
+    border-top: 1px solid #f1f5f9; padding: 10px 14px;
+    text-align: center; flex-shrink: 0;
+}
+.notif-dd-footer a {
+    font-size: 12px; font-weight: 600; color: var(--accent);
+    text-decoration: none;
+}
+.notif-dd-footer a:hover { text-decoration: underline; }
 .header-user { display: flex; align-items: center; gap: 10px; }
 .header-user-text { text-align: right; }
 .header-user-text strong { display: block; font-size: 13px; font-weight: 600; }
@@ -252,9 +359,10 @@ body {
 .main-content {
     flex: 1;
     overflow-y: auto;
-    padding: 28px 32px;
+    padding: var(--content-pad, 24px 28px);
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
+    animation: pageContentIn 0.32s ease both;
 }
 
 /* .main — same role as .main-wrapper, used by dashboard/attendance/payroll */
@@ -270,9 +378,10 @@ body {
 .content {
     flex: 1;
     overflow-y: auto;
-    padding: 28px 32px;
+    padding: var(--content-pad, 24px 28px);
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
+    animation: pageContentIn 0.32s ease both;
 }
 
 /* ── Flash / Alert ── */
@@ -451,4 +560,82 @@ th.sortable[data-sort-dir] { color: var(--accent, #1db89a); }
 }
 .file-upload-area:hover, .file-upload-area.drag-over {
     border-color: #0f766e; background: #f0fdf9;
+}
+
+/* ── Back-to-Settings link (settings sub-pages) ─────────────────────────────── */
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #64748b;
+    text-decoration: none;
+    margin-bottom: 12px;
+    transition: color 0.15s;
+}
+.back-link i { font-size: 12px; }
+.back-link:hover { color: #0f172a; }
+@media (max-width: 576px) { .back-link { font-size: 12px; } }
+
+/* ── Page-content load animation ─────────────────────────────────────────── */
+@keyframes pageContentIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Modal-box enter animation ───────────────────────────────────────────── */
+@keyframes modalBoxIn {
+    from { opacity: 0; transform: scale(0.97) translateY(8px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+/* Applied globally to any .modal-box inside a modal that becomes visible */
+.modal-box { animation: modalBoxIn 0.2s ease both; }
+
+/* ── Stagger-load helpers ────────────────────────────────────────────────── */
+/* Add class="anim-stagger" to a grid/list; children auto-stagger in */
+.anim-stagger > * { animation: fadeUp 0.4s ease both; }
+.anim-stagger > *:nth-child(1) { animation-delay: 0.04s; }
+.anim-stagger > *:nth-child(2) { animation-delay: 0.09s; }
+.anim-stagger > *:nth-child(3) { animation-delay: 0.14s; }
+.anim-stagger > *:nth-child(4) { animation-delay: 0.19s; }
+.anim-stagger > *:nth-child(5) { animation-delay: 0.24s; }
+.anim-stagger > *:nth-child(6) { animation-delay: 0.29s; }
+
+/* Standalone fade-up utility */
+.anim-fadeup { animation: fadeUp 0.4s ease both; }
+
+/* ── Hover-elevation (opt-in) ────────────────────────────────────────────── */
+/* Add class="hoverable" to any card/panel to get subtle lift on hover */
+.hoverable {
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.hoverable:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-hover);
+}
+
+/* ── Smooth dropdown open animation ─────────────────────────────────────── */
+@keyframes dropdownIn {
+    from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.notif-dropdown.open { animation: dropdownIn 0.18s ease both; }
+
+/* ── Reduced-motion respect ──────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+    .main-content,
+    .content,
+    .modal-box,
+    .anim-fadeup,
+    .anim-stagger > *,
+    .notif-dropdown.open {
+        animation: none !important;
+    }
+    .sidebar,
+    .nav-item span,
+    .sidebar-user-info,
+    .hoverable {
+        transition: none !important;
+    }
 }

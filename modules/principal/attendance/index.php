@@ -990,11 +990,12 @@ require_once __DIR__ . '/../../../includes/head.php';
               $initials = strtoupper(substr($r['first_name'], 0, 1) . substr($r['last_name'], 0, 1));
               $empNo   = htmlspecialchars($r['employee_no'] ?? '');
               $srcLabel = match($r['attendance_source'] ?? '') {
-                  'MANUAL_ADMIN'      => 'Manual (Admin)',
+                  'MANUAL_ADMIN'      => 'Manual',
                   'MANUAL'            => 'Manual',
+                  'RFID'              => 'RFID',
                   'FACIAL_RECOGNITION'=> 'Biometric',
                   'AUTO'              => 'Auto',
-                  default             => ($r['attendance_source'] ?? '—'),
+                  default             => ($r['attendance_source'] ?? 'Manual'),
               };
               $jsName  = htmlspecialchars($r['first_name'] . ' ' . $r['last_name'], ENT_QUOTES);
               $jsDate  = htmlspecialchars($r['attendance_date'], ENT_QUOTES);

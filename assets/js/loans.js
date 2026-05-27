@@ -168,11 +168,38 @@ async function submitAddLoan() {
     const fd = new FormData(); fd.append('action', 'add');
     Object.entries(fields).forEach(([k,v]) => fd.append(k, v));
 
+    // Show selected file names
+    const fileInput = document.getElementById('al-files');
+    if (fileInput) {
+        fileInput.addEventListener('change', function() {
+            const list = document.getElementById('al-file-list');
+            if (!list) return;
+            if (!fileInput.files.length) { list.textContent = ''; return; }
+            const names = Array.from(fileInput.files).map(f =>
+                `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;">` +
+                `<i class="fa fa-paperclip"></i> ${esc(f.name)} <em>(${(f.size/1024).toFixed(0)} KB)</em></span>`
+            );
+            list.innerHTML = names.join('');
+        }, {once: true});
+    }
+
     try {
         const res  = await fetch(`${BASE_URL}actions/loans-action.php`, {method:'POST', body:fd});
         const data = await res.json();
         showLoansFlash('al-flash', data.message, data.success);
         if (data.success) {
+            // Upload documents if any were selected
+            const loanId  = data.loan_id;
+            const fi      = document.getElementById('al-files');
+            if (fi && fi.files.length && loanId) {
+                const docFd = new FormData();
+                docFd.append('action',  'upload');
+                docFd.append('loan_id', loanId);
+                for (const f of fi.files) docFd.append('loan_docs[]', f);
+                try {
+                    await fetch(`${BASE_URL}actions/loan-document-action.php`, {method:'POST', body:docFd});
+                } catch {}
+            }
             setTimeout(() => { closeAddLoan(); location.reload(); }, 1500);
         } else {
             btn.disabled = false;
@@ -195,7 +222,7 @@ function openReview(loanId) {
         .then(r => r.json())
         .then(data => {
             if (!data.success) { document.getElementById('reviewBody').innerHTML = `<p style="color:red">${esc(data.message)}</p>`; return; }
-            buildReviewContent(data.loan, data.active_loans);
+            buildReviewContent(data.loan, data.active_loans, data.loan_types || []);
         })
         .catch(() => {
             document.getElementById('reviewBody').innerHTML = '<p style="color:red">Network error.</p>';
@@ -204,7 +231,13 @@ function openReview(loanId) {
 
 function closeReview() { document.getElementById('reviewOverlay').style.display='none'; }
 
-function buildReviewContent(loan, activeLoans) {
+function buildReviewContent(loan, activeLoans, loanTypes = []) {
+    // RETURNED loans go to the edit/resubmit form — not the read-only review
+    if ((loan.status || '').toUpperCase() === 'RETURNED') {
+        document.querySelector('#reviewOverlay .loan-modal-header h3').textContent = 'Edit & Resubmit Returned Loan';
+        buildEditReturnedContent(loan, loanTypes);
+        return;
+    }
     const sal    = parseFloat(loan.monthly_salary || 0);
     const ded    = parseFloat(loan.monthly_deduction || 0);
     const auto   = ded / 2;
@@ -262,37 +295,362 @@ function buildReviewContent(loan, activeLoans) {
       </div>
 
       <div>
-        <div class="review-section-label">ADMIN NOTES (OPTIONAL)</div>
-        <textarea id="review-notes" rows="2" placeholder="Add comments about this decision…"
+        <div class="review-section-label">NOTES / RETURN REASON</div>
+        <textarea id="review-notes" rows="2"
+                  placeholder="Required when returning for correction; optional when forwarding to Principal…"
                   style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;resize:vertical;"></textarea>
+      </div>
+
+      <!-- Documents -->
+      <div>
+        <div class="review-section-label">ATTACHED DOCUMENTS</div>
+        <div id="review-docs-area" style="min-height:30px;">
+          <div style="font-size:12px;color:#94a3b8;"><i class="fa fa-spinner fa-spin"></i> Loading…</div>
+        </div>
       </div>
 
       <div id="review-flash" style="display:none" class="loan-flash"></div>
 
-      <div class="loan-modal-footer" style="margin:0;padding-top:16px;">
-        <button class="btn-deny" onclick="submitApproval(${loan.loan_id},'deny')">
-          <i class="fa fa-times"></i> Reject Document
+      <div style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin-top:4px;">
+        <div style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#1e40af;line-height:1.5;">
+          <i class="fa fa-circle-info" style="flex-shrink:0;margin-top:1px;"></i>
+          <span><strong>Principal approval is required before payroll activation.</strong>
+          Forward this loan to the Principal for final review, or return it for correction if information is incomplete.</span>
+        </div>
+      </div>
+
+      <div class="loan-modal-footer" style="margin:0;padding-top:12px;">
+        <button onclick="submitAdminReturn(${loan.loan_id})"
+                style="background:#f59e0b;color:#fff;border:none;padding:8px 16px;border-radius:8px;
+                       font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">
+          <i class="fa fa-rotate-left"></i> Return for Correction
         </button>
-        <button class="btn-approve" onclick="submitApproval(${loan.loan_id},'approve')">
-          <i class="fa fa-check"></i> Verify &amp; Activate
+        <button class="btn-approve" onclick="submitForwardToPrincipal(${loan.loan_id})">
+          <i class="fa fa-paper-plane"></i> Forward to Principal
         </button>
       </div>
     `;
+
+    // Load documents in review modal
+    _loadReviewDocs(loan.loan_id);
 }
 
-async function submitApproval(loanId, decision) {
-    const notes  = document.getElementById('review-notes')?.value || '';
-    const fd     = new FormData();
-    fd.append('action', decision === 'approve' ? 'approve' : 'deny');
-    fd.append('loan_id', loanId);
-    fd.append(decision === 'approve' ? 'notes' : 'denied_reason', notes);
+// ── Admin: Edit & Resubmit form for RETURNED loans ────────────────────────────
+function buildEditReturnedContent(loan, loanTypes) {
+    const init = loanInitials(loan.employee_name);
+    const typeOptions = loanTypes.map(lt =>
+        `<option value="${esc(lt.loan_type_id)}" ${lt.loan_type_id == loan.loan_type_id ? 'selected' : ''}>${esc(lt.loan_name)}</option>`
+    ).join('');
+
+    const returnNotice = loan.return_reason
+        ? `<div style="padding:10px 14px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;margin-bottom:14px;">
+             <div style="font-size:11px;font-weight:700;color:#92400e;margin-bottom:4px;letter-spacing:.05em;">
+               <i class="fa fa-rotate-left"></i> RETURN REASON
+             </div>
+             <div style="font-size:13px;color:#78350f;line-height:1.5;">${esc(loan.return_reason)}</div>
+           </div>`
+        : '';
+
+    const inpStyle  = 'width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;box-sizing:border-box;';
+    const pesoWrap  = 'display:flex;align-items:center;border:1px solid #d1d5db;border-radius:7px;overflow:hidden;';
+    const pesoSpan  = 'padding:8px 10px;background:#f8fafc;color:#64748b;font-size:13px;border-right:1px solid #d1d5db;flex-shrink:0;';
+    const pesoInput = 'flex:1;padding:8px 10px;border:none;outline:none;font-size:13px;min-width:0;';
+    const lbl       = 'font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:4px;letter-spacing:.05em;';
+    const req       = '<span style="color:#ef4444">*</span>';
+
+    document.getElementById('reviewBody').innerHTML = `
+      ${returnNotice}
+
+      <div class="review-emp-card" style="margin-bottom:14px;">
+        <div class="emp-avatar">${init}</div>
+        <div>
+          <strong>${esc(loan.employee_name)}</strong>
+          <span>${esc(loan.position_name||'')} • ${esc(loan.department_name||'')}</span>
+          <div class="review-emp-meta">
+            <span>Loan ID: <strong>#${loan.loan_id}</strong></span>
+            <span>Filed: <strong>${fmt(loan.created_at)}</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div>
+          <label style="${lbl}">LOAN TYPE ${req}</label>
+          <select id="er-type" style="${inpStyle}">
+            <option value="">— Select Type —</option>
+            ${typeOptions}
+          </select>
+        </div>
+        <div>
+          <label style="${lbl}">PROVIDER / LENDING INSTITUTION ${req}</label>
+          <input type="text" id="er-provider" value="${esc(loan.provider_name||'')}"
+                 placeholder="e.g. Social Security System (SSS)"
+                 style="${inpStyle}">
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <label style="${lbl}">ACCOUNT / REFERENCE NUMBER
+          <span style="font-size:10px;color:#94a3b8;font-weight:400;">(from loan approval letter, optional)</span>
+        </label>
+        <input type="text" id="er-ref" value="${esc(loan.account_reference||'')}"
+               placeholder="e.g. SSS-2024-001234"
+               style="${inpStyle}">
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div>
+          <label style="${lbl}">TOTAL LOAN AMOUNT ${req}</label>
+          <div style="${pesoWrap}">
+            <span style="${pesoSpan}">₱</span>
+            <input type="number" id="er-amount" value="${parseFloat(loan.total_amount||0).toFixed(2)}"
+                   min="0" step="0.01" oninput="computeEditReturned()"
+                   style="${pesoInput}">
+          </div>
+        </div>
+        <div>
+          <label style="${lbl}">INTEREST RATE
+            <span style="font-size:10px;color:#94a3b8;font-weight:400;">(% per annum, 0 if none)</span>
+          </label>
+          <div style="display:flex;align-items:center;border:1px solid #d1d5db;border-radius:7px;overflow:hidden;">
+            <input type="number" id="er-interest" value="${parseFloat(loan.interest_rate||0)}"
+                   min="0" step="0.01" oninput="computeEditReturned()"
+                   style="${pesoInput}">
+            <span style="padding:8px 10px;background:#f8fafc;color:#64748b;font-size:13px;border-left:1px solid #d1d5db;flex-shrink:0;">%</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div>
+          <label style="${lbl}">MONTHLY AMORTIZATION ${req}</label>
+          <div style="${pesoWrap}">
+            <span style="${pesoSpan}">₱</span>
+            <input type="number" id="er-monthly" value="${parseFloat(loan.monthly_deduction||0).toFixed(2)}"
+                   min="0" step="0.01" oninput="computeEditReturned()"
+                   style="${pesoInput}">
+          </div>
+        </div>
+        <div>
+          <label style="${lbl}">START DATE ${req}</label>
+          <input type="date" id="er-start" value="${(loan.start_date||'').substr(0,10)}"
+                 style="${inpStyle}">
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div>
+          <label style="${lbl}">TOTAL PAYABLE
+            <span style="font-size:10px;color:#94a3b8;font-weight:400;">(auto-computed; update if needed)</span>
+          </label>
+          <div style="${pesoWrap}">
+            <span style="${pesoSpan}">₱</span>
+            <input type="number" id="er-total-payable"
+                   value="${parseFloat(loan.total_payable||loan.total_amount||0).toFixed(2)}"
+                   min="0" step="0.01"
+                   oninput="document.getElementById('er-total-payable').dataset.manuallySet='1'"
+                   style="${pesoInput}">
+          </div>
+        </div>
+        <div>
+          <label style="${lbl}">CURRENT OUTSTANDING BALANCE</label>
+          <div style="${pesoWrap}">
+            <span style="${pesoSpan}">₱</span>
+            <input type="number" id="er-balance"
+                   value="${parseFloat(loan.balance_amount||loan.total_amount||0).toFixed(2)}"
+                   min="0" step="0.01"
+                   style="${pesoInput}">
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <label style="${lbl}">NOTES / REMARKS</label>
+        <textarea id="er-remarks" rows="2"
+                  style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;
+                         font-size:13px;resize:vertical;box-sizing:border-box;"
+                  placeholder="Optional notes or purpose…">${esc(loan.reason||'')}</textarea>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div class="review-section-label">ATTACHED DOCUMENTS</div>
+        <div id="review-docs-area" style="min-height:28px;">
+          <div style="font-size:12px;color:#94a3b8;"><i class="fa fa-spinner fa-spin"></i> Loading…</div>
+        </div>
+        <div style="margin-top:8px;">
+          <label style="${lbl}">ADD SUPPORTING DOCUMENT
+            <span style="font-size:10px;color:#94a3b8;font-weight:400;">(PDF, JPG, PNG — max 5 MB, optional)</span>
+          </label>
+          <input type="file" id="er-files" multiple accept=".pdf,.jpg,.jpeg,.png"
+                 style="font-size:12px;border:1px dashed #cbd5e1;padding:6px 8px;border-radius:6px;
+                        color:#374151;cursor:pointer;width:100%;box-sizing:border-box;">
+          <div id="er-file-list" style="font-size:11px;color:#64748b;margin-top:4px;"></div>
+        </div>
+      </div>
+
+      <div id="review-flash" style="display:none" class="loan-flash"></div>
+
+      <div class="loan-modal-footer" style="margin:0;padding-top:12px;">
+        <button onclick="closeReview()"
+                style="background:#f1f5f9;color:#374151;border:1px solid #e2e8f0;padding:8px 16px;
+                       border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+          <i class="fa fa-times"></i> Cancel
+        </button>
+        <button onclick="submitEditReturned(${loan.loan_id})" id="er-submit-btn"
+                style="background:#0d9488;color:#fff;border:none;padding:8px 18px;border-radius:8px;
+                       font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">
+          <i class="fa fa-paper-plane"></i> Save &amp; Resubmit to Principal
+        </button>
+      </div>
+    `;
+
+    // Load existing docs
+    _loadReviewDocs(loan.loan_id);
+
+    // File input preview
+    const fi = document.getElementById('er-files');
+    if (fi) {
+        fi.addEventListener('change', function() {
+            const list = document.getElementById('er-file-list');
+            if (!list) return;
+            list.innerHTML = Array.from(fi.files).map(f =>
+                `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:8px;">` +
+                `<i class="fa fa-paperclip"></i> ${esc(f.name)} <em>(${(f.size/1024).toFixed(0)} KB)</em></span>`
+            ).join('');
+        });
+    }
+}
+
+// Auto-compute Total Payable in the edit-returned form (respects manual override)
+function computeEditReturned() {
+    const amount   = parseFloat(document.getElementById('er-amount')?.value   || 0) || 0;
+    const monthly  = parseFloat(document.getElementById('er-monthly')?.value  || 0) || 0;
+    const interest = parseFloat(document.getElementById('er-interest')?.value || 0) || 0;
+    const tpField  = document.getElementById('er-total-payable');
+    if (!tpField || tpField.dataset.manuallySet) return;
+    if (amount > 0 && monthly > 0) {
+        const payable = interest > 0 ? amount * (1 + interest / 100) : amount;
+        tpField.value = (Math.ceil(payable / monthly) * monthly).toFixed(2);
+    }
+}
+
+// Posts action=edit_returned — UPDATE existing record, status → PENDING, return_reason cleared
+async function submitEditReturned(loanId) {
+    const typeId   = (document.getElementById('er-type')?.value          || '').trim();
+    const provider = (document.getElementById('er-provider')?.value      || '').trim();
+    const ref      = (document.getElementById('er-ref')?.value           || '').trim();
+    const amount   = document.getElementById('er-amount')?.value         || '';
+    const interest = document.getElementById('er-interest')?.value       || '0';
+    const monthly  = document.getElementById('er-monthly')?.value        || '';
+    const payable  = document.getElementById('er-total-payable')?.value  || '';
+    const balance  = document.getElementById('er-balance')?.value        || '';
+    const start    = document.getElementById('er-start')?.value          || '';
+    const remarks  = (document.getElementById('er-remarks')?.value       || '').trim();
+
+    if (!typeId || !provider || !amount || !monthly || !start) {
+        showLoansFlash('review-flash',
+            'Please fill in all required fields: Loan Type, Provider, Amount, Monthly Amortization, and Start Date.',
+            false);
+        return;
+    }
+
+    const btn = document.getElementById('er-submit-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Submitting…'; }
+
+    const fd = new FormData();
+    fd.append('action',            'edit_returned');
+    fd.append('loan_id',           loanId);
+    fd.append('loan_type_id',      typeId);
+    fd.append('provider_name',     provider);
+    fd.append('account_reference', ref);
+    fd.append('total_amount',      amount);
+    fd.append('interest_rate',     interest);
+    fd.append('monthly_deduction', monthly);
+    fd.append('total_payable',     payable);
+    fd.append('current_balance',   balance);
+    fd.append('start_date',        start);
+    fd.append('reason',            remarks);
 
     try {
-        const res  = await fetch(`${BASE_URL}actions/loans-action.php`, {method:'POST',body:fd});
+        const res  = await fetch(`${BASE_URL}actions/loans-action.php`, {method:'POST', body:fd});
+        const data = await res.json();
+        showLoansFlash('review-flash', data.message, data.success);
+        if (data.success) {
+            // Upload any newly-added documents
+            const fi = document.getElementById('er-files');
+            if (fi && fi.files.length) {
+                const docFd = new FormData();
+                docFd.append('action',  'upload');
+                docFd.append('loan_id', loanId);
+                for (const f of fi.files) docFd.append('loan_docs[]', f);
+                try { await fetch(`${BASE_URL}actions/loan-document-action.php`, {method:'POST', body:docFd}); } catch {}
+            }
+            setTimeout(() => { closeReview(); location.reload(); }, 1200);
+        } else {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-paper-plane"></i> Save &amp; Resubmit to Principal'; }
+        }
+    } catch {
+        showLoansFlash('review-flash', 'Network error.', false);
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-paper-plane"></i> Save &amp; Resubmit to Principal'; }
+    }
+}
+
+async function _loadReviewDocs(loanId) {
+    const area = document.getElementById('review-docs-area');
+    if (!area) return;
+    try {
+        const res  = await fetch(`${BASE_URL}actions/loan-document-action.php?action=list&loan_id=${loanId}`);
+        const data = await res.json();
+        if (!data.success || !data.documents || !data.documents.length) {
+            area.innerHTML = `<div style="font-size:12px;color:#94a3b8;padding:4px 0;">No documents attached.</div>`;
+            return;
+        }
+        area.innerHTML = data.documents.map(doc => `
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border:1px solid var(--border);
+                      border-radius:7px;margin-bottom:5px;background:#fafafa;">
+            <i class="fa ${doc.mime_type === 'application/pdf' ? 'fa-file-pdf' : 'fa-file-image'}"
+               style="color:${doc.mime_type === 'application/pdf' ? '#ef4444' : '#3b82f6'};flex-shrink:0;"></i>
+            <a href="${esc(doc.url)}" target="_blank"
+               style="flex:1;font-size:12px;font-weight:600;color:#0369a1;text-decoration:none;word-break:break-all;">
+              ${esc(doc.original_name)}
+            </a>
+            <span style="font-size:10px;color:#94a3b8;">${doc.size_kb} KB</span>
+          </div>`).join('');
+    } catch {
+        area.innerHTML = `<div style="font-size:12px;color:#94a3b8;">Could not load documents.</div>`;
+    }
+}
+
+// ── Admin: Return for Correction ─────────────────────────────────────────────
+// Posts action=return_for_correction (Admin OR Principal guard on backend).
+// The return_reason is required — validated here and enforced server-side.
+async function submitAdminReturn(loanId) {
+    const reason = (document.getElementById('review-notes')?.value || '').trim();
+    if (!reason) {
+        showLoansFlash('review-flash', 'A return reason is required. Please describe what needs to be corrected.', false);
+        return;
+    }
+    const fd = new FormData();
+    fd.append('action',        'return_for_correction');
+    fd.append('loan_id',       loanId);
+    fd.append('return_reason', reason);
+    try {
+        const res  = await fetch(`${BASE_URL}actions/loans-action.php`, {method:'POST', body:fd});
         const data = await res.json();
         showLoansFlash('review-flash', data.message, data.success);
         if (data.success) setTimeout(() => { closeReview(); location.reload(); }, 1200);
-    } catch { showLoansFlash('review-flash','Network error.',false); }
+    } catch { showLoansFlash('review-flash', 'Network error.', false); }
+}
+
+// ── Admin: Forward to Principal ───────────────────────────────────────────────
+// No backend action needed — the loan is already PENDING and visible to the
+// Principal. This gives the Admin a clear confirmation that their review is done.
+function submitForwardToPrincipal(loanId) {
+    showLoansFlash('review-flash',
+        'Loan forwarded. The Principal can now review and approve this loan in the Principal Portal. ' +
+        'Payroll deductions will not begin until the Principal approves.',
+        true);
+    setTimeout(() => closeReview(), 2800);
 }
 
 // ─── Loan Details Modal ───────────────────────────────────────────────────────
@@ -409,9 +767,36 @@ function buildDetailsContent(loan, schedule, paymentLog) {
         </table>
       </div>
 
+      <!-- Documents Section -->
+      <div class="sched-label" style="margin-top:14px">ATTACHED DOCUMENTS</div>
+      <div id="loan-docs-area" style="min-height:40px;">
+        <div style="font-size:12px;color:#94a3b8;padding:8px 0;">
+          <i class="fa fa-spinner fa-spin"></i> Loading documents…
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px;">
+          Upload Document <span style="font-size:11px;color:#94a3b8;font-weight:400;">(PDF, JPG, PNG — max 5 MB)</span>
+        </label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="file" id="det-doc-file" multiple accept=".pdf,.jpg,.jpeg,.png"
+                 style="flex:1;font-size:12px;border:1px dashed #cbd5e1;padding:6px 8px;
+                        border-radius:6px;color:#374151;cursor:pointer;">
+          <button onclick="uploadLoanDoc(${loan.loan_id})"
+                  style="padding:7px 14px;background:#0d9488;color:#fff;border:none;border-radius:7px;
+                         font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+            <i class="fa fa-upload"></i> Upload
+          </button>
+        </div>
+        <div id="det-doc-flash" style="display:none" class="loan-flash"></div>
+      </div>
+
       <div id="details-flash" style="display:none" class="loan-flash"></div>
       <div id="details-action-area">${actionBtns}</div>
     `;
+
+    // Load documents async
+    loadLoanDocuments(loan.loan_id);
 }
 
 function buildActionButtons(loan) {
@@ -443,7 +828,42 @@ function buildActionButtons(loan) {
         </div>`;
     }
     if (status === 'ACTIVE') {
-        return `<div class="loan-modal-footer" style="margin:0;padding-top:16px;flex-wrap:wrap;gap:8px;">
+        const skipChecked = loan.skip_next_deduction == 1 ? 'checked' : '';
+        const overrideVal = parseFloat(loan.next_deduction_override || 0) > 0
+            ? parseFloat(loan.next_deduction_override).toFixed(2) : '';
+        return `
+        <div style="margin-top:14px;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;">
+          <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:8px;">
+            <i class="fa fa-sliders-h" style="margin-right:5px;"></i>
+            One-Time Payroll Deduction Control
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#374151;cursor:pointer;">
+              <input type="checkbox" id="det-skip-next" ${skipChecked}>
+              Skip next payroll deduction
+            </label>
+            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#374151;">
+              <span>OR override amount:</span>
+              <div style="display:flex;align-items:center;border:1px solid #d1d5db;border-radius:6px;overflow:hidden;">
+                <span style="padding:5px 7px;background:#f8fafc;color:#64748b;font-size:12px;border-right:1px solid #d1d5db;">₱</span>
+                <input type="number" id="det-override-amt" value="${overrideVal}" min="0" step="0.01"
+                       placeholder="0.00"
+                       style="padding:5px 8px;border:none;outline:none;font-size:12px;width:90px;">
+              </div>
+              <span style="font-size:11px;color:#94a3b8;">for next run only</span>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#92400e;margin-top:6px;">
+            These settings apply once and reset automatically after the next payroll run.
+          </div>
+          <button onclick="submitDeductionControl(${loanId})"
+                  style="margin-top:8px;padding:6px 14px;background:#d97706;color:#fff;border:none;
+                         border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">
+            <i class="fa fa-save"></i> Save Deduction Control
+          </button>
+          <div id="ded-ctrl-flash" style="display:none;margin-top:6px;" class="loan-flash"></div>
+        </div>
+        <div class="loan-modal-footer" style="margin:0;padding-top:16px;flex-wrap:wrap;gap:8px;">
           <button class="btn-outline btn-sm" onclick="showRecordPayment(${loanId},${monthly})">
             <i class="fa fa-money-bill"></i> Record Manual Payment
           </button>
@@ -672,6 +1092,106 @@ async function _loanPost(fd, flashId) {
         showLoansFlash(flashId, data.message, data.success);
         if (data.success) setTimeout(()=>{ closeDetails(); location.reload(); },1200);
     } catch { showLoansFlash(flashId,'Network error.',false); }
+}
+
+// ─── Deduction Control (skip / override) ─────────────────────────────────────
+async function submitDeductionControl(loanId) {
+    const skipNext = document.getElementById('det-skip-next')?.checked ? 1 : 0;
+    const override = document.getElementById('det-override-amt')?.value || '';
+    const fd = new FormData();
+    fd.append('action',          'set_deduction_control');
+    fd.append('loan_id',         loanId);
+    fd.append('skip_next',       skipNext);
+    fd.append('override_amount', override);
+    try {
+        const res  = await fetch(`${BASE_URL}actions/loans-action.php`, {method:'POST', body:fd});
+        const data = await res.json();
+        showLoansFlash('ded-ctrl-flash', data.message, data.success);
+    } catch { showLoansFlash('ded-ctrl-flash', 'Network error.', false); }
+}
+
+// ─── Loan Documents ───────────────────────────────────────────────────────────
+async function loadLoanDocuments(loanId) {
+    const area = document.getElementById('loan-docs-area');
+    if (!area) return;
+    try {
+        const res  = await fetch(`${BASE_URL}actions/loan-document-action.php?action=list&loan_id=${loanId}`);
+        const data = await res.json();
+        if (!data.success) {
+            area.innerHTML = `<div style="font-size:12px;color:#94a3b8;padding:6px 0;">${esc(data.message)}</div>`;
+            return;
+        }
+        if (!data.documents || !data.documents.length) {
+            area.innerHTML = `<div style="font-size:12px;color:#94a3b8;padding:6px 0;">No documents attached yet.</div>`;
+            return;
+        }
+        area.innerHTML = data.documents.map(doc => `
+          <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--border);
+                      border-radius:8px;margin-bottom:6px;background:#fafafa;">
+            <i class="fa ${doc.mime_type === 'application/pdf' ? 'fa-file-pdf' : 'fa-file-image'}"
+               style="font-size:16px;color:${doc.mime_type === 'application/pdf' ? '#ef4444' : '#3b82f6'};flex-shrink:0;"></i>
+            <div style="flex:1;min-width:0;">
+              <a href="${esc(doc.url)}" target="_blank"
+                 style="font-size:13px;font-weight:600;color:#0369a1;text-decoration:none;word-break:break-all;">
+                ${esc(doc.original_name)}
+              </a>
+              <div style="font-size:11px;color:#94a3b8;">${doc.size_kb} KB
+                · Uploaded ${fmt(doc.created_at)}
+                ${doc.uploaded_by_name ? '· by ' + esc(doc.uploaded_by_name) : ''}
+                · <span style="background:${doc.filed_by_role==='EMPLOYEE'?'#dbeafe':'#f0fdf4'};
+                    color:${doc.filed_by_role==='EMPLOYEE'?'#1d4ed8':'#166534'};
+                    padding:1px 5px;border-radius:3px;font-weight:600;">${doc.filed_by_role}</span>
+              </div>
+            </div>
+            <button onclick="deleteLoanDoc(${doc.document_id}, ${loanId})"
+                    title="Delete document"
+                    style="border:none;background:none;color:#ef4444;cursor:pointer;font-size:14px;padding:4px;flex-shrink:0;">
+              <i class="fa fa-trash"></i>
+            </button>
+          </div>`).join('');
+    } catch {
+        area.innerHTML = `<div style="font-size:12px;color:#94a3b8;padding:6px 0;">Could not load documents.</div>`;
+    }
+}
+
+async function uploadLoanDoc(loanId) {
+    const fi = document.getElementById('det-doc-file');
+    if (!fi || !fi.files.length) {
+        showLoansFlash('det-doc-flash', 'Please select at least one file.', false);
+        return;
+    }
+    const fd = new FormData();
+    fd.append('action',  'upload');
+    fd.append('loan_id', loanId);
+    for (const f of fi.files) fd.append('loan_docs[]', f);
+    try {
+        const res  = await fetch(`${BASE_URL}actions/loan-document-action.php`, {method:'POST', body:fd});
+        const data = await res.json();
+        showLoansFlash('det-doc-flash', data.message, data.success);
+        if (data.success) {
+            fi.value = '';
+            loadLoanDocuments(loanId);
+        }
+    } catch { showLoansFlash('det-doc-flash', 'Network error.', false); }
+}
+
+async function deleteLoanDoc(docId, loanId) {
+    try {
+        await GEI.confirm({
+            title: 'Delete Document',
+            message: 'This will permanently delete the file. This cannot be undone.',
+            type: 'warning', confirmText: 'Delete',
+        });
+    } catch { return; }
+    const fd = new FormData();
+    fd.append('action',      'delete');
+    fd.append('document_id', docId);
+    try {
+        const res  = await fetch(`${BASE_URL}actions/loan-document-action.php`, {method:'POST', body:fd});
+        const data = await res.json();
+        if (data.success) loadLoanDocuments(loanId);
+        else showLoansFlash('det-doc-flash', data.message, false);
+    } catch { showLoansFlash('det-doc-flash', 'Network error.', false); }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

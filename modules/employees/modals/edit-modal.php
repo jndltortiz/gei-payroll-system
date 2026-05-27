@@ -384,11 +384,13 @@ $shifts      = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, g
                        oninput="autoFillUsername('editEmail','editUsername')"
                        data-req="1" data-label="School Email">
                 <small>Must end with @gei.edu.ph</small>
+                <span id="editEmailError" class="field-error" style="display:none;"></span>
               </div>
               <div class="form-group">
                 <label>Username</label>
                 <input type="text" name="username" id="editUsername" readonly style="background:#f3f4f6;color:#9ca3af;">
-                <small>Auto-filled from email prefix</small>
+                <small id="editUsernameNote">Auto-filled from email prefix</small>
+                <span id="editUsernameWarn" class="field-error" style="display:none;"></span>
               </div>
             </div>
 

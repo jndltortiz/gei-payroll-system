@@ -71,7 +71,9 @@ $where  = "WHERE 1=1" . $syWhere;
 $params = $syParams;
 
 if ($tab !== 'all') {
-    if ($tab === 'applied') {
+    if ($tab === 'approved') {
+        $where .= " AND sc.status IN ('APPROVED','PARTIALLY_APPROVED')";
+    } elseif ($tab === 'applied') {
         $where .= " AND sc.status IN ('APPLIED','RELEASED')";
     } elseif ($tab === 'archived') {
         $where .= " AND sc.status = 'ARCHIVED'";
@@ -181,13 +183,33 @@ if (!empty($records)) {
     }
 }
 
-// ── Open payroll periods (for target period dropdown in create/edit modal) ──
-$openPeriods = $pdo->query("
-    SELECT period_id, period_name, pay_period_start, pay_period_end, pay_date
-    FROM payroll_periods
-    WHERE status = 'OPEN'
-    ORDER BY pay_period_start ASC
-")->fetchAll(PDO::FETCH_ASSOC);
+// ── Open ACCRUED_PAY periods (backward-compat: fall back to all OPEN if column missing) ──
+$openPeriods = [];
+$hasPeriodTypeCol = false;
+try {
+    $hasPeriodTypeCol = (bool)$pdo->query("
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME   = 'payroll_periods'
+          AND COLUMN_NAME  = 'period_type'
+    ")->fetchColumn();
+} catch (PDOException $_e) {}
+
+if ($hasPeriodTypeCol) {
+    $openPeriods = $pdo->query("
+        SELECT period_id, period_name, pay_period_start, pay_period_end, pay_date
+        FROM payroll_periods
+        WHERE status = 'OPEN' AND period_type = 'ACCRUED_PAY'
+        ORDER BY pay_period_start ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+} else {
+    $openPeriods = $pdo->query("
+        SELECT period_id, period_name, pay_period_start, pay_period_end, pay_date
+        FROM payroll_periods
+        WHERE status = 'OPEN'
+        ORDER BY pay_period_start ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+}
 
 // ── Employee dropdown (for create/edit modal) ───────────────────────────────
 $employees = $pdo->query("
@@ -219,7 +241,6 @@ require_once __DIR__ . '/../../includes/head.php';
   <!-- Page header -->
   <div class="sc-page-header">
     <div class="sc-page-header-left">
-      <div class="sc-page-icon"><i class="fa fa-medal"></i></div>
       <div>
         <h1>Service Credits</h1>
         <p>Track extra work rendered beyond school days — approved credits become Additional Assignment Payment.</p>
@@ -341,7 +362,7 @@ require_once __DIR__ . '/../../includes/head.php';
             'DRAFT'              => ['sc-badge--draft',    'Draft'],
             'PENDING'            => ['sc-badge--pending',  'Pending'],
             'APPROVED'           => ['sc-badge--approved', 'Approved'],
-            'PARTIALLY_APPROVED' => ['sc-badge--partial',  'Partial'],
+            'PARTIALLY_APPROVED' => ['sc-badge--approved', 'Approved'],  // treated same as Approved
             'APPLIED'            => ['sc-badge--applied',  'In Payroll'],
             'RELEASED'           => ['sc-badge--released', 'Released'],
             'REJECTED'           => ['sc-badge--rejected', 'Rejected'],
@@ -349,8 +370,9 @@ require_once __DIR__ . '/../../includes/head.php';
           ];
           [$bdgClass, $bdgLabel] = $badges[$r['status']] ?? ['sc-badge--draft', $r['status']];
           $canEdit     = in_array($r['status'], ['DRAFT','REJECTED']);
+          $canDelete   = $r['status'] === 'DRAFT';
+          $canSubmit   = $r['status'] === 'DRAFT';
           $canResubmit = $r['status'] === 'REJECTED';
-          $canApprove  = $r['status'] === 'PENDING';
           $canArchive  = in_array($r['status'], ['DRAFT','REJECTED','PARTIALLY_APPROVED','APPLIED','RELEASED']);
           $canRestore  = $r['status'] === 'ARCHIVED';
 
@@ -394,24 +416,30 @@ require_once __DIR__ . '/../../includes/head.php';
                 onclick="openViewModal(<?= $rJson ?>)">
                 <i class="fa fa-eye"></i>
               </button>
-              <?php if ($canApprove): ?>
-              <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php" style="display:inline">
-                <input type="hidden" name="action" value="approve">
-                <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
-                <button type="submit" class="sc-action-btn sc-action-btn--approve" title="Approve this service credit">
-                  <i class="fa fa-circle-check"></i> Approve
-                </button>
-              </form>
-              <button class="sc-action-btn sc-action-btn--reject" title="Reject with reason"
-                onclick="openRejectModal(<?= $r['service_credit_id'] ?>,'<?= htmlspecialchars(addslashes($r['employee_name'])) ?>')">
-                <i class="fa fa-circle-xmark"></i> Reject
-              </button>
-              <?php endif; ?>
               <?php if ($canEdit): ?>
               <button class="sc-icon-btn sc-icon-btn--edit" title="Edit"
                 onclick="openEditModal(<?= $rJson ?>)">
                 <i class="fa fa-pen"></i>
               </button>
+              <?php endif; ?>
+              <?php if ($canSubmit): ?>
+              <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php" style="display:inline">
+                <input type="hidden" name="action" value="resubmit">
+                <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
+                <button type="submit" class="sc-action-btn sc-action-btn--approve" title="Submit for approval">
+                  <i class="fa fa-paper-plane"></i> Submit
+                </button>
+              </form>
+              <?php endif; ?>
+              <?php if ($canDelete): ?>
+              <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php" style="display:inline"
+                    onsubmit="return confirm('Delete this draft? This cannot be undone.')">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
+                <button type="submit" class="sc-icon-btn" title="Delete draft" style="color:#ef4444;border-color:#fca5a5;">
+                  <i class="fa fa-trash"></i>
+                </button>
+              </form>
               <?php endif; ?>
               <?php if ($canResubmit): ?>
               <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php" style="display:inline">
@@ -475,7 +503,6 @@ require_once __DIR__ . '/../../includes/head.php';
 
 <!-- ══ Modals ══ -->
 <?php include __DIR__ . '/modals/modal-create.php'; ?>
-<?php include __DIR__ . '/modals/modal-reject.php'; ?>
 <?php include __DIR__ . '/modals/modal-view.php'; ?>
 
 <script>

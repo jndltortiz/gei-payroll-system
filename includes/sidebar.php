@@ -1,12 +1,36 @@
 <?php
 /**
  * includes/sidebar.php
- * Unified sidebar navigation — matches GEI HR System design.
+ * Unified sidebar navigation — GEI HR System (Admin / Accounting).
  * Active state auto-detected from REQUEST_URI.
+ *
+ * Ensures auth.php is loaded so hasEmployeeAccess() and role helpers
+ * are always available, even on pages that only require config.php.
  */
+require_once __DIR__ . '/auth.php';
 function sidebarActive(string $path): string {
     $uri = $_SERVER['REQUEST_URI'] ?? '';
     return str_contains($uri, $path) ? 'active' : '';
+}
+
+/**
+ * Highlights "Settings" when on the hub page OR any of the
+ * consolidated configuration sub-modules.
+ */
+function settingsActive(): string {
+    $uri = $_SERVER['REQUEST_URI'] ?? '';
+    $paths = [
+        'modules/settings',
+        'modules/payroll-settings',
+        'modules/shifts',
+        'modules/holidays',
+        'modules/leave-credits',
+        'modules/school-years',
+    ];
+    foreach ($paths as $p) {
+        if (str_contains($uri, $p)) return 'active';
+    }
+    return '';
 }
 
 $_sidebarFirst = htmlspecialchars($_SESSION['user']['first_name'] ?? 'Admin');
@@ -79,11 +103,6 @@ $_sidebarInit  = strtoupper(substr($_SESSION['user']['first_name'] ?? 'A', 0, 1)
       <i class="fa fa-medal"></i>
       <span>Service Credits</span>
     </a>
-    <a class="nav-item <?= sidebarActive('modules/payroll-settings') ?>"
-       href="<?= BASE_URL ?>modules/payroll-settings/index.php">
-      <i class="fa fa-sliders"></i>
-      <span>Payroll Settings</span>
-    </a>
 
     <div class="nav-section-label">LEAVE</div>
     <a class="nav-item <?= sidebarActive('modules/leave/') ?>"
@@ -91,50 +110,69 @@ $_sidebarInit  = strtoupper(substr($_SESSION['user']['first_name'] ?? 'A', 0, 1)
       <i class="fa fa-calendar-days"></i>
       <span>Leave Records</span>
     </a>
-    <a class="nav-item <?= sidebarActive('modules/leave-credits') ?>"
-       href="<?= BASE_URL ?>modules/leave-credits/index.php">
-      <i class="fa fa-id-card-clip"></i>
-      <span>Leave Credits</span>
-    </a>
-    <a class="nav-item <?= sidebarActive('modules/school-years') ?>"
-       href="<?= BASE_URL ?>modules/school-years/index.php">
-      <i class="fa fa-graduation-cap"></i>
-      <span>School Years</span>
-    </a>
 
-    <div class="nav-section-label">REPORTS &amp; ANALYTICS</div>
+    <div class="nav-section-label">ANALYTICS</div>
     <a class="nav-item <?= sidebarActive('modules/analytics') ?>"
        href="<?= BASE_URL ?>modules/analytics/index.php">
       <i class="fa fa-chart-bar"></i>
       <span>Analytics</span>
     </a>
-    <a class="nav-item <?= sidebarActive('modules/reports') ?>"
-       href="<?= BASE_URL ?>modules/reports/index.php">
-      <i class="fa fa-file-lines"></i>
-      <span>Reports Center</span>
-    </a>
 
     <div class="nav-section-label">SYSTEM</div>
-    <a class="nav-item <?= sidebarActive('modules/shifts') ?>"
-       href="<?= BASE_URL ?>modules/shifts/index.php">
-      <i class="fa fa-business-time"></i>
-      <span>Shifts</span>
-    </a>
-    <a class="nav-item <?= sidebarActive('modules/holidays') ?>"
-       href="<?= BASE_URL ?>modules/holidays/index.php">
-      <i class="fa fa-calendar-check"></i>
-      <span>Holidays</span>
+    <a class="nav-item <?= sidebarActive('modules/notifications') ?>"
+       href="<?= BASE_URL ?>modules/notifications/index.php">
+      <i class="fa fa-bell"></i>
+      <span>Notifications</span>
     </a>
     <a class="nav-item <?= sidebarActive('modules/audit') ?>"
        href="<?= BASE_URL ?>modules/audit/index.php">
       <i class="fa fa-shield-halved"></i>
       <span>Audit Logs</span>
     </a>
-    <a class="nav-item <?= sidebarActive('modules/settings') ?>"
+    <a class="nav-item <?= settingsActive() ?>"
        href="<?= BASE_URL ?>modules/settings/index.php">
       <i class="fa fa-gear"></i>
       <span>Settings</span>
     </a>
+
+    <?php if (hasEmployeeAccess()): ?>
+    <div class="nav-section-label">MY ACCOUNT</div>
+    <a class="nav-item <?= sidebarActive('employee/attendance') ?>"
+       href="<?= BASE_URL ?>modules/employee/attendance/index.php">
+      <i class="fa fa-user-clock"></i>
+      <span>My Attendance</span>
+    </a>
+    <a class="nav-item <?= sidebarActive('employee/leave') ?>"
+       href="<?= BASE_URL ?>modules/employee/leave/index.php">
+      <i class="fa fa-calendar-days"></i>
+      <span>My Leave</span>
+    </a>
+    <a class="nav-item <?= sidebarActive('employee/payslips') ?>"
+       href="<?= BASE_URL ?>modules/employee/payslips/index.php">
+      <i class="fa fa-file-invoice-dollar"></i>
+      <span>My Payslips</span>
+    </a>
+    <a class="nav-item <?= sidebarActive('employee/loans') ?>"
+       href="<?= BASE_URL ?>modules/employee/loans/index.php">
+      <i class="fa fa-hand-holding-dollar"></i>
+      <span>My Loans</span>
+    </a>
+    <a class="nav-item <?= sidebarActive('employee/service-credits') ?>"
+       href="<?= BASE_URL ?>modules/employee/service-credits/index.php">
+      <i class="fa fa-medal"></i>
+      <span>My Service Credits</span>
+    </a>
+    <a class="nav-item <?= sidebarActive('employee/profile') ?>"
+       href="<?= BASE_URL ?>modules/employee/profile/index.php">
+      <i class="fa fa-id-badge"></i>
+      <span>My Profile</span>
+    </a>
+    <a class="nav-item <?= sidebarActive('employee/calendar') ?>"
+       href="<?= BASE_URL ?>modules/employee/calendar/index.php">
+      <i class="fa fa-calendar-check"></i>
+      <span>My Calendar</span>
+    </a>
+    <?php endif; ?>
 
   </div><!-- .sidebar-nav -->
 

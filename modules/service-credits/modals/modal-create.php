@@ -43,7 +43,7 @@ if (!isset($openPeriods)) $openPeriods = [];
         <div class="sc-form-group">
           <label>Target Payroll Period</label>
           <select name="target_period_id" id="scTargetPeriod">
-            <option value="">— Not specified (auto-applied on next payroll run) —</option>
+            <option value="">— Not specified —</option>
             <?php foreach ($openPeriods as $p):
               $pLabel = $p['period_name']
                   ?: (date('M j', strtotime($p['pay_period_start'])) . '–' . date('j, Y', strtotime($p['pay_period_end'])));
@@ -53,8 +53,11 @@ if (!isset($openPeriods)) $openPeriods = [];
               <?= htmlspecialchars($pLabel . $pPayDate) ?>
             </option>
             <?php endforeach; ?>
+            <?php if (empty($openPeriods)): ?>
+            <option value="" disabled>No open Accrued Pay periods — create one in Payroll Settings first.</option>
+            <?php endif; ?>
           </select>
-          <small>Informational — shows which payroll period this credit is intended for.</small>
+          <small>Service credits are released only during an EOSY Accrued Pay period. Only open Accrued Pay periods are shown.</small>
         </div>
 
         <!-- Description -->

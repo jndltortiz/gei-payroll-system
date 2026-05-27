@@ -639,7 +639,8 @@ function showToast(msg, type = 'success') {
 
 // ─── Pay Period Manager ───────────────────────────────────────────────────────
 
-let modalPayPeriods = null;
+let modalPayPeriods    = null;
+let modalAccruedPay    = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     // Init Bootstrap modal for pay periods
@@ -650,6 +651,17 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('ppModalFlash').style.display = 'none';
             const btn = document.getElementById('ppCreateBtn');
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-plus-lg"></i> Create'; }
+        });
+    }
+
+    // Init accrued pay modal
+    const apEl = document.getElementById('modalAccruedPayPeriod');
+    if (apEl) {
+        modalAccruedPay = new bootstrap.Modal(apEl);
+        apEl.addEventListener('hidden.bs.modal', () => {
+            document.getElementById('apFlash').style.display = 'none';
+            const btn = document.getElementById('apCreateBtn');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-plus-lg"></i> Create Accrued Pay Period'; }
         });
     }
 
@@ -665,6 +677,68 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function openCreatePeriodsModal() {
     if (modalPayPeriods) modalPayPeriods.show();
+}
+
+function openCreateAccruedPayModal() {
+    // Pre-fill a sensible name and dates
+    const yr = new Date().getFullYear();
+    const nameEl = document.getElementById('apName');
+    if (nameEl && !nameEl.value) nameEl.value = `EOSY Accrued Pay ${yr}`;
+    if (modalAccruedPay) modalAccruedPay.show();
+}
+
+async function submitCreateAccruedPay() {
+    const name    = (document.getElementById('apName')?.value    || '').trim();
+    const start   = (document.getElementById('apStart')?.value   || '').trim();
+    const end     = (document.getElementById('apEnd')?.value     || '').trim();
+    const payDate = (document.getElementById('apPayDate')?.value || '').trim();
+    const flash   = document.getElementById('apFlash');
+    const btn     = document.getElementById('apCreateBtn');
+
+    if (!name || !start || !end || !payDate) {
+        flash.style.cssText = 'display:block;padding:10px 14px;border-radius:8px;font-size:13px;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;margin-top:4px;';
+        flash.textContent   = 'All fields are required.';
+        return;
+    }
+    if (start > end) {
+        flash.style.cssText = 'display:block;padding:10px 14px;border-radius:8px;font-size:13px;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;margin-top:4px;';
+        flash.textContent   = 'Period start must be before period end.';
+        return;
+    }
+
+    btn.disabled  = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating…';
+    flash.style.display = 'none';
+
+    const fd = new FormData();
+    fd.append('create_for',         'accrued_pay');
+    fd.append('period_name',        name);
+    fd.append('pay_period_start',   start);
+    fd.append('pay_period_end',     end);
+    fd.append('pay_date',           payDate);
+
+    try {
+        const res  = await fetch(`${PS_BASE_URL}actions/create-payroll-periods.php`, { method: 'POST', body: fd });
+        const data = await res.json();
+
+        flash.style.cssText = `display:block;padding:10px 14px;border-radius:8px;font-size:13px;margin-top:4px;
+            ${data.success
+              ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;'
+              : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'}`;
+        flash.textContent = data.message;
+
+        if (data.success) {
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            btn.disabled  = false;
+            btn.innerHTML = '<i class="bi bi-plus-lg"></i> Create Accrued Pay Period';
+        }
+    } catch {
+        flash.style.cssText = 'display:block;padding:10px 14px;border-radius:8px;font-size:13px;background:#fee2e2;color:#991b1b;';
+        flash.textContent   = 'Network error. Please try again.';
+        btn.disabled  = false;
+        btn.innerHTML = '<i class="bi bi-plus-lg"></i> Create Accrued Pay Period';
+    }
 }
 
 async function submitCreatePeriods() {

@@ -43,27 +43,74 @@ $newDateStatus = $action === 'approve' ? 'APPROVED' : 'REJECTED';
 
 // ── Helper: recalculate parent leave_requests.status ────────
 // Rules:
-//   All APPROVED             → APPROVED
-//   All REJECTED             → REJECTED
-//   Any PENDING remaining    → PENDING
-//   Mixed APPROVED+REJECTED  → APPROVED  (partial approval)
-function recalcParentStatus(PDO $pdo, int $leaveId): string
+//   Any PENDING remaining  → PENDING (no change)
+//   All APPROVED           → APPROVED
+//   All REJECTED           → REJECTED
+//   Mixed                  → PARTIALLY_APPROVED (kept as one record; split happens
+//                            later when admin records the result)
+function recalcParentStatus(PDO $pdo, int $leaveId, int $uid): string
 {
     $stmt = $pdo->prepare("
         SELECT
-            COUNT(*)                                         AS total,
-            SUM(status = 'APPROVED')                         AS approved,
-            SUM(status = 'REJECTED')                         AS rejected,
-            SUM(status = 'PENDING')                          AS pending
+            COUNT(*)                 AS total,
+            SUM(status = 'APPROVED') AS approved,
+            SUM(status = 'REJECTED') AS rejected,
+            SUM(status = 'PENDING')  AS pending
         FROM leave_request_dates
         WHERE leave_id = ?
     ");
     $stmt->execute([$leaveId]);
     $row = $stmt->fetch();
 
-    if ($row['pending'] > 0)                          return 'PENDING';
-    if ($row['approved'] > 0 && $row['rejected'] > 0) return 'APPROVED'; // partial
-    if ($row['approved'] == $row['total'])             return 'APPROVED';
+    if ((int)$row['pending'] > 0) return 'PENDING';
+
+    $approved = (int)$row['approved'];
+    $rejected = (int)$row['rejected'];
+    $total    = (int)$row['total'];
+
+    if ($approved > 0 && $rejected > 0) {
+        // Mixed batch — keep as one record so principal/admin see the full picture.
+        // start_date/end_date span all dates; total_days = full count.
+        $pdo->prepare("
+            UPDATE leave_requests
+            SET status      = 'PARTIALLY_APPROVED',
+                total_days  = ?,
+                start_date  = (SELECT MIN(d.leave_date) FROM leave_request_dates d WHERE d.leave_id = ?),
+                end_date    = (SELECT MAX(d.leave_date) FROM leave_request_dates d WHERE d.leave_id = ?),
+                approved_by = ?,
+                approved_at = NOW(),
+                updated_at  = NOW()
+            WHERE leave_id = ?
+        ")->execute([$total, $leaveId, $leaveId, $uid, $leaveId]);
+        return 'PARTIALLY_APPROVED';
+    }
+
+    if ($approved > 0) {
+        $pdo->prepare("
+            UPDATE leave_requests
+            SET status     = 'APPROVED',
+                total_days = ?,
+                start_date = (SELECT MIN(d.leave_date) FROM leave_request_dates d WHERE d.leave_id = ?),
+                end_date   = (SELECT MAX(d.leave_date) FROM leave_request_dates d WHERE d.leave_id = ?),
+                approved_by = ?,
+                approved_at = NOW(),
+                updated_at  = NOW()
+            WHERE leave_id = ?
+        ")->execute([$approved, $leaveId, $leaveId, $uid, $leaveId]);
+        return 'APPROVED';
+    }
+
+    $pdo->prepare("
+        UPDATE leave_requests
+        SET status     = 'REJECTED',
+            total_days = ?,
+            start_date = (SELECT MIN(d.leave_date) FROM leave_request_dates d WHERE d.leave_id = ?),
+            end_date   = (SELECT MAX(d.leave_date) FROM leave_request_dates d WHERE d.leave_id = ?),
+            approved_by = ?,
+            approved_at = NOW(),
+            updated_at  = NOW()
+        WHERE leave_id = ?
+    ")->execute([$rejected, $leaveId, $leaveId, $uid, $leaveId]);
     return 'REJECTED';
 }
 
@@ -141,18 +188,13 @@ try {
             adjustLeaveCredits($pdo, $leaveId, (float)$pendingCount);
         }
 
-        // Recalculate parent status
-        $parentStatus = recalcParentStatus($pdo, $leaveId);
+        // Recalculate parent status (UPDATE is handled inside recalcParentStatus)
+        $parentStatus = recalcParentStatus($pdo, $leaveId, $userId);
 
-        $pdo->prepare("
-            UPDATE leave_requests
-            SET status      = ?,
-                approved_by = ?,
-                approved_at = NOW(),
-                remarks     = ?,
-                updated_at  = NOW()
-            WHERE leave_id  = ?
-        ")->execute([$parentStatus, $userId, $notes ?: null, $leaveId]);
+        // Apply remarks separately (recalcParentStatus doesn't handle this field)
+        if ($notes) {
+            $pdo->prepare("UPDATE leave_requests SET remarks=? WHERE leave_id=?")->execute([$notes, $leaveId]);
+        }
 
         // Audit
         $verb = strtoupper($action);
@@ -213,17 +255,8 @@ try {
         if ($prevStatus === 'APPROVED' && $newDateStatus === 'REJECTED') $creditDelta = -1;
         adjustLeaveCredits($pdo, $parentLeaveId, (float)$creditDelta);
 
-        // Recalculate parent status
-        $parentStatus = recalcParentStatus($pdo, $parentLeaveId);
-
-        $pdo->prepare("
-            UPDATE leave_requests
-            SET status      = ?,
-                approved_by = ?,
-                approved_at = NOW(),
-                updated_at  = NOW()
-            WHERE leave_id  = ?
-        ")->execute([$parentStatus, $userId, $parentLeaveId]);
+        // Recalculate parent status (UPDATE is handled inside recalcParentStatus)
+        $parentStatus = recalcParentStatus($pdo, $parentLeaveId, $userId);
 
         // Audit
         $verb = strtoupper($action);

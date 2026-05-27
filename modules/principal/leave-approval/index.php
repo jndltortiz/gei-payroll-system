@@ -133,7 +133,9 @@ $baseSelect = "
         COUNT(CASE WHEN lrd.status='PENDING'  THEN 1 END)  AS pending_cnt,
         COUNT(CASE WHEN lrd.status='APPROVED' THEN 1 END)  AS approved_cnt,
         COUNT(CASE WHEN lrd.status='REJECTED' THEN 1 END)  AS rejected_cnt,
-        COUNT(lrd.date_id)                                   AS total_dates
+        COUNT(lrd.date_id)                                   AS total_dates,
+        MIN(lrd.leave_date)                                  AS actual_start,
+        MAX(lrd.leave_date)                                  AS actual_end
     FROM leave_requests lr
     JOIN employees  e   ON lr.employee_id   = e.employee_id
     JOIN departments d  ON e.department_id  = d.department_id
@@ -166,7 +168,7 @@ if ($tab === 'pending') {
 } else { // history
     $extra = buildPrincipalFilters($fDept, $fType, $fMonth, $fSearch, $params);
     $sql   = $baseSelect . "
-        WHERE lr.status IN ('APPROVED','REJECTED'){$extra}
+        WHERE lr.status IN ('APPROVED','REJECTED','PARTIALLY_APPROVED'){$extra}
         GROUP BY lr.leave_id
         ORDER BY lr.updated_at DESC
         LIMIT 200";
@@ -480,13 +482,16 @@ require_once __DIR__ . '/../../../includes/head.php';
         </thead>
         <tbody>
         <?php foreach ($records as $r):
-            $dateStr = ($r['start_date'] === $r['end_date'])
-                ? date('M d, Y', strtotime($r['start_date']))
-                : date('M d', strtotime($r['start_date'])) . '–' . date('M d, Y', strtotime($r['end_date']));
+            $dStart  = $r['actual_start'] ?? $r['start_date'];
+            $dEnd    = $r['actual_end']   ?? $r['end_date'];
+            $dateStr = ($dStart === $dEnd)
+                ? date('M d, Y', strtotime($dStart))
+                : date('M d', strtotime($dStart)) . '–' . date('M d, Y', strtotime($dEnd));
             $sBadge = match(strtoupper($r['status'])) {
-                'APPROVED' => ['lv-badge--approved','Approved'],
-                'REJECTED' => ['lv-badge--rejected','Rejected'],
-                default    => ['lv-badge--pending','Pending'],
+                'APPROVED'           => ['lv-badge--approved','Approved'],
+                'REJECTED'           => ['lv-badge--rejected','Rejected'],
+                'PARTIALLY_APPROVED' => ['lv-badge--mixed','Mixed'],
+                default              => ['lv-badge--pending','Pending'],
             };
         ?>
         <tr>

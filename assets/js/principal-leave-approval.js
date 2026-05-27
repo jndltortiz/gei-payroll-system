@@ -15,9 +15,15 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-        document.querySelectorAll('.pr-modal-overlay').forEach(el => {
-            if (el.style.display === 'flex') closeModal(el.id);
-        });
+        const open = [...document.querySelectorAll('.pr-modal-overlay')]
+            .filter(el => el.style.display === 'flex');
+        if (!open.length) return;
+        // Close only the topmost (highest z-index) visible modal
+        open.sort((a, b) =>
+            (parseInt(getComputedStyle(b).zIndex) || 0) -
+            (parseInt(getComputedStyle(a).zIndex) || 0)
+        );
+        closeModal(open[0].id);
     }
 });
 

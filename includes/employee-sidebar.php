@@ -24,7 +24,7 @@ function employeeActive(string $path): string {
 
   <!-- Toggle button -->
   <button class="sidebar-toggle-btn" id="sidebarToggle" title="Collapse sidebar">
-    <i class="fa fa-bars"></i>
+    <i class="fa fa-chevron-left" id="sidebarChevron"></i>
   </button>
 
   <div class="sidebar-nav">
@@ -72,6 +72,20 @@ function employeeActive(string $path): string {
       <span>Attendance Records</span>
     </a>
 
+    <div class="nav-section-label">MY CALENDAR</div>
+    <a class="nav-item <?= employeeActive('employee/calendar') ?>"
+       href="<?= BASE_URL ?>modules/employee/calendar/index.php">
+      <i class="fa fa-calendar-check"></i>
+      <span>My Calendar</span>
+    </a>
+
+    <div class="nav-section-label">ALERTS</div>
+    <a class="nav-item <?= employeeActive('modules/notifications') ?>"
+       href="<?= BASE_URL ?>modules/notifications/index.php">
+      <i class="fa fa-bell"></i>
+      <span>Notifications</span>
+    </a>
+
   </div><!-- .sidebar-nav -->
 
   <!-- User / Logout -->
@@ -96,16 +110,24 @@ function employeeActive(string $path): string {
 <script>
 (function() {
     function initSidebar() {
-        const sidebar = document.getElementById('sidebar');
-        const btn     = document.getElementById('sidebarToggle');
+        const sidebar  = document.getElementById('sidebar');
+        const btn      = document.getElementById('sidebarToggle');
+        const chevron  = document.getElementById('sidebarChevron');
         if (!sidebar || !btn) return;
-        if (localStorage.getItem('employeeSidebarCollapsed') === '1') {
-            sidebar.classList.add('collapsed');
+
+        function applyState(collapsed) {
+            sidebar.classList.toggle('collapsed', collapsed);
+            if (chevron) {
+                chevron.className = collapsed ? 'fa fa-chevron-right' : 'fa fa-chevron-left';
+            }
         }
+
+        applyState(localStorage.getItem('employeeSidebarCollapsed') === '1');
+
         btn.addEventListener('click', function () {
-            sidebar.classList.toggle('collapsed');
-            localStorage.setItem('employeeSidebarCollapsed',
-                sidebar.classList.contains('collapsed') ? '1' : '0');
+            const next = !sidebar.classList.contains('collapsed');
+            applyState(next);
+            localStorage.setItem('employeeSidebarCollapsed', next ? '1' : '0');
         });
     }
     if (document.readyState === 'loading') {
