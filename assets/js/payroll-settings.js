@@ -397,7 +397,6 @@ function openEditDeductionModal(id, name, type, amount, rate, appliesTo, isActiv
     document.getElementById('editDedId').value      = id;
     document.getElementById('editDedName').value    = name;
     document.getElementById('editDedStatus').value  = isActive;
-    document.getElementById('editDedAppliesTo').value = appliesTo === 'ALL' ? 'ALL' : 'ALL'; // simplified
     setDedType('edit', type);
     document.getElementById('editDedAmount').value  = type === 'FIXED' ? amount : rate;
     modalEditDed.show();
