@@ -337,7 +337,7 @@ function initRateTables() {
             </tr>
         `).join('');
         document.getElementById('sssTotalNote').innerHTML =
-            `<strong>Note:</strong> Full table has ${PS_SSS_TOTAL} salary brackets. Employee share: 4.5%, Employer share: 9.5% (SSS Circular 2022-033)`;
+            `<strong>Note:</strong> Full table has ${PS_SSS_TOTAL} salary brackets. Employee share: 5%, Employer share: 10% (SSS Circular 2024-006, effective Jan 2025)`;
     }
 
     // PhilHealth
@@ -374,7 +374,7 @@ function initRateTables() {
             </tr>
         `).join('');
         document.getElementById('pagibigExample').innerHTML =
-            '<strong>Example:</strong> ₱25,000 salary → Employee: ₱100.00 (capped), Employer: ₱500.00';
+            '<strong>Example:</strong> ₱25,000 salary → Employee: ₱200.00 (capped), Employer: ₱200.00 (capped)';
     }
 }
 

@@ -193,7 +193,7 @@ $extraCSS  = [BASE_URL . 'assets/css/dashboard.css'];
 require_once __DIR__ . '/../../includes/head.php';
 ?>
 <!-- Chart.js loaded here because it's only needed by the dashboard -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="<?= BASE_URL ?>assets/js/chart.umd.min.js"></script>
 <body>
 
 <!-- ═══ SIDEBAR ═══ -->

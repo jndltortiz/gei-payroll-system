@@ -5,7 +5,7 @@
 
             <div class="ps-modal-header" style="flex-shrink:0;">
                 <div>
-                    <h5 class="ps-modal-title">2024 Official Government Contribution Rates</h5>
+                    <h5 class="ps-modal-title">2025–2026 Official Government Contribution Rates</h5>
                     <div class="ps-modal-subtitle">Bracket-based rates used for automatic calculation</div>
                 </div>
                 <button type="button" class="ps-modal-close" data-bs-dismiss="modal">
@@ -20,7 +20,7 @@
                 <div class="ps-rate-section">
                     <div class="ps-rate-section-header blue">
                         <span class="ps-rate-num">1</span>
-                        <span>SSS Contribution Table (Employee Share: 4.5%)</span>
+                        <span>SSS Contribution Table (Employee Share: 5%)</span>
                     </div>
                     <div class="ps-rate-table-wrap">
                         <table class="ps-rate-table">

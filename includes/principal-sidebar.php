@@ -70,7 +70,7 @@ function principalActive(string $path): string {
     </a>
     <a class="nav-item <?= principalActive('principal/service-credit-approval') ?>"
        href="<?= BASE_URL ?>modules/principal/service-credit-approval/index.php">
-      <i class="fa fa-hands-helping"></i>
+      <i class="fa fa-handshake-angle"></i>
       <span>Service Credit Approval</span>
     </a>
 

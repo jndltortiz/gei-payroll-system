@@ -878,7 +878,7 @@ require_once __DIR__ . '/../../includes/head.php';
 </div><!-- .an-page -->
 
 <!-- ── Chart.js ──────────────────────────────────────────────────────────────── -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="<?= BASE_URL ?>assets/js/chart.umd.min.js"></script>
 <script>
 const PAYROLL_TREND  = <?= $payrollTrendJson ?>;
 const ATT_WEEKLY     = <?= $attWeeklyJson ?>;

@@ -246,9 +246,9 @@ require_once __DIR__ . '/../../includes/head.php';
                             <tbody>
                                 <?php
                                 $govManual = [
-                                    ['sss',  'SSS Contribution',       'Social Security System — Employee Share',  4.5,   'pct'],
+                                    ['sss',  'SSS Contribution',       'Social Security System — Employee Share',  5.0,   'pct'],
                                     ['phil', 'PhilHealth Contribution', 'Philippine Health Insurance Corporation',  2.5,   'pct'],
-                                    ['pag',  'Pag-IBIG / HDMF',        'Home Development Mutual Fund (HDMF)',      100.0, 'fixed'],
+                                    ['pag',  'Pag-IBIG / HDMF',        'Home Development Mutual Fund (HDMF)',      200.0, 'fixed'],
                                 ];
                                 foreach ($govManual as [$key, $name, $sub, $val, $type]): ?>
                                 <tr>

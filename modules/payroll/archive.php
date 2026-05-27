@@ -219,6 +219,7 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
             <td style="padding:12px 16px;font-weight:700;font-size:12px;color:#374151;" colspan="2">
                 TOTALS (<?= count($periods) ?> period<?= count($periods) !== 1 ? 's' : '' ?>)
             </td>
+            <td style="padding:12px 16px;"></td>
             <td style="padding:12px 16px;text-align:right;font-weight:700;color:#374151;"><?= peso2($arcGross) ?></td>
             <td style="padding:12px 16px;text-align:right;font-weight:700;color:#dc2626;">
                 <?= peso2(array_sum(array_column($periods, 'total_deductions'))) ?>

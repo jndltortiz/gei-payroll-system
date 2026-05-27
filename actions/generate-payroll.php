@@ -605,8 +605,8 @@ try {
                         ");
                         $row->execute([$monthlySalary, $monthlySalary]);
                         $r = $row->fetch();
-                        $monthly     = $r ? (float)$r['employee_share'] : round($monthlySalary * 0.045, 2);
-                        $employerSss = $r ? (float)$r['employer_share'] : round($monthlySalary * 0.095, 2);
+                        $monthly     = $r ? (float)$r['employee_share'] : round($monthlySalary * 0.05, 2);
+                        $employerSss = $r ? (float)$r['employer_share'] : round($monthlySalary * 0.10, 2);
                         $govContribMonthly += $monthly;
                         $amt = round($monthly / $periodDivisor, 2);
 
@@ -655,8 +655,8 @@ try {
                                 ? (float)$r['employer_share']
                                 : round($monthlySalary * (float)$r['employer_rate'], 2);
                         } else {
-                            $monthly         = 100.00;
-                            $employerPagibig = 100.00;
+                            $monthly         = 200.00;
+                            $employerPagibig = 200.00;
                         }
                         $govContribMonthly += $monthly;
                         $amt = round($monthly / $periodDivisor, 2);
@@ -666,7 +666,14 @@ try {
                     }
 
                 } elseif ($type['deduction_value_type'] === 'PERCENTAGE') {
-                    $amt = round($basicPay * ($type['deduction_rate'] / 100), 2);
+                    if (strpos($name, 'peraa') !== false) {
+                        if (($emp['employment_type'] ?? 'FULL_TIME') !== 'FULL_TIME') continue;
+                        // PERAA: "percentage of basic monthly salary" — use monthly salary
+                        // split evenly per period, not tied to period workdays
+                        $amt = round($monthlySalary * ($type['deduction_rate'] / 100) / $periodDivisor, 2);
+                    } else {
+                        $amt = round($basicPay * ($type['deduction_rate'] / 100), 2);
+                    }
 
                 } elseif ($type['deduction_value_type'] === 'FIXED') {
                     if (strpos($name, 'peraa') !== false) {
