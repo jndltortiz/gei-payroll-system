@@ -207,7 +207,7 @@ if ($action === 'add') {
                 "New Loan Record for Review",
                 "{$empNameForLoan} has a {$providerName} loan of ₱" . number_format($amount, 2) . " awaiting your approval.",
                 'loan',
-                BASE_URL . 'modules/loans/index.php',
+                BASE_URL . 'modules/principal/loan-approval/index.php',
                 (int)$lid
             );
             $loanEmpUid = getEmployeeUserId($pdo, $empId);
@@ -469,7 +469,7 @@ if ($action === 'edit_returned') {
                     "Loan Resubmitted for Review",
                     "{$li4['loan_name']} ({$li4['provider_name']}) for {$empNameForResubmit} — ₱" . number_format($li4['total_amount'], 2) . " — has been corrected and resubmitted.",
                     'loan',
-                    BASE_URL . 'modules/loans/index.php',
+                    BASE_URL . 'modules/principal/loan-approval/index.php',
                     $loanId
                 );
             }

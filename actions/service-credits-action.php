@@ -134,7 +134,7 @@ if ($action === 'submit') {
             "Service Credit Submitted for Approval",
             "{$empNameSC} submitted a service credit for {$totalDays} day(s) (₱" . number_format($totalPay, 2) . ") awaiting your approval.",
             'service_credit',
-            BASE_URL . 'modules/service-credits/index.php',
+            BASE_URL . 'modules/principal/service-credit-approval/index.php',
             $scId
         );
     } catch (Exception $ignored) {}
@@ -179,7 +179,7 @@ if ($action === 'resubmit') {
                 "Service Credit Resubmitted",
                 "{$empNameResubSC} resubmitted a service credit for {$scri['days']} day(s) (₱" . number_format($scri['equivalent_pay'], 2) . ") awaiting your approval.",
                 'service_credit',
-                BASE_URL . 'modules/service-credits/index.php',
+                BASE_URL . 'modules/principal/service-credit-approval/index.php',
                 $scId
             );
         }

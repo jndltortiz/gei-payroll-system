@@ -114,26 +114,26 @@ $flash = getFlash();
             <!-- Demo accounts -->
             <div class="demo-card">
                 <div class="demo-header">
-                    Demo accounts (password: <code>password123</code> )
+                    Demo accounts (password: <code>role@GEI2025</code> )
                 </div>
                 <div class="demo-row">
                     <span class="demo-email">
                         <span class="demo-dot"></span>
-                        admin@gei.edu.ph
+                        admin
                     </span>
                     <span class="demo-role">Admin</span>
                 </div>
                 <div class="demo-row">
                     <span class="demo-email">
                         <span class="demo-dot"></span>
-                        principal@gei.edu.ph
+                        r.miguel
                     </span>
                     <span class="demo-role">Principal</span>
                 </div>
                 <div class="demo-row">
                     <span class="demo-email">
                         <span class="demo-dot"></span>
-                        employee@gei.edu.ph
+                        e.garcia
                     </span>
                     <span class="demo-role">Employee</span>
                 </div>

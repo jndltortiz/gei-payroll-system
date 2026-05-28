@@ -66,9 +66,9 @@ if ($empId) {
             SUM(status='PENDING')  AS pending,
             SUM(status='APPROVED') AS approved,
             SUM(status='REJECTED') AS rejected
-        FROM leave_requests WHERE employee_id = ?
+        FROM leave_requests WHERE employee_id = ? AND school_year_id = ?
     ");
-    $stmtC->execute([$empId]);
+    $stmtC->execute([$empId, $activeSYId]);
     $counts    = $stmtC->fetch();
     $cPending  = (int)($counts['pending']  ?? 0);
     $cApproved = (int)($counts['approved'] ?? 0);

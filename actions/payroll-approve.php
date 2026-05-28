@@ -11,6 +11,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/notif-utils.php';
+require_once __DIR__ . '/../includes/payroll-utils.php';
 header('Content-Type: application/json');
 requireLogin();
 
@@ -190,6 +191,86 @@ try {
                 WHERE pr.period_id = ? AND sc.status = 'APPLIED'
             ")->execute([$periodId]);
 
+            // ── EOSY Balance Recovery — inject into same-month regular period ──
+            // When an ACCRUED_PAY period is released and employees have negative
+            // net_pay (deductions > service credits), find the nearest subsequent
+            // regular period and inject the shortfall as an EOSY Balance Recovery
+            // deduction — but only if that period's records are still in DRAFT
+            // (not yet submitted). If they don't exist yet, generate-payroll.php
+            // will pick it up automatically when that period is generated.
+            if (($period['period_type'] ?? 'REGULAR') === 'ACCRUED_PAY') {
+                // Ensure recovery deduction type exists
+                $recovDtRow = $pdo->query("
+                    SELECT deduction_type_id FROM deduction_types
+                    WHERE deduction_name = 'EOSY Balance Recovery' AND is_active = 1
+                    LIMIT 1
+                ")->fetch();
+                if ($recovDtRow) {
+                    $recovDtId = (int)$recovDtRow['deduction_type_id'];
+                } else {
+                    $pdo->exec("INSERT INTO deduction_types
+                        (deduction_name, deduction_value_type, deduction_amount, is_government, is_loan, is_active)
+                        VALUES ('EOSY Balance Recovery', 'FIXED', 0.00, 0, 0, 1)");
+                    $recovDtId = (int)$pdo->lastInsertId();
+                }
+
+                // Find employees in this EOSY with negative net_pay
+                $negStmt = $pdo->prepare("
+                    SELECT employee_id, ABS(net_pay) AS owed
+                    FROM payroll_records
+                    WHERE period_id = ? AND net_pay < 0
+                ");
+                $negStmt->execute([$periodId]);
+                $negEmployees = $negStmt->fetchAll();
+
+                if (!empty($negEmployees)) {
+                    // Find the nearest subsequent regular period (same month = first hit)
+                    $nextRegStmt = $pdo->prepare("
+                        SELECT period_id FROM payroll_periods
+                        WHERE period_type = 'REGULAR'
+                          AND YEAR(pay_period_start)  = YEAR(?)
+                          AND MONTH(pay_period_start) = MONTH(?)
+                        ORDER BY pay_period_start ASC
+                        LIMIT 1
+                    ");
+                    $nextRegStmt->execute([$period['pay_period_start'], $period['pay_period_start']]);
+                    $nextReg = $nextRegStmt->fetch();
+
+                    if ($nextReg) {
+                        $nextRegId = (int)$nextReg['period_id'];
+                        foreach ($negEmployees as $ne) {
+                            $eId  = (int)$ne['employee_id'];
+                            $owed = round((float)$ne['owed'], 2);
+                            // Only inject into DRAFT records (not yet submitted)
+                            $prRow = $pdo->prepare("
+                                SELECT payroll_id FROM payroll_records
+                                WHERE period_id = ? AND employee_id = ?
+                                  AND payroll_status = 'DRAFT'
+                                LIMIT 1
+                            ");
+                            $prRow->execute([$nextRegId, $eId]);
+                            $pr = $prRow->fetch();
+                            if (!$pr) continue; // not generated yet — generation will handle it
+
+                            // Skip if recovery already exists (idempotent)
+                            $already = $pdo->prepare("
+                                SELECT COUNT(*) FROM payroll_deductions
+                                WHERE payroll_id = ? AND deduction_type_id = ?
+                            ");
+                            $already->execute([$pr['payroll_id'], $recovDtId]);
+                            if ((int)$already->fetchColumn() > 0) continue;
+
+                            $pdo->prepare("
+                                INSERT INTO payroll_deductions
+                                    (payroll_id, deduction_type_id, amount, loan_id)
+                                VALUES (?, ?, ?, NULL)
+                            ")->execute([$pr['payroll_id'], $recovDtId, $owed]);
+                            recalculatePayrollTotals($pdo, (int)$pr['payroll_id']);
+                        }
+                    }
+                }
+            }
+
             $pdo->prepare("INSERT INTO payroll_workflow_log
                 (period_id,event_type,performed_by,performer_name,gross_total,net_total,emp_count)
                 VALUES(?,'RELEASED',?,?,?,?,?)")
@@ -217,11 +298,18 @@ try {
                     );
                 }
                 // Notify admins + principals as a confirmation
-                notifAdminsAndPrincipals($pdo,
+                notifAdmins($pdo,
                     "Payroll Released",
                     "\"{$period['period_name']}\" released successfully. " . (int)$snapshot['c'] . " employee(s), Net: ₱" . number_format((float)$snapshot['n'], 2) . ".",
                     'payroll',
                     BASE_URL . 'modules/payroll/index.php',
+                    $periodId
+                );
+                notifPrincipals($pdo,
+                    "Payroll Released",
+                    "\"{$period['period_name']}\" released successfully. " . (int)$snapshot['c'] . " employee(s), Net: ₱" . number_format((float)$snapshot['n'], 2) . ".",
+                    'payroll',
+                    BASE_URL . 'modules/principal/payroll-approval/index.php',
                     $periodId
                 );
             } catch (Exception $ignored) {}

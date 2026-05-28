@@ -182,6 +182,30 @@ if ($isAccruedPay) {
     }
 }
 
+// ── Pre-fetch EOSY Balance Recovery deduction type (REGULAR periods only) ────
+// If a prior ACCRUED_PAY period resulted in negative net_pay, the shortfall is
+// automatically deducted in the same-month regular payroll period.
+$eosyRecoveryDtId = null;
+if (!$isAccruedPay) {
+    try {
+        $recovRow = $pdo->query("
+            SELECT deduction_type_id FROM deduction_types
+            WHERE deduction_name = 'EOSY Balance Recovery' AND is_active = 1
+            LIMIT 1
+        ")->fetch();
+        if ($recovRow) {
+            $eosyRecoveryDtId = (int)$recovRow['deduction_type_id'];
+        } else {
+            $pdo->exec("INSERT INTO deduction_types
+                (deduction_name, deduction_value_type, deduction_amount, is_government, is_loan, is_active)
+                VALUES ('EOSY Balance Recovery', 'FIXED', 0.00, 0, 0, 1)");
+            $eosyRecoveryDtId = (int)$pdo->lastInsertId();
+        }
+    } catch (PDOException $e) {
+        // Silently skip — not critical
+    }
+}
+
 // ── Generate records ──────────────────────────────────────────────────────────
 try {
     $pdo->beginTransaction();
@@ -754,6 +778,53 @@ try {
                 if ($wtaxAmt > 0) {
                     $insD->execute([$payrollId, $wtaxDtypeRow['deduction_type_id'], $wtaxAmt, null]);
                     $totalDeductions += $wtaxAmt;
+                }
+            }
+
+            // ── EOSY Balance Recovery ─────────────────────────────────────────
+            // When a prior RELEASED ACCRUED_PAY period produced a negative net_pay
+            // (deductions exceeded service credits), carry the shortfall into the
+            // first subsequent regular payroll that is generated after the EOSY.
+            // "Already recovered" is determined by the existence of a recovery
+            // deduction row in any regular period after the EOSY — regardless of
+            // that period's workflow status — so force-regeneration is safe.
+            if ($eosyRecoveryDtId) {
+                try {
+                    $recovStmt = $pdo->prepare("
+                        SELECT COALESCE(SUM(ABS(pr_e.net_pay)), 0) AS total_owed
+                        FROM payroll_records pr_e
+                        JOIN payroll_periods pp_e ON pp_e.period_id = pr_e.period_id
+                        WHERE pr_e.employee_id  = :eid
+                          AND pp_e.period_type  = 'ACCRUED_PAY'
+                          AND pr_e.net_pay      < 0
+                          AND pp_e.status       = 'RELEASED'
+                          AND YEAR(pp_e.pay_period_start)  = YEAR(:pstart)
+                          AND MONTH(pp_e.pay_period_start) = MONTH(:pstart2)
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM payroll_deductions pd_r
+                              JOIN payroll_records   pr_r ON pr_r.payroll_id  = pd_r.payroll_id
+                              JOIN payroll_periods   pp_r ON pp_r.period_id   = pr_r.period_id
+                              WHERE pr_r.employee_id      = :eid2
+                                AND pd_r.deduction_type_id = :dtid
+                                AND YEAR(pp_r.pay_period_start)  = YEAR(pp_e.pay_period_start)
+                                AND MONTH(pp_r.pay_period_start) = MONTH(pp_e.pay_period_start)
+                          )
+                    ");
+                    $recovStmt->execute([
+                        ':eid'    => $employeeId,
+                        ':pstart' => $periodStart,
+                        ':pstart2'=> $periodStart,
+                        ':eid2'   => $employeeId,
+                        ':dtid'   => $eosyRecoveryDtId,
+                    ]);
+                    $eosyOwed = round((float)$recovStmt->fetchColumn(), 2);
+                    if ($eosyOwed > 0) {
+                        $insD->execute([$payrollId, $eosyRecoveryDtId, $eosyOwed, null]);
+                        $totalDeductions += $eosyOwed;
+                    }
+                } catch (PDOException $e) {
+                    // Skip silently — non-critical; main payroll is unaffected
                 }
             }
 

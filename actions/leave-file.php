@@ -261,11 +261,18 @@ try {
         $ltName  = $ltStmt->fetchColumn() ?: 'Leave';
         $empName = getEmployeeName($pdo, (int)$employeeId);
         $dateRange = $startDate === $endDate ? $startDate : "{$startDate} to {$endDate}";
-        notifAdminsAndPrincipals($pdo,
+        notifAdmins($pdo,
             "New Leave Request",
             "{$empName} filed a {$ltName} request for {$totalDays} day(s) ({$dateRange}).",
             'leave',
             BASE_URL . 'modules/leave/index.php',
+            $leaveId
+        );
+        notifPrincipals($pdo,
+            "New Leave Request",
+            "{$empName} filed a {$ltName} request for {$totalDays} day(s) ({$dateRange}).",
+            'leave',
+            BASE_URL . 'modules/principal/leave-approval/index.php',
             $leaveId
         );
     } catch (Exception $ignored) {}
