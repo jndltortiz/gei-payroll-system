@@ -226,7 +226,7 @@ try {
         if ($remarks !== null) {
             $remarks = substr($remarks, 0, 255);
         }
-        $source = 'MANUAL_ADMIN';
+        $source = 'MANUAL';
 
         if (!in_array($entryAction, ['create', 'update'], true)) {
             $pdo->rollBack();

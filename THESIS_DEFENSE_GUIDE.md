@@ -152,6 +152,16 @@ There are **4 roles** in the system:
 
 **Purpose:** Track daily presence of all employees.
 
+**Attendance source values:**
+- `MANUAL`: admin-entered attendance or manual DTR reconciliation.
+- `FACE`: facial-recognition source label; capture and recognition are not implemented yet.
+- `RFID`: RFID source label.
+- `AUTO`: system-generated attendance, such as auto-absent.
+
+Editing a record preserves its current source unless the admin explicitly changes it. A source label alone is not evidence of a biometric match. Historical audit entries retain their original values.
+
+**Database restore and migration order:** After restoring an older demo snapshot, apply the required subsequent schema migrations before using the current code. For attendance sources, apply `database/migrations/035_attendance_source_normalization.sql` first, resolve existing empty/invalid sources from audit evidence, then apply `database/migrations/036_attendance_source_check.sql`. The separate `database/one_time/repair_empty_attendance_source_2026.sql` is only for the live database audited on September 28, 2026 or its verified test copy; its hardcoded IDs and 36-row checks must not be reused blindly on other snapshots. It appends `SOURCE_REPAIR` audit records without rewriting historical audits.
+
 **Two tabs:**
 
 **TODAY tab:**

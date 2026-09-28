@@ -32,12 +32,12 @@ $date         = trim($_POST['date']     ?? '');
 $timeIn       = trim($_POST['time_in']  ?? '') ?: null;
 $timeOut      = trim($_POST['time_out'] ?? '') ?: null;
 $status       = trim($_POST['status']   ?? 'PRESENT');
-$source       = trim($_POST['source']   ?? 'MANUAL_ADMIN');
+$source       = trim($_POST['source']   ?? '');
 $remarks      = trim($_POST['remarks']  ?? '') ?: null;
 $reason       = trim($_POST['reason']   ?? '');
 
 $validStatuses = ['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'INCOMPLETE', 'LEAVE', 'HOLIDAY'];
-$validSources  = ['MANUAL_ADMIN', 'MANUAL', 'RFID', 'FACIAL_RECOGNITION', 'AUTO'];
+$validSources  = ['MANUAL', 'FACE', 'RFID', 'AUTO'];
 
 if (!$attendanceId) {
     echo json_encode(['success' => false, 'message' => 'Invalid attendance record ID.']);
@@ -56,7 +56,8 @@ if (!in_array($status, $validStatuses, true)) {
     exit;
 }
 if (!in_array($source, $validSources, true)) {
-    $source = 'MANUAL_ADMIN';
+    echo json_encode(['success' => false, 'message' => 'Invalid or missing attendance source.']);
+    exit;
 }
 $reasonError = validateRequiredReason($reason, 'Reason for modification');
 if ($reasonError !== null) {

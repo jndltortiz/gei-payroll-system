@@ -74,10 +74,11 @@
           </div>
           <div class="att-field">
             <label>Method / Source</label>
-            <select name="source" id="edit_source">
-              <option value="MANUAL_ADMIN">Manual</option>
+            <select name="source" id="edit_source" required>
+              <option value="" disabled>Select a source</option>
+              <option value="MANUAL">Manual</option>
               <option value="RFID">RFID</option>
-              <option value="FACIAL_RECOGNITION">Facial Recognition</option>
+              <option value="FACE">Facial Recognition</option>
               <option value="AUTO">Auto-tagged</option>
             </select>
           </div>
@@ -123,7 +124,7 @@ window.openEditModal = function(id, name, empNo, date, timeIn, timeOut, status, 
     document.getElementById('edit_time_in').value  = timeIn  ? timeIn.substring(0, 5)  : '';
     document.getElementById('edit_time_out').value = timeOut ? timeOut.substring(0, 5) : '';
     document.getElementById('edit_status').value   = status || 'PRESENT';
-    document.getElementById('edit_source').value   = 'MANUAL_ADMIN';
+    document.getElementById('edit_source').value   = ['MANUAL', 'FACE', 'RFID', 'AUTO'].includes(source) ? source : '';
     document.getElementById('edit_remarks').value  = remarks || '';
     document.getElementById('edit_reason').value   = '';
 
@@ -135,9 +136,9 @@ window.openEditModal = function(id, name, empNo, date, timeIn, timeOut, status, 
         ABSENT:'Absent', LEAVE:'On Leave', INCOMPLETE:'Incomplete', HOLIDAY:'Holiday',
     }[status] || status || '—';
     document.getElementById('editOldMethod').textContent  = {
-        MANUAL_ADMIN:'Manual', MANUAL:'Manual',
-        RFID:'RFID', FACIAL_RECOGNITION:'Face ID', AUTO:'Auto',
-    }[source] || source || 'Manual';
+        MANUAL:'Manual',
+        RFID:'RFID', FACE:'Face ID', AUTO:'Auto',
+    }[source] || source || 'Unknown';
 
     document.getElementById('editModalSubtitle').textContent =
         `Editing record for ${name}${empNo ? ' (' + empNo + ')' : ''} · ${date}`;

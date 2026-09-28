@@ -6,7 +6,7 @@
  * Key behavioural rules (per GEI attendance workflow):
  *  - time_in is ALWAYS the current server timestamp (not user-supplied)
  *  - attendance_date is ALWAYS today (not user-supplied)
- *  - attendance_source is always MANUAL_ADMIN
+ *  - attendance_source is always MANUAL
  *  - time_out is NOT set here; use timeout-attendance.php
  *  - Status is auto-computed from shift schedule (same logic as before)
  *
@@ -154,7 +154,7 @@ foreach ($employeeIds as $empId) {
             INSERT INTO attendance_records
                 (employee_id, attendance_date, time_in,
                  attendance_status, attendance_source, remarks)
-            VALUES (?, ?, ?, ?, 'MANUAL_ADMIN', ?)
+            VALUES (?, ?, ?, ?, 'MANUAL', ?)
         ")->execute([$empId, $date, $timeIn, $status, $empRemarks]);
 
         $newId = (int)$pdo->lastInsertId();
@@ -165,7 +165,7 @@ foreach ($employeeIds as $empId) {
                     INSERT INTO attendance_audit_log
                         (attendance_id, changed_by, action_type,
                          new_time_in, new_status, new_method, new_remarks, reason)
-                    VALUES (?, ?, 'CREATE', ?, ?, 'MANUAL_ADMIN', ?, 'Logged in via Admin')
+                    VALUES (?, ?, 'CREATE', ?, ?, 'MANUAL', ?, 'Logged in via Admin')
                 ")->execute([$newId, $userId, $timeIn, $status, $empRemarks]);
         }
 

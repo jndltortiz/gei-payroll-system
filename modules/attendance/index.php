@@ -555,12 +555,11 @@ require_once __DIR__ . '/../../includes/head.php';
                             $canTimeout = $r['time_in'] && !$r['time_out'];
                             $empName = $r['first_name'] . ' ' . $r['last_name'];
                             $sourceLabel = [
-                                'MANUAL_ADMIN'      => 'Manual',
                                 'MANUAL'            => 'Manual',
                                 'RFID'              => 'RFID',
-                                'FACIAL_RECOGNITION'=> 'Face ID',
+                                'FACE'=> 'Face ID',
                                 'AUTO'              => 'Auto',
-                            ][$r['attendance_source'] ?? ''] ?? ($r['attendance_source'] ?? 'Manual');
+                            ][$r['attendance_source'] ?? ''] ?? (($r['attendance_source'] ?? '') ?: 'Unknown');
                         ?>
                         <tr>
                             <td class="att-check-cell">
@@ -612,7 +611,7 @@ require_once __DIR__ . '/../../includes/head.php';
                                             <?= attJsLiteral($r['time_out'] ?? '') ?>,
                                             <?= attJsLiteral($r['attendance_status']) ?>,
                                             <?= attJsLiteral($r['remarks'] ?? '') ?>,
-                                            <?= attJsLiteral($r['attendance_source'] ?? 'MANUAL_ADMIN') ?>
+                                            <?= attJsLiteral($r['attendance_source'] ?? '') ?>
                                         )">
                                         <i class="fa fa-pen-to-square"></i> Edit
                                     </button>
@@ -763,10 +762,9 @@ require_once __DIR__ . '/../../includes/head.php';
                         </select>
                         <select name="hmth" onchange="this.form.submit()">
                             <option value="">All Methods</option>
-                            <option value="MANUAL_ADMIN"      <?= $hMethod==='MANUAL_ADMIN'      ?'selected':'' ?>>Manual</option>
-                            <option value="MANUAL"            <?= $hMethod==='MANUAL'            ?'selected':'' ?>>Manual (Self)</option>
+                            <option value="MANUAL"            <?= $hMethod==='MANUAL'            ?'selected':'' ?>>Manual</option>
                             <option value="RFID"              <?= $hMethod==='RFID'              ?'selected':'' ?>>RFID</option>
-                            <option value="FACIAL_RECOGNITION"<?= $hMethod==='FACIAL_RECOGNITION'?'selected':'' ?>>Face ID</option>
+                            <option value="FACE"<?= $hMethod==='FACE'?'selected':'' ?>>Face ID</option>
                             <option value="AUTO"              <?= $hMethod==='AUTO'              ?'selected':'' ?>>Auto-tagged</option>
                         </select>
                         <?php if ($hasMig007): ?>
@@ -820,12 +818,11 @@ require_once __DIR__ . '/../../includes/head.php';
                             $canTimeout = $r['time_in'] && !$r['time_out'];
                             $empName = $r['first_name'].' '.$r['last_name'];
                             $srcLabel = [
-                                'MANUAL_ADMIN'      => 'Manual',
                                 'MANUAL'            => 'Manual',
                                 'RFID'              => 'RFID',
-                                'FACIAL_RECOGNITION'=> 'Face ID',
+                                'FACE'=> 'Face ID',
                                 'AUTO'              => 'Auto',
-                            ][$r['attendance_source'] ?? ''] ?? ($r['attendance_source'] ?? 'Manual');
+                            ][$r['attendance_source'] ?? ''] ?? (($r['attendance_source'] ?? '') ?: 'Unknown');
                         ?>
                         <tr>
                             <td style="white-space:nowrap;font-weight:600;"><?= date('M j, Y', strtotime($r['attendance_date'])) ?></td>
@@ -865,7 +862,7 @@ require_once __DIR__ . '/../../includes/head.php';
                                             <?= attJsLiteral($r['time_out'] ?? '') ?>,
                                             <?= attJsLiteral($r['attendance_status']) ?>,
                                             <?= attJsLiteral($r['remarks'] ?? '') ?>,
-                                            <?= attJsLiteral($r['attendance_source'] ?? 'MANUAL_ADMIN') ?>
+                                            <?= attJsLiteral($r['attendance_source'] ?? '') ?>
                                         )">
                                         <i class="fa fa-pen-to-square"></i>
                                     </button>

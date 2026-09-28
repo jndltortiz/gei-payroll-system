@@ -236,12 +236,11 @@ $renderRow = function(array $r) use ($ST_LABELS, $RV_LABELS, $hasMig007, $hasCor
     $dt      = strtotime($r['attendance_date']);
     $src     = $r['attendance_source'] ?? '';
     $srcLabel = match($src) {
-        'MANUAL_ADMIN'       => 'Manual',
         'MANUAL'             => 'Manual',
         'RFID'               => 'RFID',
-        'FACIAL_RECOGNITION' => 'Biometric',
+        'FACE' => 'Biometric',
         'AUTO'               => 'Auto-Tagged',
-        default              => ($src ?: 'Manual'),
+        default              => ($src ?: 'Unknown'),
     };
     $late  = (int)($r['late_minutes']     ?? 0);
     $ot    = (int)($r['overtime_minutes'] ?? 0);
@@ -723,9 +722,8 @@ endif;
             </select>
             <select name="hmth">
               <option value="">All Methods</option>
-              <option value="MANUAL_ADMIN"       <?= $hMethod === 'MANUAL_ADMIN'       ? 'selected' : '' ?>>Manual (Admin)</option>
               <option value="MANUAL"             <?= $hMethod === 'MANUAL'             ? 'selected' : '' ?>>Manual</option>
-              <option value="FACIAL_RECOGNITION" <?= $hMethod === 'FACIAL_RECOGNITION' ? 'selected' : '' ?>>Biometric</option>
+              <option value="FACE" <?= $hMethod === 'FACE' ? 'selected' : '' ?>>Biometric</option>
               <option value="RFID"               <?= $hMethod === 'RFID'               ? 'selected' : '' ?>>RFID</option>
               <option value="AUTO"               <?= $hMethod === 'AUTO'               ? 'selected' : '' ?>>Auto-Tagged</option>
             </select>
