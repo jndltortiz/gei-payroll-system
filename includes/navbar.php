@@ -30,11 +30,11 @@
         <!-- USER -->
         <div class="header-user">
             <div class="header-user-text">
-                <strong><?= $_SESSION['user']['role_name']; ?></strong>
-                <span><?= $_SESSION['user']['first_name']; ?></span>
+                <strong><?= htmlspecialchars($_SESSION['user']['role_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></strong>
+                <span><?= htmlspecialchars($_SESSION['user']['first_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></span>
             </div>
             <div class="header-avatar">
-                <?= strtoupper(substr($_SESSION['user']['first_name'], 0, 1)); ?>
+                <?= htmlspecialchars(strtoupper(substr($_SESSION['user']['first_name'] ?? '', 0, 1)), ENT_QUOTES, 'UTF-8'); ?>
             </div>
         </div>
 

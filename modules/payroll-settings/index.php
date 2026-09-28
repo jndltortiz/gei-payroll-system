@@ -28,6 +28,16 @@ if (!$settings) {
     $settings = $pdo->query("SELECT * FROM payroll_settings LIMIT 1")->fetch();
 }
 
+if (!function_exists('psJsLiteral')) {
+    function psJsLiteral($value): string {
+        return htmlspecialchars(
+            json_encode($value, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
+            ENT_QUOTES,
+            'UTF-8'
+        );
+    }
+}
+
 // Helper: get assignment label for a type
 function getAssignmentLabel(PDO $pdo, string $table, int $id): string {
     $assignTables = [
@@ -103,6 +113,12 @@ try {
           AND TABLE_NAME   = 'payroll_settings'
           AND COLUMN_NAME  = 'leave_allocation_days'
     ")->fetchColumn();
+} catch (PDOException $_e) {}
+
+$hasThirteenthMonthPeriodType = false;
+try {
+    $typeRow = $pdo->query("SHOW COLUMNS FROM payroll_periods LIKE 'period_type'")->fetch(PDO::FETCH_ASSOC);
+    $hasThirteenthMonthPeriodType = $typeRow && strpos($typeRow['Type'] ?? '', 'THIRTEENTH_MONTH') !== false;
 } catch (PDOException $_e) {}
 
 // Fetch government rate tables
@@ -420,15 +436,15 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <td>
                                     <div class="ps-action-group">
                                         <button class="ps-action-btn" title="Assign"
-                                            onclick="openAssignModal('deduction','<?= $ded['deduction_type_id'] ?>','<?= htmlspecialchars($ded['deduction_name']) ?>')">
+                                            onclick="openAssignModal('deduction', <?= (int)$ded['deduction_type_id'] ?>, <?= psJsLiteral($ded['deduction_name']) ?>)">
                                             <i class="bi bi-person-plus"></i>
                                         </button>
                                         <button class="ps-action-btn" title="Edit"
-                                            onclick="openEditDeductionModal(<?= $ded['deduction_type_id'] ?>, '<?= htmlspecialchars(addslashes($ded['deduction_name'])) ?>', '<?= $ded['deduction_value_type'] ?? 'FIXED' ?>', <?= $ded['deduction_amount'] ?? 0 ?>, <?= $ded['deduction_rate'] ?? 0 ?>, '<?= $dedAssign === 'All Employees' ? 'ALL' : strtoupper(str_replace(' ','_',$dedAssign)) ?>', <?= $ded['is_active'] ?>)">
+                                            onclick="openEditDeductionModal(<?= (int)$ded['deduction_type_id'] ?>, <?= psJsLiteral($ded['deduction_name']) ?>, <?= psJsLiteral($ded['deduction_value_type'] ?? 'FIXED') ?>, <?= (float)($ded['deduction_amount'] ?? 0) ?>, <?= (float)($ded['deduction_rate'] ?? 0) ?>, <?= psJsLiteral($dedAssign === 'All Employees' ? 'ALL' : strtoupper(str_replace(' ','_',$dedAssign))) ?>, <?= (int)$ded['is_active'] ?>)">
                                             <i class="bi bi-pencil"></i>
                                         </button>
                                         <button class="ps-action-btn danger" title="Delete"
-                                            onclick="openDeleteModal('deduction', <?= $ded['deduction_type_id'] ?>, '<?= htmlspecialchars(addslashes($ded['deduction_name'])) ?>')">
+                                            onclick="openDeleteModal('deduction', <?= (int)$ded['deduction_type_id'] ?>, <?= psJsLiteral($ded['deduction_name']) ?>)">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </div>
@@ -478,15 +494,15 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <td>
                                     <div class="ps-action-group">
                                         <button class="ps-action-btn" title="Assign"
-                                            onclick="openAssignModal('allowance','<?= $al['allowance_type_id'] ?>','<?= htmlspecialchars($al['allowance_name']) ?>')">
+                                            onclick="openAssignModal('allowance', <?= (int)$al['allowance_type_id'] ?>, <?= psJsLiteral($al['allowance_name']) ?>)">
                                             <i class="bi bi-person-plus"></i>
                                         </button>
                                         <button class="ps-action-btn" title="Edit"
-                                            onclick="openEditAllowanceModal(<?= $al['allowance_type_id'] ?>, '<?= htmlspecialchars(addslashes($al['allowance_name'])) ?>', <?= $al['default_amount'] ?>, <?= $al['is_taxable'] ?>, <?= $al['is_active'] ?>)">
+                                            onclick="openEditAllowanceModal(<?= (int)$al['allowance_type_id'] ?>, <?= psJsLiteral($al['allowance_name']) ?>, <?= (float)$al['default_amount'] ?>, <?= (int)$al['is_taxable'] ?>, <?= (int)$al['is_active'] ?>)">
                                             <i class="bi bi-pencil"></i>
                                         </button>
                                         <button class="ps-action-btn danger" title="Delete"
-                                            onclick="openDeleteModal('allowance', <?= $al['allowance_type_id'] ?>, '<?= htmlspecialchars(addslashes($al['allowance_name'])) ?>')">
+                                            onclick="openDeleteModal('allowance', <?= (int)$al['allowance_type_id'] ?>, <?= psJsLiteral($al['allowance_name']) ?>)">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </div>
@@ -682,6 +698,12 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <i class="bi bi-calendar-check"></i> Add Accrued Pay Period
                             </button>
                             <?php endif; ?>
+                            <?php if ($hasThirteenthMonthPeriodType): ?>
+                            <button type="button" class="ps-btn-secondary" onclick="openCreateThirteenthMonthModal()"
+                                    style="white-space:nowrap;" title="Create an annual 13th month pay period">
+                                <i class="bi bi-calendar2-event"></i> Add 13th Month Pay
+                            </button>
+                            <?php endif; ?>
                         </div>
                     </div>
 
@@ -746,6 +768,10 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;white-space:nowrap;">
                                     ACCRUED PAY
                                 </span>
+                                <?php elseif ($ptype === 'THIRTEENTH_MONTH'): ?>
+                                <span style="background:#ede9fe;color:#5b21b6;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;white-space:nowrap;">
+                                    13TH MONTH
+                                </span>
                                 <?php else: ?>
                                 <span style="background:#f0fdf4;color:#166534;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:600;white-space:nowrap;">
                                     Regular
@@ -765,12 +791,12 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <?php if ($p['status'] === 'OPEN'): ?>
                                 <div class="ps-action-group">
                                     <button type="button" class="ps-action-btn"
-                                            onclick="openEditPeriodModal(<?= $p['period_id'] ?>, '<?= htmlspecialchars(addslashes($p['period_name'])) ?>', '<?= $p['pay_date'] ?>', <?= (int)$p['record_count'] ?>)"
+                                            onclick="openEditPeriodModal(<?= (int)$p['period_id'] ?>, <?= psJsLiteral($p['period_name']) ?>, <?= psJsLiteral($p['pay_date']) ?>, <?= (int)$p['record_count'] ?>)"
                                             title="Edit period">
                                         <i class="bi bi-pencil"></i>
                                     </button>
                                     <button type="button" class="ps-action-btn danger"
-                                            onclick="deletePeriod(<?= $p['period_id'] ?>, '<?= htmlspecialchars($p['period_name']) ?>')"
+                                            onclick="deletePeriod(<?= (int)$p['period_id'] ?>, <?= psJsLiteral($p['period_name']) ?>)"
                                             title="Delete period">
                                         <i class="bi bi-trash"></i>
                                     </button>
@@ -822,6 +848,7 @@ require_once __DIR__ . '/../../includes/head.php';
 <?php include __DIR__ . '/modals/modal-pay-periods.php'; ?>
 <?php include __DIR__ . '/modals/modal-edit-period.php'; ?>
 <?php if ($hasMig020): include __DIR__ . '/modals/modal-accrued-pay-period.php'; endif; ?>
+<?php if ($hasThirteenthMonthPeriodType): include __DIR__ . '/modals/modal-thirteenth-month-period.php'; endif; ?>
 <?php include 'modals/modal-add-deduction.php'; ?>
 <?php include 'modals/modal-edit-deduction.php'; ?>
 <?php include 'modals/modal-add-allowance.php'; ?>
@@ -846,6 +873,7 @@ window.PAYROLL_SETTINGS = <?= json_encode([
     'has_mig010'              => $hasMig010,
     'leave_allocation_days'   => $hasMig020 ? (float)($settings['leave_allocation_days'] ?? 30.00) : 30.00,
     'has_mig020'              => $hasMig020,
+    'has_thirteenth_month'    => $hasThirteenthMonthPeriodType,
 ]) ?>;
 
 window.DEPARTMENTS   = <?= json_encode($departments) ?>;

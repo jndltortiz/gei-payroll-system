@@ -7,7 +7,7 @@
       <div>
         <h3><i class="fa fa-file-arrow-up"></i> Upload DTR / Attendance Backup</h3>
         <p style="font-size:12px;opacity:0.8;margin-top:2px;">
-          For audit history only — does not modify existing attendance records
+          Upload for review - attendance records are updated only after reconciliation
         </p>
       </div>
       <button type="button" class="att-modal-close" onclick="closeDtrModal()">
@@ -19,23 +19,24 @@
          background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:13px;"></div>
 
     <div class="att-modal-body" style="gap:14px;">
+      <?= csrfInput() ?>
 
       <!-- Notice -->
       <div class="att-notice-box" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;">
-        <strong><i class="fa fa-circle-info"></i> Backup Documentation Only</strong>
-        <p>Use this when attendance was recorded on paper, Excel, or PDF during a system outage or manual process. This file is stored for audit and reference — it will not update any attendance records automatically.</p>
+        <strong><i class="fa fa-circle-info"></i> Review Required</strong>
+        <p>Use this when attendance was recorded on paper, Excel, or PDF during a system outage or manual process. The upload starts as pending and must be reconciled or rejected by Admin.</p>
       </div>
 
-      <!-- Date Range -->
+      <!-- Single Date -->
       <div class="att-field-row">
         <div class="att-field">
-          <label>Date From <span style="color:#dc2626;">*</span></label>
-          <input type="date" id="dtrDateFrom" max="<?= date('Y-m-d') ?>">
+          <label>DTR Date <span style="color:#dc2626;">*</span></label>
+          <input type="date" id="dtrDateFrom" max="<?= date('Y-m-d') ?>" required>
         </div>
         <div class="att-field">
-          <label>Date To</label>
-          <input type="date" id="dtrDateTo" max="<?= date('Y-m-d') ?>">
-          <small style="color:#94a3b8;font-size:11px;">Leave blank for single-day upload</small>
+          <label>Coverage</label>
+          <input type="text" value="Single unavailable/offline day" readonly>
+          <small style="color:#94a3b8;font-size:11px;">Multi-day ranges are not accepted</small>
         </div>
       </div>
 
@@ -117,7 +118,6 @@ window.openDtrModal = function() {
     // Default date_from to today
     const today = new Date().toISOString().slice(0, 10);
     document.getElementById('dtrDateFrom').value = today;
-    document.getElementById('dtrDateTo').value   = '';
     document.getElementById('dtrDept').value     = '';
     document.getElementById('dtrFile').value     = '';
     document.getElementById('dtrNotes').value    = '';
@@ -147,7 +147,7 @@ window.dtrHandleDrop = function(e) {
     const allowed = ['xls','xlsx','pdf','jpg','jpeg','png'];
     const ext = f.name.split('.').pop().toLowerCase();
     if (!allowed.includes(ext)) {
-        alert('File type not allowed. Please upload Excel, PDF, or Image files only.');
+        showToast('File type not allowed. Please upload Excel, PDF, or Image files only.', 'error');
         return;
     }
     _dtrFile = f;
@@ -161,10 +161,15 @@ window.submitDtrUpload = function() {
     errBox.style.display = 'none';
 
     const dateFrom = document.getElementById('dtrDateFrom').value;
-    const dateTo   = document.getElementById('dtrDateTo').value;
 
     if (!dateFrom) {
-        errBox.textContent = 'Please select a start date.';
+        errBox.textContent = 'Please select the DTR date.';
+        errBox.style.display = 'block';
+        return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (dateFrom > today) {
+        errBox.textContent = 'DTR upload dates cannot be in the future.';
         errBox.style.display = 'block';
         return;
     }
@@ -183,8 +188,9 @@ window.submitDtrUpload = function() {
     btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Uploading…';
 
     const fd = new FormData();
+    fd.append('csrf_token', document.querySelector('#dtrUploadModal input[name="csrf_token"]').value);
     fd.append('date_from',     dateFrom);
-    fd.append('date_to',       dateTo || dateFrom);
+    fd.append('date_to',       dateFrom);
     fd.append('department_id', document.getElementById('dtrDept').value);
     fd.append('notes',         document.getElementById('dtrNotes').value.trim());
     fd.append('dtr_file',      _dtrFile);
@@ -194,12 +200,7 @@ window.submitDtrUpload = function() {
         .then(data => {
             if (data.success) {
                 closeDtrModal();
-                // Show success toast if available, else alert
-                if (typeof showToast === 'function') {
-                    showToast('DTR file uploaded successfully.', 'ok');
-                } else {
-                    alert('DTR file uploaded successfully.');
-                }
+                showToast('DTR file uploaded successfully.', 'success');
                 // Reload to show the new attachment in the history tab
                 setTimeout(() => location.reload(), 800);
             } else {

@@ -14,6 +14,7 @@ if (!isset($openPeriods)) $openPeriods = [];
     </div>
 
     <form id="scCreateForm" method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php">
+                    <?= csrfInput() ?>
       <input type="hidden" name="action"            id="scFormAction"   value="submit">
       <input type="hidden" name="service_credit_id" id="scFormId"       value="">
 

@@ -3,13 +3,13 @@
  * includes/header.php
  * Top navigation bar for GEI HR System.
  */
-$_firstName = htmlspecialchars($_SESSION['user']['first_name'] ?? '');
-$_lastName  = htmlspecialchars($_SESSION['user']['last_name']  ?? '');
-$_roleName  = htmlspecialchars($_SESSION['user']['role_name']  ?? '');
-$_initials  = strtoupper(
+$_firstName = htmlspecialchars($_SESSION['user']['first_name'] ?? '', ENT_QUOTES, 'UTF-8');
+$_lastName  = htmlspecialchars($_SESSION['user']['last_name']  ?? '', ENT_QUOTES, 'UTF-8');
+$_roleName  = htmlspecialchars($_SESSION['user']['role_name']  ?? '', ENT_QUOTES, 'UTF-8');
+$_initials  = htmlspecialchars(strtoupper(
     substr($_SESSION['user']['first_name'] ?? '', 0, 1) .
     substr($_SESSION['user']['last_name']  ?? '', 0, 1)
-);
+), ENT_QUOTES, 'UTF-8');
 ?>
 <header class="header">
 

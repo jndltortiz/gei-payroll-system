@@ -1,7 +1,8 @@
 <!-- EDIT MODAL -->
 <div id="editModal" class="modal">
 
-    <form class="modal-box edit-box" method="POST" action="<?= BASE_URL ?>actions/payroll-update.php">
+    <form class="modal-box edit-box" id="editPayrollForm" method="POST" action="<?= BASE_URL ?>actions/payroll-update.php">
+                    <?= csrfInput() ?>
 
         <input type="hidden" id="edit-empid"    name="employee_id">
         <input type="hidden" id="edit-payrollid" name="payroll_id">
@@ -78,10 +79,22 @@
             </div>
         </div>
 
+        <div class="form-grid" style="grid-template-columns:1fr;margin-top:12px;">
+            <div>
+                <label>Adjustment Reason <span style="color:#dc2626;">*</span></label>
+                <textarea name="adjustment_reason" id="edit-adjustment-reason" rows="3" required minlength="10"
+                          placeholder="Explain why this payroll record is being manually adjusted."
+                          style="width:100%;padding:9px 11px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;"></textarea>
+            </div>
+        </div>
+
+        <div id="editPayrollError" style="display:none;margin-top:12px;padding:10px 12px;
+             background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:13px;"></div>
+
         <!-- ACTIONS -->
         <div class="modal-actions">
             <button type="button" class="btn-outline" onclick="closeEdit()">Cancel</button>
-            <button type="submit" class="btn-primary">Apply Changes</button>
+            <button type="submit" class="btn-primary" id="editPayrollSubmitBtn">Apply Changes</button>
         </div>
 
     </form>

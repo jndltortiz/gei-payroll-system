@@ -7,6 +7,7 @@
                 <button type="button" class="ps-modal-close" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i></button>
             </div>
             <form id="formAddAllowance" onsubmit="submitAddAllowance(event)">
+                <?= csrfInput() ?>
                 <div class="ps-modal-body">
                     <div class="ps-form-group">
                         <label class="ps-form-label">Allowance Name <span class="text-danger">*</span></label>

@@ -177,9 +177,6 @@ require_once __DIR__ . '/../../includes/head.php';
                                     <button class="btn-edit" onclick="openEditWizard(<?= $row['employee_id'] ?>)" title="Edit">
                                         <i class="fa fa-pen"></i>
                                     </button>
-                                    <button class="btn-delete" onclick="setDeactivate(<?= $row['employee_id'] ?>, '<?= htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) ?>', '<?= htmlspecialchars($row['department_name'] ?? '') ?>')" title="Deactivate">
-                                        <i class="fa fa-user-slash"></i>
-                                    </button>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -209,7 +206,6 @@ require_once __DIR__ . '/../../includes/head.php';
     include $modalPath . 'add-modal.php';
     include $modalPath . 'edit-modal.php';
     include $modalPath . 'view-modal.php';
-    include $modalPath . 'deactivate-modal.php';
     include $modalPath . 'save-modal.php';
     ?>
 

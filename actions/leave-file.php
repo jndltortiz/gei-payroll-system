@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-requireLogin();
+requireEmployeeAccess();
 
 $employeeId     = $_SESSION['user']['employee_id'] ?? null;
 $userId         = $_SESSION['user']['user_id'] ?? null;
@@ -51,8 +51,9 @@ if (!$leaveTypeId) {
     echo json_encode(['success' => false, 'message' => 'Please select a leave type.']);
     exit;
 }
-if (!$reason) {
-    echo json_encode(['success' => false, 'message' => 'Please enter a reason.']);
+$reasonError = validateRequiredReason($reason, 'Leave reason');
+if ($reasonError !== null) {
+    echo json_encode(['success' => false, 'message' => $reasonError]);
     exit;
 }
 
@@ -162,10 +163,11 @@ if ($hasFutureDates && !$allowFuture) {
 // Require explanation when filing past dates for Sick/Emergency leave
 $isBackdated = 0;
 if ($hasPastDates && $allowBackdated) {
-    if (!$backdateReason) {
+    $backdateReasonError = validateRequiredReason($backdateReason, 'Late filing reason');
+    if ($backdateReasonError !== null) {
         echo json_encode([
             'success' => false,
-            'message' => 'Please explain why this leave is being filed after the date(s) occurred.',
+            'message' => $backdateReasonError,
         ]);
         exit;
     }
@@ -195,7 +197,7 @@ try {
                $startDate, $endDate, $totalDays];
 
     if ($hasMig016LR) {
-        $cols[]   = 'workflow_status'; $vals[]   = "'PENDING_REVIEW'";
+        $cols[]   = 'workflow_status'; $vals[]   = "'FORWARDED'";
         $cols[]   = 'is_backdated';    $vals[]   = '?'; $params[] = $isBackdated;
         $cols[]   = 'backdate_reason'; $vals[]   = '?'; $params[] = $backdateReason ?: null;
     }

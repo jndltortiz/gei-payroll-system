@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-requireLogin();
-redirectIfNoRole(['SUPERADMIN', 'PRINCIPAL', 'ASSISTANTPRINCIPAL']);
+requireAdminPage();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: ' . BASE_URL . 'modules/departments/index.php');
@@ -9,24 +8,25 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $action         = $_POST['action'] ?? '';
-$departmentname = trim($_POST['departmentname'] ?? '');
+$departmentName = trim($_POST['department_name'] ?? $_POST['departmentname'] ?? '');
 $description    = trim($_POST['description'] ?? '');
-$departmentid   = (int)($_POST['departmentid'] ?? 0);
+$departmentId   = (int)($_POST['department_id'] ?? $_POST['departmentid'] ?? 0);
 
-if ($departmentname === '') {
+if ($departmentName === '') {
     setFlash('danger', 'Department name is required.');
     $redirect = $action === 'update'
-        ? BASE_URL . 'modules/departments/edit.php?id=' . $departmentid
+        ? BASE_URL . 'modules/departments/edit.php?id=' . $departmentId
         : BASE_URL . 'modules/departments/create.php';
     header('Location: ' . $redirect);
     exit;
 }
 
 try {
+    $userId = $_SESSION['user']['user_id'] ?? null;
+
     if ($action === 'create') {
-        // Check duplicate
-        $check = $pdo->prepare("SELECT COUNT(*) FROM departments WHERE departmentname = :name");
-        $check->execute([':name' => $departmentname]);
+        $check = $pdo->prepare("SELECT COUNT(*) FROM departments WHERE department_name = :name");
+        $check->execute([':name' => $departmentName]);
         if ((int)$check->fetchColumn() > 0) {
             setFlash('danger', 'A department with that name already exists.');
             header('Location: ' . BASE_URL . 'modules/departments/create.php');
@@ -34,65 +34,62 @@ try {
         }
 
         $stmt = $pdo->prepare("
-            INSERT INTO departments (departmentname, description)
+            INSERT INTO departments (department_name, description)
             VALUES (:name, :desc)
         ");
         $stmt->execute([
-            ':name' => $departmentname,
+            ':name' => $departmentName,
             ':desc' => $description ?: null,
         ]);
 
-        // Audit log
         $pdo->prepare("
-            INSERT INTO auditlogs (userid, action, tablename, recordid, description)
+            INSERT INTO audit_logs (user_id, action, table_name, record_id, description)
             VALUES (:uid, 'CREATE', 'departments', :rid, :desc)
         ")->execute([
-            ':uid'  => user()['userid'],
+            ':uid'  => $userId,
             ':rid'  => $pdo->lastInsertId(),
-            ':desc' => 'Created department: ' . $departmentname,
+            ':desc' => 'Created department: ' . $departmentName,
         ]);
 
-        setFlash('success', 'Department "' . $departmentname . '" created successfully.');
+        setFlash('success', 'Department "' . $departmentName . '" created successfully.');
 
     } elseif ($action === 'update') {
-        if ($departmentid <= 0) {
+        if ($departmentId <= 0) {
             setFlash('danger', 'Invalid department ID.');
             header('Location: ' . BASE_URL . 'modules/departments/index.php');
             exit;
         }
 
-        // Check duplicate (excluding self)
         $check = $pdo->prepare("
             SELECT COUNT(*) FROM departments
-            WHERE departmentname = :name AND departmentid != :id
+            WHERE department_name = :name AND department_id != :id
         ");
-        $check->execute([':name' => $departmentname, ':id' => $departmentid]);
+        $check->execute([':name' => $departmentName, ':id' => $departmentId]);
         if ((int)$check->fetchColumn() > 0) {
             setFlash('danger', 'Another department with that name already exists.');
-            header('Location: ' . BASE_URL . 'modules/departments/edit.php?id=' . $departmentid);
+            header('Location: ' . BASE_URL . 'modules/departments/edit.php?id=' . $departmentId);
             exit;
         }
 
         $stmt = $pdo->prepare("
             UPDATE departments
-            SET departmentname = :name,
-                description    = :desc
-            WHERE departmentid = :id
+            SET department_name = :name,
+                description     = :desc
+            WHERE department_id = :id
         ");
         $stmt->execute([
-            ':name' => $departmentname,
+            ':name' => $departmentName,
             ':desc' => $description ?: null,
-            ':id'   => $departmentid,
+            ':id'   => $departmentId,
         ]);
 
-        // Audit log
         $pdo->prepare("
-            INSERT INTO auditlogs (userid, action, tablename, recordid, description)
+            INSERT INTO audit_logs (user_id, action, table_name, record_id, description)
             VALUES (:uid, 'UPDATE', 'departments', :rid, :desc)
         ")->execute([
-            ':uid'  => user()['userid'],
-            ':rid'  => $departmentid,
-            ':desc' => 'Updated department: ' . $departmentname,
+            ':uid'  => $userId,
+            ':rid'  => $departmentId,
+            ':desc' => 'Updated department: ' . $departmentName,
         ]);
 
         setFlash('success', 'Department updated successfully.');

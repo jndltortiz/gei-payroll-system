@@ -5,12 +5,12 @@
  * Set $empPortalIcon (FA icon class, e.g. 'fa-house') before including.
  */
 $_empIcon  = isset($empPortalIcon) ? $empPortalIcon : 'fa-user-circle';
-$_empFirst = htmlspecialchars(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['user']['last_name'] ?? ''));
-$_empInit  = strtoupper(
+$_empFirst = htmlspecialchars(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['user']['last_name'] ?? ''), ENT_QUOTES, 'UTF-8');
+$_empInit  = htmlspecialchars(strtoupper(
     substr($_SESSION['user']['first_name'] ?? 'E', 0, 1) .
     substr($_SESSION['user']['last_name']  ?? 'M', 0, 1)
-);
-$_empRole  = htmlspecialchars($_SESSION['user']['role_name'] ?? 'Employee');
+), ENT_QUOTES, 'UTF-8');
+$_empRole  = htmlspecialchars($_SESSION['user']['role_name'] ?? 'Employee', ENT_QUOTES, 'UTF-8');
 ?>
 <div class="header">
 

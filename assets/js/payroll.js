@@ -112,7 +112,15 @@ function computePayroll() {
 
 // ── Remove a previously-saved adjustment row via AJAX ─────────────────────────
 window.removeExistingAdjustment = async function(btn, rowId, type) {
-    if (!confirm('Remove this adjustment? This cannot be undone.')) return;
+    try {
+        await GEI.confirm({
+            title: 'Remove Adjustment',
+            message: 'Remove this adjustment?',
+            note: 'This cannot be undone.',
+            type: 'danger',
+            confirmText: 'Remove',
+        });
+    } catch { return; }
 
     const payrollId = document.getElementById('edit-payrollid').value;
     btn.disabled = true;
@@ -134,12 +142,12 @@ window.removeExistingAdjustment = async function(btn, rowId, type) {
             }
             computePayroll();
         } else {
-            alert(data.message || 'Could not remove adjustment.');
+            showToast(data.message || 'Could not remove adjustment.', 'error');
             btn.disabled = false;
             btn.innerHTML = '<i class="fa fa-xmark"></i>';
         }
     } catch {
-        alert('Network error. Please try again.');
+        showToast('Network error. Please try again.', 'error');
         btn.disabled = false;
         btn.innerHTML = '<i class="fa fa-xmark"></i>';
     }
@@ -324,6 +332,13 @@ window.openEdit = function(el) {
     document.getElementById("edit-position").innerText  = el.dataset.position || '';
     document.getElementById("edit-dept").innerText      = el.dataset.dept     || '';
     document.getElementById("edit-basic").value         = el.dataset.basic    || 0;
+    const reasonEl = document.getElementById('edit-adjustment-reason');
+    if (reasonEl) reasonEl.value = '';
+    const errorEl = document.getElementById('editPayrollError');
+    if (errorEl) {
+        errorEl.textContent = '';
+        errorEl.style.display = 'none';
+    }
 
     // Show employee number in the modal subheading if element exists
     const editEmpNoEl = document.getElementById('edit-empno-display');
@@ -503,6 +518,86 @@ window.closeEdit = function() {
     document.getElementById("editModal").style.display = "none";
     document.body.style.overflow = "auto";
 }
+
+function showEditPayrollError(message) {
+    const errorEl = document.getElementById('editPayrollError');
+    if (!errorEl) {
+        if (window.showToast) showToast(message, 'error');
+        return;
+    }
+    errorEl.textContent = message || 'Could not save payroll changes.';
+    errorEl.style.display = 'block';
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('editPayrollForm');
+    if (!form) return;
+
+    form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const reasonEl = document.getElementById('edit-adjustment-reason');
+        const reason = (reasonEl?.value || '').trim();
+        const reasonError = window.GEI && GEI.validateReason
+            ? GEI.validateReason(reason, 'Adjustment reason')
+            : (!reason ? 'Adjustment reason is required.' : '');
+
+        if (reasonError) {
+            showEditPayrollError(reasonError);
+            reasonEl?.focus();
+            return;
+        }
+
+        const btn = document.getElementById('editPayrollSubmitBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Saving...';
+        }
+
+        const errorEl = document.getElementById('editPayrollError');
+        if (errorEl) {
+            errorEl.textContent = '';
+            errorEl.style.display = 'none';
+        }
+
+        try {
+            const res = await fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                }
+            });
+
+            const contentType = res.headers.get('content-type') || '';
+            const data = contentType.includes('application/json')
+                ? await res.json()
+                : { success: false, message: 'Unexpected server response. No changes were saved.' };
+
+            if (data.success) {
+                closeEdit();
+                if (window.showToast) {
+                    showToast(data.message || 'Payroll record updated successfully.', 'success');
+                }
+                setTimeout(() => location.reload(), 900);
+                return;
+            }
+
+            showEditPayrollError(data.message || 'Could not save payroll changes.');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = 'Apply Changes';
+            }
+        } catch {
+            showEditPayrollError('Network error. No changes were saved.');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = 'Apply Changes';
+            }
+        }
+    });
+});
 
 window.openGenerateModal = function() {
     document.getElementById("generateModal").style.display = "flex";

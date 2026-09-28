@@ -20,7 +20,7 @@
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth.php';
-requireLogin();
+requireAdminAction();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
@@ -129,9 +129,7 @@ foreach ($employeeIds as $empId) {
             if ($isPartTime) {
                 $status = $timeInMins <= $shiftStart ? 'PRESENT' : 'LATE';
             } else {
-                $halfDayMins = $emp['half_day_time']
-                    ? $toMins($emp['half_day_time'])
-                    : 9 * 60;
+                $halfDayMins = 9 * 60;
 
                 if ($timeInMins <= $shiftStart) {
                     $status = 'PRESENT';
@@ -150,6 +148,8 @@ foreach ($employeeIds as $empId) {
 
     // ── Insert ────────────────────────────────────────────────────────────────
     try {
+        $pdo->beginTransaction();
+
         $pdo->prepare("
             INSERT INTO attendance_records
                 (employee_id, attendance_date, time_in,
@@ -159,27 +159,28 @@ foreach ($employeeIds as $empId) {
 
         $newId = (int)$pdo->lastInsertId();
 
-        // Audit log — CREATE action (requires migration 007; silently skipped if not yet applied)
+        // Audit log — CREATE action; transaction rolls back if this cannot be written.
         if ($userId) {
-            try {
-                $pdo->prepare("
+            $pdo->prepare("
                     INSERT INTO attendance_audit_log
                         (attendance_id, changed_by, action_type,
                          new_time_in, new_status, new_method, new_remarks, reason)
                     VALUES (?, ?, 'CREATE', ?, ?, 'MANUAL_ADMIN', ?, 'Logged in via Admin')
                 ")->execute([$newId, $userId, $timeIn, $status, $empRemarks]);
-            } catch (PDOException $auditEx) {
-                // Audit table absent (migration 007 not yet applied) — non-fatal
-            }
         }
 
+        $pdo->commit();
         $inserted++;
     } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('[attendance] Add transaction failed: ' . $e->getMessage());
         if ($e->getCode() === '23000') {
             $skipped++;
             $errors[] = "Employee #{$empId}: duplicate record.";
         } else {
-            $errors[] = "Employee #{$empId}: " . $e->getMessage();
+            $errors[] = "Employee #{$empId}: attendance was not saved because the record and audit log could not both be written.";
         }
     }
 }

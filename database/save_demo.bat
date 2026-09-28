@@ -20,7 +20,7 @@ if /i NOT "%CONFIRM%"=="YES" (
 
 echo.
 echo  Saving snapshot...
-"C:\xampp\mysql\bin\mysqldump.exe" -u root --routines --triggers --single-transaction gei_payroll_system > "%~dp0demo_snapshot.sql"
+"C:\xampp\php\php.exe" "%~dp0save_demo.php"
 
 if %ERRORLEVEL% EQU 0 (
     echo.

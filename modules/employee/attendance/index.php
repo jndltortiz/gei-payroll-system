@@ -254,10 +254,10 @@ $renderRow = function(array $r) use ($ST_LABELS, $RV_LABELS, $hasMig007, $hasCor
         'source' => $src, 'srcLabel' => $srcLabel,
         'rv' => $rv, 'rvLabel' => $RV_LABELS[$rv] ?? $rv,
         'remarks' => $r['remarks'] ?? '',
-    ]);
-    $jdAttr = htmlspecialchars($jd, ENT_QUOTES);
+    ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+    $jdAttr = htmlspecialchars($jd, ENT_QUOTES, 'UTF-8');
     $attId  = (int)$r['attendance_id'];
-    $date   = htmlspecialchars($r['attendance_date'], ENT_QUOTES);
+    $date   = htmlspecialchars($r['attendance_date'], ENT_QUOTES, 'UTF-8');
 
     $rvCol  = $hasMig007
         ? "<td style=\"text-align:center;\"><span class=\"att-rv-badge $rvCls\">$rvLabel</span></td>"
@@ -851,7 +851,7 @@ endif;
         <div class="eatt-detail-item"><label>Time In</label><span id="dTimeIn">—</span></div>
         <div class="eatt-detail-item"><label>Time Out</label><span id="dTimeOut">—</span></div>
         <div class="eatt-detail-item"><label>Late (min)</label><span id="dLate">—</span></div>
-        <div class="eatt-detail-item"><label>Overtime (min)</label><span id="dOT">—</span></div>
+        <div class="eatt-detail-item"><label>Extended Hours <small>(not payable)</small></label><span id="dOT">—</span></div>
         <div class="eatt-detail-item"><label>Status</label><span id="dStatus">—</span></div>
         <div class="eatt-detail-item"><label>Review Status</label><span id="dRv">—</span></div>
         <div class="eatt-detail-item" style="grid-column:span 2;"><label>Admin Notes / Remarks</label><span id="dRemarks">—</span></div>
@@ -977,7 +977,7 @@ function openDetailsModal(data) {
     document.getElementById('dTimeIn').textContent  = fmt12h(data.timeIn);
     document.getElementById('dTimeOut').textContent = fmt12h(data.timeOut);
     document.getElementById('dLate').textContent    = data.lateMin > 0 ? data.lateMin + ' min' : '—';
-    document.getElementById('dOT').textContent      = data.otMin   > 0 ? data.otMin   + ' min' : '—';
+    document.getElementById('dOT').textContent      = data.otMin   > 0 ? data.otMin   + ' min (informational only)' : '—';
     document.getElementById('dRemarks').textContent = data.remarks || '—';
 
     const stEl = document.getElementById('dStatus');

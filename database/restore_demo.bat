@@ -19,7 +19,7 @@ if /i NOT "%CONFIRM%"=="YES" (
 
 echo.
 echo  Restoring...
-"C:\xampp\mysql\bin\mysql.exe" -u root gei_payroll_system < "%~dp0demo_snapshot.sql"
+"C:\xampp\php\php.exe" "%~dp0restore_demo.php"
 
 if %ERRORLEVEL% EQU 0 (
     echo.

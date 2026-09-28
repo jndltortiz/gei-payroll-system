@@ -20,7 +20,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 
 header('Content-Type: application/json');
-requireLogin();
+requireAdminAction();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
@@ -47,6 +47,10 @@ if (!$date || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
     echo json_encode(['success' => false, 'message' => 'Invalid or missing date.']);
     exit;
 }
+if ($date > date('Y-m-d')) {
+    echo json_encode(['success' => false, 'message' => 'Attendance date cannot be in the future.']);
+    exit;
+}
 if (!in_array($status, $validStatuses, true)) {
     echo json_encode(['success' => false, 'message' => 'Invalid status value.']);
     exit;
@@ -54,22 +58,29 @@ if (!in_array($status, $validStatuses, true)) {
 if (!in_array($source, $validSources, true)) {
     $source = 'MANUAL_ADMIN';
 }
-if ($reason === '') {
-    echo json_encode(['success' => false, 'message' => 'A reason for modification is required.']);
+$reasonError = validateRequiredReason($reason, 'Reason for modification');
+if ($reasonError !== null) {
+    echo json_encode(['success' => false, 'message' => $reasonError]);
     exit;
 }
 
 // ── Fetch current record for audit snapshot ───────────────────────────────────
 $current = $pdo->prepare("
-    SELECT time_in, time_out, attendance_status, attendance_source, remarks
-    FROM attendance_records
-    WHERE attendance_id = ?
+    SELECT ar.time_in, ar.time_out, ar.attendance_status, ar.attendance_source, ar.remarks,
+           e.employment_type
+    FROM attendance_records ar
+    JOIN employees e ON ar.employee_id = e.employee_id
+    WHERE ar.attendance_id = ?
 ");
 $current->execute([$attendanceId]);
 $old = $current->fetch(PDO::FETCH_ASSOC);
 
 if (!$old) {
     echo json_encode(['success' => false, 'message' => 'Attendance record not found.']);
+    exit;
+}
+if (($old['employment_type'] ?? 'FULL_TIME') === 'PART_TIME' && $status === 'HALF_DAY') {
+    echo json_encode(['success' => false, 'message' => 'Part-time employees cannot be classified as Half Day.']);
     exit;
 }
 
@@ -120,6 +131,8 @@ $hasOtCol = (bool)$pdo->query("
 ")->fetchColumn();
 
 try {
+    $pdo->beginTransaction();
+
     // ── Update record ─────────────────────────────────────────────────────────
     if ($hasOtCol) {
         $pdo->prepare("
@@ -169,10 +182,9 @@ try {
         ]);
     }
 
-    // ── Audit log — full old/new snapshot (requires migration 007) ───────────
+    // ── Audit log — full old/new snapshot. Transaction rolls back if this fails.
     $userId = $_SESSION['user']['user_id'] ?? null;
-    try {
-        $pdo->prepare("
+    $pdo->prepare("
             INSERT INTO attendance_audit_log
                 (attendance_id, changed_by, action_type,
                  old_time_in,  old_time_out,  old_status,  old_method,  old_remarks,
@@ -198,13 +210,15 @@ try {
             $remarks,
             $reason,
         ]);
-    } catch (PDOException $auditEx) {
-        // Audit table absent (migration 007 not yet applied) — non-fatal
-    }
+    $pdo->commit();
 
     echo json_encode(['success' => true, 'message' => 'Attendance updated successfully.']);
 
 } catch (PDOException $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    error_log('[attendance] Update transaction failed: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => 'Attendance update failed. No changes were saved. Please try again or contact the administrator.']);
 }

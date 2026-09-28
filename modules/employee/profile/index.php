@@ -468,6 +468,7 @@ endif;
 
     <form method="POST" action="<?= BASE_URL ?>actions/employee-profile-update.php"
           id="editProfileForm" enctype="multipart/form-data">
+                    <?= csrfInput() ?>
 
       <div class="modal-body">
 

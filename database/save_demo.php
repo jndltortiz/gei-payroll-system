@@ -10,6 +10,8 @@
 
 $isCli = (PHP_SAPI === 'cli');
 
+require_once __DIR__ . '/../config/env.php';
+
 // ── Web guard ──────────────────────────────────────────────────────────────
 if (!$isCli) {
     if (($_GET['token'] ?? '') !== 'gei2026demo') {
@@ -21,10 +23,12 @@ if (!$isCli) {
 
 $snapshotFile  = __DIR__ . '/demo_snapshot.sql';
 $mysqldumpBin  = 'C:\\xampp\\mysql\\bin\\mysqldump.exe';
-$dbHost        = 'localhost';
-$dbUser        = 'root';
-$dbPass        = '';
-$dbName        = 'gei_payroll_system';
+$dbHost        = appEnv('DB_HOST');
+$dbPort        = appEnv('DB_PORT');
+$dbUser        = appEnv('DB_USERNAME');
+$dbPass        = appEnv('DB_PASSWORD', '');
+$dbName        = appEnv('DB_DATABASE');
+$dbCharset     = appEnv('DB_CHARSET', 'utf8mb4');
 
 echo "═══════════════════════════════════════════════════\n";
 echo "  GEI Payroll System — Save Demo Snapshot\n";
@@ -36,16 +40,22 @@ if (!file_exists($mysqldumpBin)) {
     echo "    Is XAMPP installed at C:\\xampp?\n";
     exit(1);
 }
+if (!$dbHost || !$dbUser || !$dbName) {
+    echo "  Database environment variables are missing. Check your .env file.\n";
+    exit(1);
+}
 
 echo "  Snapshot : {$snapshotFile}\n";
 echo "  Database : {$dbName} @ {$dbHost}\n";
 echo "\n  Saving... (this takes ~3-5 seconds)\n\n";
 
 $passArg = $dbPass !== '' ? '-p' . escapeshellarg($dbPass) : '';
+$portArg = $dbPort !== null && $dbPort !== '' ? '-P ' . escapeshellarg($dbPort) : '';
 $cmd = sprintf(
-    '"%s" -h %s -u %s %s --routines --triggers --single-transaction %s > "%s" 2>&1',
+    '"%s" -h %s %s -u %s %s --routines --triggers --single-transaction %s > "%s" 2>&1',
     $mysqldumpBin,
     escapeshellarg($dbHost),
+    $portArg,
     escapeshellarg($dbUser),
     $passArg,
     escapeshellarg($dbName),
@@ -61,7 +71,11 @@ if ($exitCode === 0 && file_exists($snapshotFile) && filesize($snapshotFile) > 1
     echo "  Size     : " . round(filesize($snapshotFile) / 1024, 1) . " KB\n\n";
 
     // Quick count of what was saved
-    $vPdo = new PDO("mysql:host=localhost;dbname=gei_payroll_system;charset=utf8mb4", 'root', '');
+    $dsn = "mysql:host={$dbHost};dbname={$dbName};charset={$dbCharset}";
+    if ($dbPort !== null && $dbPort !== '') {
+        $dsn = "mysql:host={$dbHost};port={$dbPort};dbname={$dbName};charset={$dbCharset}";
+    }
+    $vPdo = new PDO($dsn, $dbUser, $dbPass);
     $counts = $vPdo->query("
         SELECT
           (SELECT COUNT(*) FROM employees)          AS employees,

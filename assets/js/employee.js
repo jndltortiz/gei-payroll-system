@@ -11,9 +11,29 @@ window.closeModal = function(id) {
 };
 document.addEventListener('click', function(e) {
     if (e.target.classList.contains('modal')) {
+        if (e.target.id === 'createdCredentialsModal') return;
         e.target.classList.remove('active');
     }
 });
+
+window.toggleStatusEffectiveDate = function(prefix) {
+    const statusEl = document.getElementById(prefix + 'EmployeeStatus');
+    const wrap = document.getElementById(prefix + 'StatusEffectiveWrap');
+    const dateEl = document.getElementById(prefix + 'StatusEffectiveDate');
+    if (!statusEl || !wrap || !dateEl) return;
+
+    const needsDate = statusEl.value === 'RESIGNED' || statusEl.value === 'TERMINATED';
+    wrap.style.display = needsDate ? '' : 'none';
+    if (needsDate) {
+        dateEl.setAttribute('data-req', '1');
+    } else {
+        dateEl.removeAttribute('data-req');
+        dateEl.value = '';
+        dateEl.classList.remove('input-error');
+        const errEl = dateEl.parentElement?.querySelector('.field-error');
+        if (errEl) errEl.remove();
+    }
+};
 
 // ================================
 // WIZARD STATE
@@ -123,6 +143,7 @@ function _wizReset(modalId) {
 window.openAddWizard = function() {
     const form = document.getElementById('addEmployeeForm');
     if (form) form.reset();
+    toggleStatusEffectiveDate('add');
     // Reset edu/doc containers
     const eduC = document.getElementById('addEduEntriesContainer');
     if (eduC) {
@@ -186,6 +207,8 @@ window.openEditWizard = function(id) {
             setId('editEmploymentType',   d.employment_type);
             setId('editHireDate',         d.hire_date);
             setId('editEmployeeStatus',   d.employee_status);
+            setId('editStatusEffectiveDate', d.status_effective_date);
+            toggleStatusEffectiveDate('edit');
             setId('editBasicSalary',      d.monthly_salary);
             loadPositions('editDeptSelect', 'editPosSelect', d.position_id);
             setId('editShiftSelect', d.shift_id);
@@ -503,37 +526,11 @@ window.viewEmployee = function(id) { openViewProfile(id); };
 window.editEmployee = function(id) { openEditWizard(id); };
 
 // ================================
-// DEACTIVATE
-// ================================
-window.setDeactivate = function(id, name, dept) {
-    document.getElementById('deact_id').value = id;
-
-    const snap = document.getElementById('deactEmployeeSnap');
-    const snapAvatar = document.getElementById('deactSnapAvatar');
-    const snapName   = document.getElementById('deactSnapName');
-    const snapDept   = document.getElementById('deactSnapDept');
-
-    if (snap && snapAvatar && snapName) {
-        const parts = (name || '').split(' ');
-        snapAvatar.textContent = ((parts[0] || '')[0] || '') + ((parts[parts.length - 1] || '')[0] || '');
-        snapName.textContent   = name || '—';
-        if (snapDept) snapDept.textContent = dept || '';
-        snap.style.display = '';
-    }
-
-    const msg = document.getElementById('deactMsg');
-    if (msg) {
-        msg.textContent = `Are you sure you want to deactivate ${name || 'this employee'}? They will lose system access.`;
-    }
-
-    openModal('deactEmployeeModal');
-};
-
-// ================================
 // SAVE CONFIRMATION (2-step)
 // ================================
 let _pendingFormId   = null;
 let _pendingSaveType = null;
+let _createdCredentialsNeedReload = false;
 
 window.prepareSave = function(formId, type) {
     const form = document.getElementById(formId);
@@ -585,8 +582,9 @@ window.confirmSave = async function(type) {
                                      { method: 'POST', body: new FormData(form) });
             const data = await res.json();
             if (data.success) {
-                if (typeof showToast === 'function') showToast(data.message, 'success', 5000);
-                setTimeout(() => location.reload(), 1200);
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-floppy-disk"></i> Save Employee'; }
+                closeModal('addEmployeeModal');
+                showCreatedCredentials(data);
             } else {
                 if (typeof showToast === 'function') showToast(data.message || 'Failed to save.', 'error');
                 if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-floppy-disk"></i> Save Employee'; }
@@ -618,6 +616,70 @@ window.confirmSave = async function(type) {
             if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-floppy-disk"></i> Update Employee'; }
             openModal('editEmployeeModal');
         }
+    }
+};
+
+window.showCreatedCredentials = function(data) {
+    const usernameEl = document.getElementById('createdUsername');
+    const passwordEl = document.getElementById('createdPassword');
+    const msgEl = document.getElementById('createdCredentialsMsg');
+    if (usernameEl) usernameEl.value = data.username || '';
+    if (passwordEl) passwordEl.value = data.temporary_password || '';
+    if (msgEl) {
+        msgEl.textContent = `${data.employee_no || 'Employee'} was created. Copy these credentials now and relay them manually.`;
+    }
+    _createdCredentialsNeedReload = true;
+    openModal('createdCredentialsModal');
+};
+
+async function copyTextToClipboard(text) {
+    if (!text) return false;
+    if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+    }
+
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+}
+
+window.copyCreatedCredential = async function(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    try {
+        await copyTextToClipboard(input.value);
+        if (typeof showToast === 'function') showToast('Copied to clipboard.', 'success');
+    } catch {
+        input.focus();
+        input.select();
+        if (typeof showToast === 'function') showToast('Copy failed. The field is selected so you can copy manually.', 'error');
+    }
+};
+
+window.copyCreatedCredentials = async function() {
+    const username = document.getElementById('createdUsername')?.value || '';
+    const password = document.getElementById('createdPassword')?.value || '';
+    const text = `Username: ${username}\nTemporary Password: ${password}`;
+    try {
+        await copyTextToClipboard(text);
+        if (typeof showToast === 'function') showToast('Username and password copied.', 'success');
+    } catch {
+        if (typeof showToast === 'function') showToast('Copy failed. Copy the fields manually.', 'error');
+    }
+};
+
+window.finishCreatedCredentials = function() {
+    closeModal('createdCredentialsModal');
+    if (_createdCredentialsNeedReload) {
+        location.reload();
     }
 };
 

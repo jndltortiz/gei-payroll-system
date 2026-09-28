@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-requireLogin();
+requirePrincipalAction();
 
 $action  = $_POST['action']   ?? '';
 $level   = $_POST['level']    ?? 'all';
@@ -41,6 +41,8 @@ if (!in_array($action, ['approve', 'reject'], true)) {
 }
 
 $newDateStatus = $action === 'approve' ? 'APPROVED' : 'REJECTED';
+
+$hasMig016 = (bool)$pdo->query("SHOW COLUMNS FROM `leave_requests` LIKE 'workflow_status'")->fetch();
 
 // ── Helper: recalculate parent leave_requests.status ────────
 // Rules:
@@ -172,6 +174,14 @@ try {
         $stmtPending->execute([$leaveId]);
         $pendingCount = (int)$stmtPending->fetchColumn();
 
+        if ($hasMig016 && ($leave['workflow_status'] ?? null) === 'PENDING_REVIEW') {
+            $pdo->prepare("
+                UPDATE leave_requests
+                SET workflow_status = 'FORWARDED', updated_at = NOW()
+                WHERE leave_id = ?
+            ")->execute([$leaveId]);
+        }
+
         // Update all PENDING date rows for this leave
         $pdo->prepare("
             UPDATE leave_request_dates
@@ -256,6 +266,14 @@ try {
 
         $parentLeaveId = (int)$dateRow['leave_id'];
         $prevStatus    = $dateRow['status'];
+
+        if ($hasMig016) {
+            $pdo->prepare("
+                UPDATE leave_requests
+                SET workflow_status = 'FORWARDED', updated_at = NOW()
+                WHERE leave_id = ? AND workflow_status = 'PENDING_REVIEW'
+            ")->execute([$parentLeaveId]);
+        }
 
         // Update this single date row
         $pdo->prepare("

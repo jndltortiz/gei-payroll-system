@@ -346,7 +346,7 @@ require_once __DIR__ . '/../../../includes/head.php';
 
     $scDatesArr = $pendingDates[$sc['service_credit_id']] ?? [];
     $scAuditArr = $pendingAudit[$sc['service_credit_id']] ?? [];
-    $scJson     = htmlspecialchars(json_encode(array_merge($sc, ['dates'=>$scDatesArr,'audit'=>$scAuditArr])), ENT_QUOTES);
+    $scJson     = htmlspecialchars(json_encode(array_merge($sc, ['dates'=>$scDatesArr,'audit'=>$scAuditArr]), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
   ?>
   <div class="pr-pending-card" style="margin-bottom:14px;">
 
@@ -524,7 +524,7 @@ require_once __DIR__ . '/../../../includes/head.php';
             : '—';
           $hDatesArr = $historyDates[$h['service_credit_id']] ?? [];
           $hAuditArr = $historyAudit[$h['service_credit_id']] ?? [];
-          $hJson = htmlspecialchars(json_encode(array_merge($h, ['dates'=>$hDatesArr,'audit'=>$hAuditArr])), ENT_QUOTES);
+          $hJson = htmlspecialchars(json_encode(array_merge($h, ['dates'=>$hDatesArr,'audit'=>$hAuditArr]), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
         ?>
         <tr>
           <td>
@@ -616,7 +616,8 @@ require_once __DIR__ . '/../../../includes/head.php';
       <h3><i class="fa fa-circle-xmark" style="color:#ef4444;"></i> Reject Work Date</h3>
       <button onclick="closePrRejectDate()"><i class="fa fa-times"></i></button>
     </div>
-    <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php">
+    <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php" id="prRejectDateForm">
+                    <?= csrfInput() ?>
       <input type="hidden" name="action"             value="reject_date">
       <input type="hidden" name="sc_date_id"         id="prRejectDateId"      value="">
       <input type="hidden" name="service_credit_id"  id="prRejectScId"        value="">
@@ -628,14 +629,15 @@ require_once __DIR__ . '/../../../includes/head.php';
         </div>
         <div class="sc-form-group">
           <label>Rejection Reason <span class="req">*</span></label>
-          <textarea name="rejection_reason" id="prRejectDateReason" rows="3" required maxlength="500"
+          <textarea name="rejection_reason" id="prRejectDateReason" rows="3" required minlength="10" maxlength="500"
                     placeholder="e.g. Regular school day, Duplicate entry, Insufficient documentation…"></textarea>
           <small id="prRejectDateCount" style="text-align:right;display:block;color:#94a3b8;">0 / 500</small>
         </div>
+        <div id="prRejectDateError" class="alert alert-danger" style="display:none;margin-top:12px;"></div>
       </div>
       <div class="sc-modal-footer">
         <button type="button" class="sc-btn-ghost" onclick="closePrRejectDate()">Cancel</button>
-        <button type="submit" class="sc-btn-danger">
+        <button type="submit" class="sc-btn-danger" id="prRejectDateSubmitBtn">
           <i class="fa fa-circle-xmark"></i> Reject This Date
         </button>
       </div>
@@ -690,6 +692,7 @@ function openPrViewDetails(r) {
             const wd = escH(fmtDate(d.work_date));
             actionCell = `
                 <form method="POST" action="${SC_ACTION_URL}" style="display:inline;margin-right:4px;">
+                    <?= csrfInput() ?>
                     <input type="hidden" name="action"            value="approve_date">
                     <input type="hidden" name="sc_date_id"        value="${d.sc_date_id}">
                     <input type="hidden" name="service_credit_id" value="${r.service_credit_id}">
@@ -994,12 +997,69 @@ function openPrRejectDate(dateId, scId, workDateLabel) {
     document.getElementById('prRejectDateLabel').textContent = workDateLabel;
     document.getElementById('prRejectDateReason').value     = '';
     document.getElementById('prRejectDateCount').textContent = '0 / 500';
+    const errorBox = document.getElementById('prRejectDateError');
+    if (errorBox) {
+        errorBox.textContent = '';
+        errorBox.style.display = 'none';
+    }
     document.getElementById('prViewOverlay').style.display  = 'none';
     document.getElementById('prRejectDateOverlay').style.display = 'flex';
 }
 function closePrRejectDate() {
     document.getElementById('prRejectDateOverlay').style.display = 'none';
 }
+function showPrRejectDateError(message) {
+    const errorBox = document.getElementById('prRejectDateError');
+    if (errorBox) {
+        errorBox.textContent = message;
+        errorBox.style.display = message ? 'block' : 'none';
+    }
+}
+document.getElementById('prRejectDateForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const reason = (document.getElementById('prRejectDateReason')?.value || '').trim();
+    const reasonError = window.GEI && GEI.validateReason
+        ? GEI.validateReason(reason, 'Rejection reason')
+        : (!reason ? 'Rejection reason is required.' : '');
+    showPrRejectDateError('');
+    if (reasonError) {
+        showPrRejectDateError(reasonError);
+        return;
+    }
+
+    const btn = document.getElementById('prRejectDateSubmitBtn');
+    const oldHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Rejecting...';
+    }
+
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        });
+        const data = await res.json();
+        if (data.success) {
+            closePrRejectDate();
+            location.href = document.getElementById('prRejectDateRedirect').value || SC_PR_RETURN;
+        } else {
+            showPrRejectDateError(data.message || 'Failed to reject this work date.');
+        }
+    } catch {
+        showPrRejectDateError('Network error. Please try again.');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = oldHtml;
+        }
+    }
+});
 document.getElementById('prRejectDateReason')?.addEventListener('input', function() {
     document.getElementById('prRejectDateCount').textContent = this.value.length + ' / 500';
 });

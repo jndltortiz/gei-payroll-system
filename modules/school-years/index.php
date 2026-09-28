@@ -156,6 +156,7 @@ require_once __DIR__ . '/../../includes/head.php';
                   data-confirm-note="This will deactivate the current active school year."
                   data-confirm-type="warning"
                   data-confirm-btn="Set Active">
+                    <?= csrfInput() ?>
               <input type="hidden" name="action" value="set_active">
               <input type="hidden" name="school_year_id" value="<?= $y['school_year_id'] ?>">
               <button type="submit" class="sy-btn-sm sy-btn-sm--teal">
@@ -164,7 +165,7 @@ require_once __DIR__ . '/../../includes/head.php';
             </form>
             <?php endif; ?>
             <button class="sy-btn-sm sy-btn-sm--outline"
-                    onclick="openEditModal(<?= htmlspecialchars(json_encode($y)) ?>)">
+                    onclick="openEditModal(<?= htmlspecialchars(json_encode($y, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>)">
               <i class="fa fa-pen"></i> Edit
             </button>
             <?php if (!$y['is_active'] && $y['leave_count'] == 0 && $y['credit_count'] == 0): ?>
@@ -174,6 +175,7 @@ require_once __DIR__ . '/../../includes/head.php';
                   data-confirm-note="This cannot be undone."
                   data-confirm-type="danger"
                   data-confirm-btn="Delete School Year">
+                    <?= csrfInput() ?>
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="school_year_id" value="<?= $y['school_year_id'] ?>">
               <button type="submit" class="sy-btn-sm sy-btn-sm--danger">
@@ -230,6 +232,7 @@ require_once __DIR__ . '/../../includes/head.php';
       </button>
     </div>
     <form method="POST" action="<?= BASE_URL ?>actions/school-year-action.php" id="syForm">
+                    <?= csrfInput() ?>
       <input type="hidden" name="action" id="syFormAction" value="create">
       <input type="hidden" name="school_year_id" id="syFormId" value="">
       <div class="sy-modal-body">

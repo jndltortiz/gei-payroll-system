@@ -23,13 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-requireLogin();
-
-$role = strtolower($_SESSION['user']['role'] ?? '');
-if ($role === 'employee') {
-    echo json_encode(['success' => false, 'message' => 'Not authorised.']);
-    exit;
-}
+requireAdminAction();
 
 $action = trim($_POST['action'] ?? '');
 $attId  = (int)($_POST['attachment_id'] ?? 0);

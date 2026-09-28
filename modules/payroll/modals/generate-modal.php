@@ -16,13 +16,13 @@ $positions = $pdo->query("
     ORDER BY d.department_name, pos.position_name
 ")->fetchAll();
 
-$activeEmployees = $pdo->query("
+$payrollEmployees = $pdo->query("
     SELECT e.employee_id, e.first_name, e.last_name, d.department_name, p.position_name
     FROM employees e
     LEFT JOIN departments d ON e.department_id = d.department_id
     LEFT JOIN positions   p ON e.position_id   = p.position_id
     JOIN employee_compensations ec ON e.employee_id = ec.employee_id AND ec.is_active = 1
-    WHERE e.employee_status = 'ACTIVE'
+    WHERE e.employee_status IN ('ACTIVE', 'RESIGNED', 'TERMINATED')
     ORDER BY e.last_name, e.first_name
 ")->fetchAll();
 ?>
@@ -43,6 +43,7 @@ $activeEmployees = $pdo->query("
     <?php endif; ?>
 
     <form method="POST" action="#" id="generateForm">
+                    <?= csrfInput() ?>
 
       <!-- Pay Period -->
       <div class="gen-field">
@@ -52,10 +53,19 @@ $activeEmployees = $pdo->query("
           <input type="hidden" name="period_id" value="">
         <?php else: ?>
           <select name="period_id" required>
-            <?php foreach ($openPeriods as $p): ?>
+            <?php foreach ($openPeriods as $p):
+              $ptype = $p['period_type'] ?? 'REGULAR';
+              if ($ptype === 'ACCRUED_PAY') {
+                $periodLabel = 'Accrued Pay - ' . date('F Y', strtotime($p['pay_period_start'] ?? 'now'));
+              } elseif ($ptype === 'THIRTEENTH_MONTH') {
+                $periodLabel = '13th Month Pay - ' . date('Y', strtotime($p['pay_period_start'] ?? 'now'));
+              } else {
+                $periodLabel = $p['period_name'];
+              }
+            ?>
             <option value="<?= $p['period_id'] ?>"
               <?= $p['period_id'] == $selectedId ? 'selected' : '' ?>>
-              <?= htmlspecialchars($p['period_name']) ?>
+              <?= htmlspecialchars($periodLabel) ?>
             </option>
             <?php endforeach; ?>
           </select>
@@ -72,7 +82,7 @@ $activeEmployees = $pdo->query("
             <span class="scope-card-inner">
               <i class="fa fa-users"></i>
               <strong>All Employees</strong>
-              <small>Every active employee</small>
+              <small>Every period-eligible employee</small>
             </span>
           </label>
 
@@ -149,7 +159,7 @@ $activeEmployees = $pdo->query("
         </div>
 
         <div class="emp-checklist" id="empChecklist">
-          <?php foreach ($activeEmployees as $emp): ?>
+          <?php foreach ($payrollEmployees as $emp): ?>
           <label class="emp-check-item"
                  data-name="<?= strtolower(htmlspecialchars($emp['first_name'].' '.$emp['last_name'])) ?>"
                  data-dept="<?= strtolower(htmlspecialchars($emp['department_name'] ?? '')) ?>">
@@ -161,8 +171,8 @@ $activeEmployees = $pdo->query("
             </span>
           </label>
           <?php endforeach; ?>
-          <?php if (empty($activeEmployees)): ?>
-          <p style="color:#9ca3af;font-size:13px;padding:8px 0;">No active employees found.</p>
+          <?php if (empty($payrollEmployees)): ?>
+          <p style="color:#9ca3af;font-size:13px;padding:8px 0;">No employees with compensation records found.</p>
           <?php endif; ?>
         </div>
 

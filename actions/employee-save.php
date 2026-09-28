@@ -8,7 +8,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 header('Content-Type: application/json');
-requireLogin();
+requireAdminAction();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request.']); exit;
@@ -33,6 +33,24 @@ if (!str_ends_with(strtolower($email), '@gei.edu.ph')) {
 if (strlen($_POST['password']) < 8) {
     echo json_encode(['success' => false,
         'message' => 'Password must be at least 8 characters.']); exit;
+}
+
+$employeeStatus = strtoupper(trim($_POST['employee_status'] ?? ''));
+$allowedStatuses = ['ACTIVE', 'RESIGNED', 'TERMINATED'];
+if (!in_array($employeeStatus, $allowedStatuses, true)) {
+    echo json_encode(['success' => false,
+        'message' => 'Invalid employment status. Use Active, Resigned, or Terminated.']); exit;
+}
+
+$statusEffectiveDate = trim($_POST['status_effective_date'] ?? '');
+if ($employeeStatus === 'ACTIVE') {
+    $statusEffectiveDate = null;
+} elseif ($statusEffectiveDate === '') {
+    echo json_encode(['success' => false,
+        'message' => 'Status effective date is required for resigned or terminated employees.']); exit;
+} elseif (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $statusEffectiveDate) || strtotime($statusEffectiveDate) === false) {
+    echo json_encode(['success' => false,
+        'message' => 'Status effective date must be a valid date.']); exit;
 }
 
 // ── Duplicate email check ─────────────────────────────────────────────────────
@@ -93,14 +111,14 @@ try {
         INSERT INTO employees (
             employee_no, first_name, middle_name, last_name, suffix,
             sex, birth_date, civil_status, address, contact_no, email$peCol,
-            hire_date, employment_type, employee_status,
+            hire_date, employment_type, employee_status, status_effective_date,
             department_id, position_id, shift_id,
             sss_no, philhealth_no, pagibig_no, tin_no, peraa_no,
             emergency_contact_name, emergency_contact_relation, emergency_contact_number
         ) VALUES (
             :emp_no, :fn, :mn, :ln, :sfx,
             :sex, :bd, :cs, :addr, :cno, :email$peVal,
-            :hd, :et, :es,
+            :hd, :et, :es, :sed,
             :dept, :pos, :shift,
             :sss, :ph, :pi, :tin, :peraa,
             :ec_name, :ec_rel, :ec_num
@@ -120,7 +138,8 @@ try {
         ':email'  => $email,
         ':hd'     => $_POST['hire_date'],
         ':et'     => $_POST['employment_type'],
-        ':es'     => $_POST['employee_status'],
+        ':es'     => $employeeStatus,
+        ':sed'    => $statusEffectiveDate,
         ':dept'   => (int)$_POST['department_id'],
         ':pos'    => (int)$_POST['position_id'],
         ':shift'  => ($_POST['shift_id'] ?? '') ?: null,
@@ -146,8 +165,8 @@ try {
     $pdo->prepare("
         INSERT INTO employee_compensations
             (employee_id, effective_date, monthly_salary, daily_rate, pay_basis, is_active)
-        VALUES (?, CURDATE(), ?, ?, 'MONTHLY', 1)
-    ")->execute([$empId, $monthly, $daily]);
+        VALUES (?, ?, ?, ?, 'MONTHLY', 1)
+    ")->execute([$empId, $_POST['hire_date'], $monthly, $daily]);
 
     // ── User account ──────────────────────────────────────────────────────────
     // Look up role_id dynamically so any role (Admin, Accounting, Employee, Principal) works
@@ -228,6 +247,7 @@ try {
         'employee_id' => $empId,
         'employee_no' => $employee_no,
         'username'    => $username,
+        'temporary_password' => $_POST['password'],
     ]);
 
 } catch (PDOException $e) {

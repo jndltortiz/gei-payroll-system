@@ -15,7 +15,7 @@
         <label style="font-size:13px;font-weight:600;color:#374151;display:block;margin-bottom:6px;">
           Remarks <span style="color:#ef4444;">*</span>
         </label>
-        <textarea id="rejectRemarks" class="pr-reject-textarea" rows="4"
+        <textarea id="rejectRemarks" class="pr-reject-textarea" rows="4" minlength="10"
                   placeholder="Describe the issues that need to be corrected before resubmission…"></textarea>
         <div id="rejectError" style="display:none;color:#ef4444;font-size:12px;margin-top:4px;">
           <i class="fa fa-circle-exclamation"></i> Please enter a reason for rejection.

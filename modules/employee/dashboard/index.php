@@ -180,7 +180,7 @@ endif;
     <!-- ── Greeting ─────────────────────────────────────────────────────────── -->
     <div class="emp-greeting">
       <div>
-        <h1><?= $greeting ?>, <?= htmlspecialchars($_SESSION['user']['first_name'] ?? 'Employee') ?></h1>
+        <h1><?= $greeting ?>, <?= htmlspecialchars($_SESSION['user']['first_name'] ?? 'Employee', ENT_QUOTES, 'UTF-8') ?></h1>
         <p><?= date('l, F j, Y') ?></p>
       </div>
       <div class="emp-greeting-pill">

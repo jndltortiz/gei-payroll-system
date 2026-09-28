@@ -33,9 +33,9 @@ function settingsActive(): string {
     return '';
 }
 
-$_sidebarFirst = htmlspecialchars($_SESSION['user']['first_name'] ?? 'Admin');
-$_sidebarRole  = htmlspecialchars($_SESSION['user']['role_name']  ?? '');
-$_sidebarInit  = strtoupper(substr($_SESSION['user']['first_name'] ?? 'A', 0, 1));
+$_sidebarFirst = htmlspecialchars($_SESSION['user']['first_name'] ?? 'Admin', ENT_QUOTES, 'UTF-8');
+$_sidebarRole  = htmlspecialchars($_SESSION['user']['role_name']  ?? '', ENT_QUOTES, 'UTF-8');
+$_sidebarInit  = htmlspecialchars(strtoupper(substr($_SESSION['user']['first_name'] ?? 'A', 0, 1)), ENT_QUOTES, 'UTF-8');
 ?>
 <nav class="sidebar" id="sidebar">
 
@@ -80,6 +80,11 @@ $_sidebarInit  = strtoupper(substr($_SESSION['user']['first_name'] ?? 'A', 0, 1)
        href="<?= BASE_URL ?>modules/employees/index.php">
       <i class="fa fa-users"></i>
       <span>Employees</span>
+    </a>
+    <a class="nav-item <?= sidebarActive('modules/departments') ?>"
+       href="<?= BASE_URL ?>modules/departments/index.php">
+      <i class="fa fa-building"></i>
+      <span>Departments</span>
     </a>
 
     <div class="nav-section-label">PAYROLL</div>

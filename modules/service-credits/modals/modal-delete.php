@@ -11,6 +11,7 @@
       <p style="font-size:12px;color:#94a3b8;margin-top:4px;">This cannot be undone.</p>
     </div>
     <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php">
+                    <?= csrfInput() ?>
       <input type="hidden" name="action" value="delete">
       <input type="hidden" name="service_credit_id" id="deleteScId" value="">
       <div class="sc-modal-footer">

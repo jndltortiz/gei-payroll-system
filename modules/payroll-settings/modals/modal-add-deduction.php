@@ -7,6 +7,7 @@
                 <button type="button" class="ps-modal-close" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i></button>
             </div>
             <form id="formAddDeduction" onsubmit="submitAddDeduction(event)">
+                <?= csrfInput() ?>
                 <div class="ps-modal-body">
                     <div class="ps-form-group">
                         <label class="ps-form-label">Deduction Name <span class="text-danger">*</span></label>

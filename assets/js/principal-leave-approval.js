@@ -189,12 +189,31 @@ document.getElementById('fileLeaveForm')?.addEventListener('submit', async (e) =
     const start = form.start_date.value;
     const end   = form.end_date.value;
     const reason = form.reason.value.trim();
+    const errorBox = document.getElementById('fileLeaveError');
+    const showFileLeaveError = (message) => {
+        if (errorBox) {
+            errorBox.textContent = message;
+            errorBox.style.display = 'block';
+        } else {
+            showToast(message, 'error');
+        }
+    };
+    if (errorBox) {
+        errorBox.textContent = '';
+        errorBox.style.display = 'none';
+    }
 
-    if (!form.leave_type_id.value || !start || !end || !reason) {
-        showToast('Please fill in all required fields.', 'error'); return;
+    if (!form.leave_type_id.value || !start || !end) {
+        showFileLeaveError('Please fill in all required fields.'); return;
+    }
+    const reasonError = window.GEI && GEI.validateReason
+        ? GEI.validateReason(reason, 'Leave reason')
+        : (!reason ? 'Please fill in all required fields.' : '');
+    if (reasonError) {
+        showFileLeaveError(reasonError); return;
     }
     if (new Date(end) < new Date(start)) {
-        showToast('End date cannot be before start date.', 'error'); return;
+        showFileLeaveError('End date cannot be before start date.'); return;
     }
 
     const btn = document.getElementById('submitLeaveBtn');
@@ -220,10 +239,10 @@ document.getElementById('fileLeaveForm')?.addEventListener('submit', async (e) =
             if (fnd) fnd.style.display = 'none';
             setTimeout(() => location.reload(), 1200);
         } else {
-            showToast(data.message || 'Failed to submit.', 'error');
+            showFileLeaveError(data.message || 'Failed to submit.');
         }
     } catch {
-        showToast('Network error.', 'error');
+        showFileLeaveError('Network error. Please try again.');
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fa fa-paper-plane"></i> Submit Leave';
@@ -239,6 +258,24 @@ document.getElementById('leaveAttachment')?.addEventListener('change', function 
 /* ── Individual date action ─────────────────────────────────── */
 let pendingAction = null;
 
+function showRejectModalError(message) {
+    const errorBox = document.getElementById('rejectError');
+    if (errorBox) {
+        errorBox.textContent = message;
+        errorBox.style.display = 'block';
+    } else {
+        showToast(message, 'error');
+    }
+}
+
+function clearRejectModalError() {
+    const errorBox = document.getElementById('rejectError');
+    if (errorBox) {
+        errorBox.textContent = '';
+        errorBox.style.display = 'none';
+    }
+}
+
 function dateAction(dateId, leaveId, action) {
     pendingAction = { type: 'date', action, dateId, leaveId };
     const dateLabel = document.querySelector(`.lv-date-row[data-date-id="${dateId}"] .lv-date-cell`)?.textContent?.trim() || '';
@@ -253,6 +290,7 @@ function dateAction(dateId, leaveId, action) {
         if (msgEl) msgEl.textContent = `Rejecting leave date: ${dateLabel}. Add a note explaining your decision.`;
         const remarksEl = document.getElementById('rejectRemarks');
         if (remarksEl) remarksEl.value = '';
+        clearRejectModalError();
         openModal('rejectModal');
     }
 }
@@ -266,8 +304,24 @@ document.getElementById('confirmOkBtn')?.addEventListener('click', async () => {
 document.getElementById('rejectOkBtn')?.addEventListener('click', async () => {
     if (!pendingAction) return;
     pendingAction.remarks = (document.getElementById('rejectRemarks')?.value || '').trim();
-    closeModal('rejectModal');
-    await executeAction('reject', pendingAction);
+    clearRejectModalError();
+    const btn = document.getElementById('rejectOkBtn');
+    const oldHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Rejecting...';
+    }
+    const ok = await executeAction('reject', pendingAction, {
+        onError: showRejectModalError,
+        keepPendingOnError: true
+    });
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+    }
+    if (ok) {
+        closeModal('rejectModal');
+    }
 });
 
 /* ── Bulk action ────────────────────────────────────────────── */
@@ -283,12 +337,13 @@ function bulkAction(leaveId, action) {
         if (msgEl) msgEl.textContent = 'Reject ALL pending dates for this leave request?';
         const remarksEl = document.getElementById('rejectRemarks');
         if (remarksEl) remarksEl.value = '';
+        clearRejectModalError();
         openModal('rejectModal');
     }
 }
 
 /* ── Execute AJAX ───────────────────────────────────────────── */
-async function executeAction(action, ctx) {
+async function executeAction(action, ctx, options = {}) {
     const fd = new FormData();
     fd.append('action', action);
     if (ctx.type === 'date') {
@@ -318,12 +373,19 @@ async function executeAction(action, ctx) {
                 refreshCard(ctx.leaveId, action);
             }
         } else {
-            showToast(data.message || 'Action failed.', 'error');
+            const message = data.message || 'Action failed.';
+            if (options.onError) options.onError(message);
+            else showToast(message, 'error');
+            if (options.keepPendingOnError) return false;
         }
     } catch {
-        showToast('Network error. Please try again.', 'error');
+        const message = 'Network error. Please try again.';
+        if (options.onError) options.onError(message);
+        else showToast(message, 'error');
+        if (options.keepPendingOnError) return false;
     }
     pendingAction = null;
+    return true;
 }
 
 /* ── Optimistic DOM updates (card UI) ──────────────────────── */

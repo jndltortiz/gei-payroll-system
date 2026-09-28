@@ -393,7 +393,7 @@ function viewPayslip(payrollId) {
     fetch(BASE_URL + 'actions/employee-payslip-get.php?payroll_id=' + payrollId)
         .then(r => r.json())
         .then(data => {
-            if (!data.success) { alert(data.message); closePayslipModal(); return; }
+            if (!data.success) { showToast(data.message || 'Failed to load payslip.', 'error'); closePayslipModal(); return; }
             const r   = data.record;
             const att = data.attendance || {};
 
@@ -525,7 +525,7 @@ function viewPayslip(payrollId) {
             document.getElementById('ps-loading').style.display = 'none';
             document.getElementById('ps-content').style.display  = 'block';
         })
-        .catch(() => { alert('Failed to load payslip.'); closePayslipModal(); });
+        .catch(() => { showToast('Failed to load payslip.', 'error'); closePayslipModal(); });
 }
 
 function rowHtml(label, amount) {

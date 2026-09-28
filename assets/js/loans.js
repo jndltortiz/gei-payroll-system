@@ -626,8 +626,11 @@ async function _loadReviewDocs(loanId) {
 // The return_reason is required — validated here and enforced server-side.
 async function submitAdminReturn(loanId) {
     const reason = (document.getElementById('review-notes')?.value || '').trim();
-    if (!reason) {
-        showLoansFlash('review-flash', 'A return reason is required. Please describe what needs to be corrected.', false);
+    const reasonError = window.GEI && GEI.validateReason
+        ? GEI.validateReason(reason, 'Return reason')
+        : (!reason ? 'A return reason is required. Please describe what needs to be corrected.' : '');
+    if (reasonError) {
+        showLoansFlash('review-flash', reasonError, false);
         return;
     }
     const fd = new FormData();
@@ -1051,8 +1054,11 @@ async function cancelLoan(loanId) {
             placeholder: 'Reason for cancellation…',
         });
     } catch { return; }
-    if (!reason || !reason.trim()) {
-        showLoansFlash('details-flash', 'Cancellation reason is required.', false);
+    const reasonError = window.GEI && GEI.validateReason
+        ? GEI.validateReason(reason, 'Cancellation reason')
+        : (!reason || !reason.trim() ? 'Cancellation reason is required.' : '');
+    if (reasonError) {
+        showLoansFlash('details-flash', reasonError, false);
         return;
     }
     const fd = new FormData();

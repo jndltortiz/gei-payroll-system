@@ -66,6 +66,8 @@ if (!$old) {
 $userId = $_SESSION['user']['user_id'] ?? null;
 
 try {
+    $pdo->beginTransaction();
+
     $pdo->prepare("
         UPDATE attendance_records
         SET review_status = :rs,
@@ -77,8 +79,7 @@ try {
     $reason = $reviewStatus;
     if ($reviewRemark) $reason .= ': ' . $reviewRemark;
 
-    try {
-        $pdo->prepare("
+    $pdo->prepare("
             INSERT INTO attendance_audit_log
                 (attendance_id, changed_by, action_type,
                  old_status, new_status,
@@ -94,9 +95,7 @@ try {
             $old['attendance_source'],
             $reason,
         ]);
-    } catch (PDOException $auditEx) {
-        // Audit table absent — non-fatal
-    }
+    $pdo->commit();
 
     $label = match($reviewStatus) {
         'REVIEWED' => 'Marked as Reviewed',
@@ -108,6 +107,10 @@ try {
     echo json_encode(['success' => true, 'message' => $label . ' successfully.']);
 
 } catch (PDOException $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    error_log('[attendance] Principal review transaction failed: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => 'Attendance review failed. No changes were saved. Please try again or contact the administrator.']);
 }

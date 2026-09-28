@@ -379,7 +379,7 @@ require_once __DIR__ . '/../../includes/head.php';
           $rDates = $scDates[$r['service_credit_id']] ?? [];
           $rAudit = $scAudit[$r['service_credit_id']] ?? [];
           $rData  = array_merge($r, ['dates' => $rDates, 'audit' => $rAudit]);
-          $rJson  = htmlspecialchars(json_encode($rData), ENT_QUOTES);
+          $rJson  = htmlspecialchars(json_encode($rData, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
 
           $dc = (int)($r['date_count'] ?? 0);
           $fd = $r['first_date'] ?? $r['work_date'] ?? null;
@@ -424,6 +424,7 @@ require_once __DIR__ . '/../../includes/head.php';
               <?php endif; ?>
               <?php if ($canSubmit): ?>
               <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php" style="display:inline">
+                    <?= csrfInput() ?>
                 <input type="hidden" name="action" value="resubmit">
                 <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
                 <button type="submit" class="sc-action-btn sc-action-btn--approve" title="Submit for approval">
@@ -433,7 +434,12 @@ require_once __DIR__ . '/../../includes/head.php';
               <?php endif; ?>
               <?php if ($canDelete): ?>
               <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php" style="display:inline"
-                    onsubmit="return confirm('Delete this draft? This cannot be undone.')">
+                    data-confirm-title="Delete Service Credit Draft"
+                    data-confirm-message="Delete this draft?"
+                    data-confirm-note="This cannot be undone."
+                    data-confirm-type="danger"
+                    data-confirm-btn="Delete Draft">
+                    <?= csrfInput() ?>
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
                 <button type="submit" class="sc-icon-btn" title="Delete draft" style="color:#ef4444;border-color:#fca5a5;">
@@ -443,6 +449,7 @@ require_once __DIR__ . '/../../includes/head.php';
               <?php endif; ?>
               <?php if ($canResubmit): ?>
               <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php" style="display:inline">
+                    <?= csrfInput() ?>
                 <input type="hidden" name="action" value="resubmit">
                 <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
                 <button type="submit" class="sc-icon-btn sc-icon-btn--resubmit" title="Resubmit for approval">
@@ -452,6 +459,7 @@ require_once __DIR__ . '/../../includes/head.php';
               <?php endif; ?>
               <?php if ($canArchive): ?>
               <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php" style="display:inline">
+                    <?= csrfInput() ?>
                 <input type="hidden" name="action" value="archive">
                 <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
                 <button type="submit" class="sc-icon-btn sc-icon-btn--archive" title="Move to archive">
@@ -461,6 +469,7 @@ require_once __DIR__ . '/../../includes/head.php';
               <?php endif; ?>
               <?php if ($canRestore): ?>
               <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php" style="display:inline">
+                    <?= csrfInput() ?>
                 <input type="hidden" name="action" value="restore">
                 <input type="hidden" name="service_credit_id" value="<?= $r['service_credit_id'] ?>">
                 <button type="submit" class="sc-icon-btn sc-icon-btn--restore" title="Restore to draft">

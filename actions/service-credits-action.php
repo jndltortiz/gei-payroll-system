@@ -20,7 +20,7 @@
  * Multi-date POST arrays (save_draft / submit / edit):
  *   work_dates[]     — ISO date strings (YYYY-MM-DD)
  *   days_per_date[]  — day count per date (parallel index)
- *   pay_per_date[]   — equivalent pay per date (parallel index)
+ *   pay_per_date[]   — display-only client hint; server recomputes from daily rate
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
@@ -28,6 +28,13 @@ require_once __DIR__ . '/../includes/notif-utils.php';
 
 if (!isset($_SESSION['user'])) {
     header('Location: ' . BASE_URL . 'modules/auth/login.php'); exit;
+}
+
+requireCsrfForPost();
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    exit('Method not allowed.');
 }
 
 $action = trim($_POST['action'] ?? '');
@@ -43,10 +50,60 @@ $empId       = (int)($_POST['employee_id']         ?? 0);
 $remarks     = trim($_POST['remarks']              ?? '');
 $targetPerId = (int)($_POST['target_period_id']    ?? 0) ?: null;
 
+function scWantsJson(): bool
+{
+    $requestedWith = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '');
+    $accept = strtolower($_SERVER['HTTP_ACCEPT'] ?? '');
+
+    return $requestedWith === 'xmlhttprequest' || strpos($accept, 'application/json') !== false;
+}
+
+function scRespond(bool $success, string $message, string $back, int $status = 200): void
+{
+    if (scWantsJson()) {
+        http_response_code($status);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => $success, 'message' => $message]);
+        exit;
+    }
+
+    $_SESSION[$success ? 'sc_success' : 'sc_error'] = $message;
+    header("Location: $back");
+    exit;
+}
+
+function scFail(string $message, string $back, int $status = 422): void
+{
+    scRespond(false, $message, $back, $status);
+}
+
+function scSuccess(string $message, string $back): void
+{
+    scRespond(true, $message, $back);
+}
+
+function scActiveDailyRate(PDO $pdo, int $employeeId): float
+{
+    if (!$employeeId) {
+        return 0.0;
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT daily_rate
+        FROM employee_compensations
+        WHERE employee_id = ? AND is_active = 1
+        ORDER BY compensation_id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$employeeId]);
+    return round((float)($stmt->fetchColumn() ?: 0), 2);
+}
+
+$serverDailyRate = scActiveDailyRate($pdo, $empId);
+
 // ── Parse multi-date arrays ────────────────────────────────────────────────
 $rawDates = is_array($_POST['work_dates']    ?? null) ? $_POST['work_dates']    : [];
 $rawDays  = is_array($_POST['days_per_date'] ?? null) ? $_POST['days_per_date'] : [];
-$rawPay   = is_array($_POST['pay_per_date']  ?? null) ? $_POST['pay_per_date']  : [];
 
 $dateRows  = [];
 $totalDays = 0.0;
@@ -55,7 +112,7 @@ $totalPay  = 0.0;
 foreach ($rawDates as $i => $wd) {
     $wd  = trim($wd);
     $d   = isset($rawDays[$i]) ? max(0.5, (float)$rawDays[$i]) : 1.0;
-    $pay = isset($rawPay[$i])  ? max(0.0, (float)$rawPay[$i])  : 0.0;
+    $pay = round($serverDailyRate * $d, 2);
     if ($wd && preg_match('/^\d{4}-\d{2}-\d{2}$/', $wd)) {
         $dateRows[]  = ['date' => $wd, 'days' => $d, 'pay' => $pay];
         $totalDays  += $d;
@@ -67,7 +124,7 @@ foreach ($rawDates as $i => $wd) {
 if (empty($dateRows)) {
     $singleDate = trim($_POST['work_date']      ?? '');
     $singleDays = (float)($_POST['days']        ?? 0);
-    $singlePay  = (float)($_POST['equivalent_pay'] ?? 0);
+    $singlePay  = round($serverDailyRate * $singleDays, 2);
     if ($singleDate && $singleDays > 0) {
         $dateRows[] = ['date' => $singleDate, 'days' => $singleDays, 'pay' => $singlePay];
         $totalDays   = $singleDays;
@@ -76,6 +133,10 @@ if (empty($dateRows)) {
 }
 
 $firstDate = $dateRows[0]['date'] ?? date('Y-m-d');
+if (in_array($action, ['save_draft', 'submit', 'edit'], true) && $empId && $serverDailyRate <= 0) {
+    $_SESSION['sc_error'] = 'Selected employee has no active daily rate. Update compensation before recording service credit.';
+    header("Location: $back"); exit;
+}
 
 // ── SAVE DRAFT ────────────────────────────────────────────────────────────
 if ($action === 'save_draft') {
@@ -272,16 +333,22 @@ if ($action === 'approve') {
 
 // ── REJECT (bulk — all pending dates, principal only) ─────────────────────
 if ($action === 'reject') {
-    if (!isPrincipalRole()) { $_SESSION['sc_error'] = 'Only the Principal can reject service credits.'; header("Location: $back"); exit; }
+    if (!isPrincipalRole()) { scFail('Only the Principal can reject service credits.', $back, 403); }
     $reason = trim($_POST['rejection_reason'] ?? '');
-    if (!$scId) { $_SESSION['sc_error'] = 'Invalid record.'; header("Location: $back"); exit; }
-    if (!$reason) { $_SESSION['sc_error'] = 'Please provide a rejection reason.'; header("Location: $back"); exit; }
+    if (!$scId) { scFail('Invalid record.', $back); }
+    $reasonError = validateRequiredReason($reason, 'Rejection reason');
+    if ($reasonError !== null) { scFail($reasonError, $back); }
     $pdo->beginTransaction();
-    $pdo->prepare("
+    $rejectStmt = $pdo->prepare("
         UPDATE service_credits
         SET status='REJECTED', is_approved=0, rejection_reason=?, updated_at=NOW()
         WHERE service_credit_id=? AND status='PENDING'
-    ")->execute([$reason, $scId]);
+    ");
+    $rejectStmt->execute([$reason, $scId]);
+    if ($rejectStmt->rowCount() === 0) {
+        $pdo->rollBack();
+        scFail('Could not reject - credit may have already been processed.', $back);
+    }
     $pdo->prepare("
         UPDATE service_credit_dates
         SET status='REJECTED', rejection_reason=?, approved_by=?, approved_at=NOW()
@@ -307,8 +374,7 @@ if ($action === 'reject') {
     } catch (Exception $ignored) {}
 
     if ($uid) scLogAudit($pdo, $uid, 'REJECT', $scId, "Rejected SC #{$scId}: {$reason}");
-    $_SESSION['sc_success'] = 'Service credit rejected.';
-    header("Location: $back"); exit;
+    scSuccess('Service credit rejected.', $back);
 }
 
 // ── APPROVE DATE (per-date, principal only) ───────────────────────────────
@@ -343,18 +409,18 @@ if ($action === 'approve_date') {
 
 // ── REJECT DATE (per-date, principal only) ────────────────────────────────
 if ($action === 'reject_date') {
-    if (!isPrincipalRole()) { $_SESSION['sc_error'] = 'Only the Principal can reject individual work dates.'; header("Location: $back"); exit; }
+    if (!isPrincipalRole()) { scFail('Only the Principal can reject individual work dates.', $back, 403); }
     $reason = trim($_POST['rejection_reason'] ?? '');
-    if (!$scDateId || !$scId) { $_SESSION['sc_error'] = 'Invalid parameters.'; header("Location: $back"); exit; }
-    if (!$reason) { $_SESSION['sc_error'] = 'Please provide a rejection reason.'; header("Location: $back"); exit; }
+    if (!$scDateId || !$scId) { scFail('Invalid parameters.', $back); }
+    $reasonError = validateRequiredReason($reason, 'Rejection reason');
+    if ($reasonError !== null) { scFail($reasonError, $back); }
     $check = $pdo->prepare("
         SELECT sc_date_id FROM service_credit_dates
         WHERE sc_date_id=? AND service_credit_id=? AND status='PENDING'
     ");
     $check->execute([$scDateId, $scId]);
     if (!$check->fetch()) {
-        $_SESSION['sc_error'] = 'Date not found or already reviewed.';
-        header("Location: $back"); exit;
+        scFail('Date not found or already reviewed.', $back);
     }
     $pdo->beginTransaction();
     $pdo->prepare("
@@ -366,8 +432,7 @@ if ($action === 'reject_date') {
     $pdo->commit();
     if ($uid) scLogAudit($pdo, $uid, 'REJECT_DATE', $scId,
         "Rejected date #$scDateId of SC #$scId: $reason → parent now $newStatus");
-    $_SESSION['sc_success'] = 'Date rejected.';
-    header("Location: $back"); exit;
+    scSuccess('Date rejected.', $back);
 }
 
 // ── ARCHIVE ───────────────────────────────────────────────────────────────

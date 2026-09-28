@@ -287,6 +287,7 @@ $userName = trim(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['use
 
     <!-- Form -->
     <form action="<?= BASE_URL ?>actions/change-password-action.php" method="POST" class="cp-form">
+        <?= csrfInput() ?>
 
         <div class="cp-field">
             <label class="cp-label" for="current_password">Current Password</label>

@@ -284,6 +284,8 @@ if ($action === 'deny') {
     $loanId = (int)($_POST['loan_id'] ?? 0);
     $reason = trim($_POST['denied_reason'] ?? '');
     if (!$loanId) { echo json_encode(['success'=>false,'message'=>'Invalid loan ID.']); exit; }
+    $reasonError = validateRequiredReason($reason, 'Rejection reason');
+    if ($reasonError !== null) { echo json_encode(['success'=>false,'message'=>$reasonError]); exit; }
 
     try {
         $pdo->prepare("
@@ -326,7 +328,8 @@ if ($action === 'return_for_correction') {
     $loanId = (int)($_POST['loan_id']    ?? 0);
     $reason = trim($_POST['return_reason'] ?? '');
     if (!$loanId) { echo json_encode(['success'=>false,'message'=>'Invalid loan ID.']); exit; }
-    if (!$reason) { echo json_encode(['success'=>false,'message'=>'A reason for return is required.']); exit; }
+    $reasonError = validateRequiredReason($reason, 'Return reason');
+    if ($reasonError !== null) { echo json_encode(['success'=>false,'message'=>$reasonError]); exit; }
 
     try {
         $updated = $pdo->prepare("
@@ -549,6 +552,8 @@ if ($action === 'cancel') {
     $loanId = (int)($_POST['loan_id']            ?? 0);
     $reason = trim($_POST['cancelled_reason']    ?? '');
     if (!$loanId) { echo json_encode(['success'=>false,'message'=>'Invalid loan ID.']); exit; }
+    $reasonError = validateRequiredReason($reason, 'Cancellation reason');
+    if ($reasonError !== null) { echo json_encode(['success'=>false,'message'=>$reasonError]); exit; }
 
     try {
         $updated = $pdo->prepare("

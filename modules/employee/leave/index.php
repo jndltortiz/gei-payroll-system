@@ -257,7 +257,7 @@ endif;
             $wfLabel = '';
             if ($hasMig016) {
                 $wfLabel = match($wfStatus) {
-                    'PENDING_REVIEW' => '<span style="font-size:10px;color:#92400e;background:#fef3c7;padding:2px 7px;border-radius:99px;">Under Admin Review</span>',
+                    'PENDING_REVIEW' => '<span style="font-size:10px;color:#065f46;background:#d1fae5;padding:2px 7px;border-radius:99px;">With Principal</span>',
                     'FORWARDED'      => '<span style="font-size:10px;color:#065f46;background:#d1fae5;padding:2px 7px;border-radius:99px;">With Principal</span>',
                     'RECORDED'       => '<span style="font-size:10px;color:#065f46;background:#d1fae5;padding:2px 7px;border-radius:99px;">Finalised</span>',
                     default          => '',
@@ -422,7 +422,7 @@ endif;
         </div>
         <div class="emp-form-group">
           <label class="emp-form-label">Reason for Late Filing <span style="color:#ef4444;">*</span></label>
-          <textarea class="emp-form-control" id="empBackdateReason" rows="2"
+          <textarea class="emp-form-control" id="empBackdateReason" rows="2" minlength="10"
               placeholder="e.g. I was hospitalized and unable to file on time."></textarea>
         </div>
       </div>
@@ -430,7 +430,7 @@ endif;
       <!-- Reason -->
       <div class="emp-form-group">
         <label class="emp-form-label">Reason / Description <span style="color:#ef4444;">*</span></label>
-        <textarea class="emp-form-control" id="empLeaveReason" rows="3"
+        <textarea class="emp-form-control" id="empLeaveReason" rows="3" minlength="10"
             placeholder="Describe the reason for your leave request…"></textarea>
       </div>
 
@@ -1005,26 +1005,32 @@ async function submitEmpLeave() {
     const mode    = empCal.mode;
     const today   = todayYMD();
 
-    if (!typeId)  { alert('Please select a leave type.'); return; }
-    if (!reason)  { alert('Please enter a reason for your leave.'); return; }
+    if (!typeId)  { showToast('Please select a leave type.', 'warning'); return; }
+    const reasonError = window.GEI && GEI.validateReason
+        ? GEI.validateReason(reason, 'Leave reason')
+        : (!reason ? 'Please enter a reason for your leave.' : '');
+    if (reasonError)  { showToast(reasonError, 'warning'); return; }
 
     // Mode-specific date pre-checks
     if (mode === 'RANGE') {
         const from = document.getElementById('empRangeFrom').value;
         const to   = document.getElementById('empRangeTo').value;
-        if (!from || !to) { alert('Please enter both From and To dates.'); return; }
-        if (to < from)    { alert('End date cannot be before start date.'); return; }
+        if (!from || !to) { showToast('Please enter both From and To dates.', 'warning'); return; }
+        if (to < from)    { showToast('End date cannot be before start date.', 'warning'); return; }
     }
 
     if (empCal.selected.length === 0) {
-        alert('Please select at least one date.'); return;
+        showToast('Please select at least one date.', 'warning'); return;
     }
 
     const hasPast = empCal.selected.some(d => d < today);
     if (empCal.allowBackdated && hasPast) {
         const backReason = document.getElementById('empBackdateReason').value.trim();
-        if (!backReason) {
-            alert('Please explain why this leave is being filed after the date(s) occurred.'); return;
+        const backReasonError = window.GEI && GEI.validateReason
+            ? GEI.validateReason(backReason, 'Late filing reason')
+            : (!backReason ? 'Please explain why this leave is being filed after the date(s) occurred.' : '');
+        if (backReasonError) {
+            showToast(backReasonError, 'warning'); return;
         }
     }
 
@@ -1107,7 +1113,7 @@ function buildEmpDetailHtml(data) {
         </div>`;
 
     let wfBadge = '';
-    if      (wf === 'PENDING_REVIEW') wfBadge = '<span style="background:#fef3c7;color:#92400e;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;">Under Admin Review</span>';
+    if      (wf === 'PENDING_REVIEW') wfBadge = '<span style="background:#d1fae5;color:#065f46;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;">With Principal</span>';
     else if (wf === 'FORWARDED')      wfBadge = '<span style="background:#d1fae5;color:#065f46;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;">With Principal</span>';
     else if (wf === 'RECORDED')       wfBadge = '<span style="background:#d1fae5;color:#065f46;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;">Finalised</span>';
 
@@ -1199,7 +1205,7 @@ function closeEmpLeaveDetail() {
 function onEmpFileSelected(input) {
     const file = input.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert('File too large — max 5 MB.'); input.value = ''; return; }
+    if (file.size > 5 * 1024 * 1024) { showToast('File too large. Max 5 MB.', 'error'); input.value = ''; return; }
     document.getElementById('empFileName').textContent =
         file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
     document.getElementById('empFilePreview').style.display = 'flex';

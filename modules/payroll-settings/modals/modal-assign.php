@@ -7,6 +7,7 @@
                 <button type="button" class="ps-modal-close" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i></button>
             </div>
             <form id="formAssign" onsubmit="submitAssignment(event)">
+                <?= csrfInput() ?>
                 <input type="hidden" name="item_type" id="assignItemType">
                 <input type="hidden" name="item_id"   id="assignItemId">
                 <div class="ps-modal-body">

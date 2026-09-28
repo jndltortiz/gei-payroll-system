@@ -11,6 +11,16 @@ require_once __DIR__ . '/../../includes/auth.php';
 requireLogin();
 blockIfMustChangePassword();
 
+if (!function_exists('nfJsLiteral')) {
+    function nfJsLiteral($value): string {
+        return htmlspecialchars(
+            json_encode($value, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
+            ENT_QUOTES,
+            'UTF-8'
+        );
+    }
+}
+
 $userId = (int)($_SESSION['user']['user_id']     ?? 0);
 $empId  = (int)($_SESSION['user']['employee_id'] ?? 0);
 
@@ -295,7 +305,7 @@ if (isEmployee()) {
           ?>
           <a class="nf-item <?= $unread ? 'nf-unread' : '' ?>"
              href="<?= htmlspecialchars($href) ?>"
-             onclick="nfMarkRead(event, <?= (int)$n['notification_id'] ?>, '<?= htmlspecialchars(addslashes($href)) ?>')">
+             onclick="nfMarkRead(event, <?= (int)$n['notification_id'] ?>, <?= nfJsLiteral($href) ?>)">
 
             <div class="nf-item-icon" style="background:<?= $bgRgba ?>;color:<?= $color ?>">
               <i class="fa <?= $icon ?>"></i>

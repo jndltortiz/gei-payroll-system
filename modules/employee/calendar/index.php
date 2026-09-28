@@ -729,6 +729,7 @@ endif;
       <button class="ecal-mclose" onclick="CAL.closeEntry(null)"><i class="fa fa-times"></i></button>
     </div>
     <form id="entry-form" onsubmit="event.preventDefault(); CAL.saveEntry();">
+      <?= csrfInput() ?>
       <input type="hidden" name="entry_id" id="f-entry-id">
       <div class="ecal-mbody">
 
@@ -1453,7 +1454,15 @@ const CAL = (() => {
     }
 
     async function deleteEntry(entryId) {
-        if (!confirm('Delete this entry? This cannot be undone.')) return;
+        try {
+            await GEI.confirm({
+                title: 'Delete Calendar Entry',
+                message: 'Delete this entry?',
+                note: 'This cannot be undone.',
+                type: 'danger',
+                confirmText: 'Delete Entry',
+            });
+        } catch(e) { return; }
         closeDetail(null);
         const fd = new FormData();
         fd.append('action', 'delete_entry');

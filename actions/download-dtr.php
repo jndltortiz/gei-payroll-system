@@ -12,7 +12,7 @@ require_once __DIR__ . '/../includes/auth.php';
 requireLogin();
 
 // Employees cannot access DTR files
-$role = $_SESSION['user']['role'] ?? '';
+$role = $_SESSION['user']['role_name'] ?? '';
 if ($role === 'Employee') {
     http_response_code(403);
     exit('Access denied.');

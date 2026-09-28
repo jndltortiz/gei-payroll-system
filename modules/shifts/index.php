@@ -11,7 +11,9 @@ unset($_SESSION['sh_success'], $_SESSION['sh_error']);
 // ── Fetch all shifts with employee count ──────────────────────────────────────
 $shifts = $pdo->query("
     SELECT s.*,
-           COUNT(e.employee_id) AS employee_count
+           COUNT(e.employee_id) AS employee_count,
+           SUM(CASE WHEN e.employment_type = 'FULL_TIME' THEN 1 ELSE 0 END) AS full_time_count,
+           SUM(CASE WHEN e.employment_type = 'PART_TIME' THEN 1 ELSE 0 END) AS part_time_count
     FROM shifts s
     LEFT JOIN employees e ON e.shift_id = s.shift_id AND e.employee_status = 'ACTIVE'
     GROUP BY s.shift_id
@@ -136,7 +138,7 @@ require_once __DIR__ . '/../../includes/head.php';
           <th>End Time</th>
           <th>Duration</th>
           <th>Grace Period</th>
-          <th>Half-Day At</th>
+          <th>Half-Day Rule</th>
           <th class="sortable" data-col="6" data-sort-type="number">Employees</th>
           <th class="sortable" data-col="7" data-sort-type="text">Status</th>
           <th>Actions</th>
@@ -153,6 +155,15 @@ require_once __DIR__ . '/../../includes/head.php';
           $halfDayLabel = $s['half_day_time']
               ? date('h:i A', strtotime('1970-01-01 ' . $s['half_day_time']))
               : '<span class="sh-none">—</span>';
+          $fullTimeCount = (int)($s['full_time_count'] ?? 0);
+          $partTimeCount = (int)($s['part_time_count'] ?? 0);
+          $isPartTimeOnlyShift = (
+              stripos($s['shift_name'] ?? '', 'part') !== false
+              || ($partTimeCount > 0 && $fullTimeCount === 0)
+          );
+          $halfDayLabel = $isPartTimeOnlyShift
+              ? '<span class="sh-none">N/A</span>'
+              : '09:00 AM';
         ?>
         <tr class="<?= !$s['is_active'] ? 'sh-row--inactive' : '' ?>">
           <td>
@@ -190,10 +201,11 @@ require_once __DIR__ . '/../../includes/head.php';
           <td>
             <div class="sh-action-btns">
               <button class="sh-btn-sm sh-btn-sm--outline"
-                      onclick="openEditModal(<?= htmlspecialchars(json_encode($s)) ?>)">
+                      onclick="openEditModal(<?= htmlspecialchars(json_encode($s, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>)">
                 <i class="fa fa-pen"></i> Edit
               </button>
               <form method="POST" action="<?= BASE_URL ?>actions/shift-action.php" style="display:inline;">
+                    <?= csrfInput() ?>
                 <input type="hidden" name="action"   value="toggle_active">
                 <input type="hidden" name="shift_id" value="<?= $s['shift_id'] ?>">
                 <button type="submit" class="sh-btn-sm <?= $s['is_active'] ? 'sh-btn-sm--warn' : 'sh-btn-sm--teal' ?>">
@@ -208,6 +220,7 @@ require_once __DIR__ . '/../../includes/head.php';
                     data-confirm-note="This cannot be undone."
                     data-confirm-type="danger"
                     data-confirm-btn="Delete Shift">
+                    <?= csrfInput() ?>
                 <input type="hidden" name="action"   value="delete">
                 <input type="hidden" name="shift_id" value="<?= $s['shift_id'] ?>">
                 <button type="submit" class="sh-btn-sm sh-btn-sm--danger">
@@ -264,6 +277,7 @@ require_once __DIR__ . '/../../includes/head.php';
       </button>
     </div>
     <form method="POST" action="<?= BASE_URL ?>actions/shift-action.php" id="shForm">
+                    <?= csrfInput() ?>
       <input type="hidden" name="action"   id="shFormAction" value="create">
       <input type="hidden" name="shift_id" id="shFormId"     value="">
       <div class="sh-modal-body">
@@ -298,7 +312,8 @@ require_once __DIR__ . '/../../includes/head.php';
           </div>
           <div class="sh-form-group">
             <label>Half-Day Threshold <span class="sh-field-note">(full-time only)</span></label>
-            <input type="time" name="half_day_time" id="shHalfDay">
+            <input type="time" name="half_day_time" id="shHalfDay" value="09:00" disabled>
+            <small>Fixed by policy at 9:00 AM; part-time employees are excluded.</small>
           </div>
         </div>
 
@@ -342,7 +357,7 @@ function openEditModal(s) {
     document.getElementById('shStart').value      = s.start_time  ? s.start_time.substring(0,5)  : '';
     document.getElementById('shEnd').value        = s.end_time    ? s.end_time.substring(0,5)    : '';
     document.getElementById('shGrace').value      = s.grace_period_minutes || 0;
-    document.getElementById('shHalfDay').value    = s.half_day_time ? s.half_day_time.substring(0,5) : '';
+    document.getElementById('shHalfDay').value    = '09:00';
     document.getElementById('shIsActive').checked = !!parseInt(s.is_active);
     document.getElementById('shSubmitLabel').textContent = 'Update Shift';
     document.getElementById('shModal').style.display = 'flex';

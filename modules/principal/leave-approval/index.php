@@ -28,13 +28,13 @@ $thisM = date('Y-m');
 $nextM = date('Y-m', strtotime('+1 month'));
 
 // ── Dashboard stats ───────────────────────────────────────────────────────────
-// Pending (forwarded by admin, principal needs to decide)
+// Pending direct submissions that principal needs to decide.
 if ($hasMig016) {
     $sPending = (int)$pdo->query("
         SELECT COUNT(DISTINCT lr.leave_id)
         FROM leave_requests lr
         JOIN leave_request_dates lrd ON lr.leave_id = lrd.leave_id
-        WHERE lr.workflow_status = 'FORWARDED' AND lrd.status = 'PENDING'
+        WHERE lr.workflow_status IN ('PENDING_REVIEW','FORWARDED') AND lrd.status = 'PENDING'
     ")->fetchColumn();
 } else {
     $sPending = (int)$pdo->query("
@@ -89,7 +89,7 @@ if ($hasMig016) {
         FROM leave_requests lr
         JOIN leave_request_dates lrd ON lr.leave_id = lrd.leave_id
         WHERE lr.is_backdated = 1 AND lrd.status = 'PENDING'
-          AND lr.workflow_status = 'FORWARDED'
+          AND lr.workflow_status IN ('PENDING_REVIEW','FORWARDED')
     ")->fetchColumn();
 }
 
@@ -148,7 +148,7 @@ $records = [];
 $params  = [];
 
 if ($tab === 'pending') {
-    $wfCond = $hasMig016 ? "lr.workflow_status = 'FORWARDED'" : "1=1";
+    $wfCond = $hasMig016 ? "lr.workflow_status IN ('PENDING_REVIEW','FORWARDED')" : "1=1";
     $extra  = buildPrincipalFilters($fDept, $fType, $fMonth, $fSearch, $params);
     $sql    = $baseSelect . "
         WHERE ({$wfCond}){$extra}
@@ -157,7 +157,7 @@ if ($tab === 'pending') {
         ORDER BY lr.created_at ASC";
 
 } elseif ($tab === 'decided') {
-    $wfCond = $hasMig016 ? "lr.workflow_status = 'FORWARDED'" : "lr.status IN ('APPROVED','REJECTED')";
+    $wfCond = $hasMig016 ? "lr.workflow_status IN ('PENDING_REVIEW','FORWARDED')" : "lr.status IN ('APPROVED','REJECTED')";
     $extra  = buildPrincipalFilters($fDept, $fType, $fMonth, $fSearch, $params);
     $sql    = $baseSelect . "
         WHERE ({$wfCond}){$extra}
@@ -216,7 +216,7 @@ require_once __DIR__ . '/../../../includes/head.php';
     <div class="principal-page-header" style="margin-bottom:20px;">
       <div>
         <h1 style="font-size:22px;font-weight:700;color:#0f172a;margin:0 0 4px;">Leave Management</h1>
-        <p style="font-size:13px;color:#64748b;margin:0;">Approve or reject leave requests per date. Admin forwards requests here for your decision.</p>
+        <p style="font-size:13px;color:#64748b;margin:0;">Approve or reject employee-filed leave requests per date.</p>
       </div>
     </div>
 
@@ -225,7 +225,7 @@ require_once __DIR__ . '/../../../includes/head.php';
       <a href="?tab=pending" class="lv-stat-card lv-stat-amber" style="text-decoration:none;cursor:pointer;<?= $tab==='pending'?'box-shadow:0 0 0 2px #d97706;':'' ?>">
         <div class="lv-stat-label">Pending Decision</div>
         <div class="lv-stat-value"><?= $sPending ?></div>
-        <div class="lv-stat-sub">Forwarded by admin</div>
+        <div class="lv-stat-sub">Direct submissions</div>
       </a>
       <div class="lv-stat-card" style="background:#fff;border:1px solid #e2e8f0;">
         <div class="lv-stat-label">On Leave Today</div>

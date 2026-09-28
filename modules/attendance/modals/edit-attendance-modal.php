@@ -17,6 +17,7 @@
          background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:13px;"></div>
 
     <form id="editAttForm" onsubmit="submitEditAttendance(event)">
+        <?= csrfInput() ?>
       <div class="att-modal-body">
 
         <input type="hidden" name="attendance_id" id="edit_id">
@@ -42,7 +43,7 @@
         <!-- Date -->
         <div class="att-field">
           <label>Date <span class="req">*</span></label>
-          <input type="date" name="date" id="edit_date" required>
+          <input type="date" name="date" id="edit_date" max="<?= date('Y-m-d') ?>" required>
         </div>
 
         <!-- Time In / Out -->
@@ -92,7 +93,7 @@
         <!-- Reason for modification (required for audit) -->
         <div class="att-field">
           <label>Reason for Modification <span class="req">*</span></label>
-          <textarea name="reason" id="edit_reason" rows="2" required
+          <textarea name="reason" id="edit_reason" rows="2" required minlength="10"
                     placeholder="Required: explain why this record is being corrected (e.g. wrong input, missed time-in, verification adjustment)…"
                     style="border-color:#f97316;"></textarea>
           <small style="font-size:11px;color:#b45309;">
@@ -118,6 +119,7 @@ window.openEditModal = function(id, name, empNo, date, timeIn, timeOut, status, 
     document.getElementById('edit_id').value       = id;
     document.getElementById('edit_employee').value = empNo ? `${name}  (${empNo})` : name;
     document.getElementById('edit_date').value     = date  || '';
+    document.getElementById('edit_date').max       = '<?= date('Y-m-d') ?>';
     document.getElementById('edit_time_in').value  = timeIn  ? timeIn.substring(0, 5)  : '';
     document.getElementById('edit_time_out').value = timeOut ? timeOut.substring(0, 5) : '';
     document.getElementById('edit_status').value   = status || 'PRESENT';
@@ -170,6 +172,23 @@ function submitEditAttendance(e) {
     const errBox = document.getElementById('editAttError');
 
     errBox.style.display = 'none';
+
+    if (document.getElementById('edit_date').value > '<?= date('Y-m-d') ?>') {
+        errBox.textContent = 'Attendance date cannot be in the future.';
+        errBox.style.display = 'block';
+        return;
+    }
+
+    const reason = document.getElementById('edit_reason').value.trim();
+    const reasonError = window.GEI && GEI.validateReason
+        ? GEI.validateReason(reason, 'Reason for modification')
+        : (!reason ? 'Reason for modification is required.' : '');
+    if (reasonError) {
+        errBox.textContent = reasonError;
+        errBox.style.display = 'block';
+        return;
+    }
+
     btn.disabled         = true;
     btn.innerHTML        = '<i class="fa fa-spinner fa-spin"></i> Saving…';
 

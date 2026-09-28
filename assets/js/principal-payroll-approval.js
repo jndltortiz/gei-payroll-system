@@ -368,6 +368,40 @@ async function submitApprove() {
     }
 }
 
+window.openReleaseConfirm = async function(periodId, label) {
+    if (!window.GEI || !GEI.confirm) {
+        showToast('Confirmation UI is unavailable. Please refresh and try again.', 'error');
+        return;
+    }
+
+    try {
+        await GEI.confirm({
+            title: 'Release Payroll',
+            message: `Release payroll for "${label}"? This confirms salaries have been distributed and makes payslips available.`,
+            note: 'Only the Principal/Special Assistant can release approved payroll. This action locks the batch as released.',
+            type: 'warning',
+            confirmText: 'Release Payroll',
+        });
+    } catch {
+        return;
+    }
+
+    const fd = new FormData();
+    fd.append('action', 'release');
+    fd.append('period_id', periodId);
+
+    try {
+        const res = await fetch(`${BASE_URL}actions/payroll-approve.php`, { method: 'POST', body: fd });
+        const data = await res.json();
+        showToast(data.message || (data.success ? 'Payroll released.' : 'Release failed.'), data.success ? 'success' : 'error');
+        if (data.success) {
+            setTimeout(() => location.reload(), 1500);
+        }
+    } catch {
+        showToast('Network error. Please try again.', 'error');
+    }
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // REJECT / RETURN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -388,7 +422,11 @@ function closeReject() { closeOverlay('rejectOverlay'); }
 
 async function submitReject() {
     const remarks = document.getElementById('rejectRemarks').value.trim();
-    if (!remarks) {
+    const remarksError = window.GEI && GEI.validateReason
+        ? GEI.validateReason(remarks, 'Return reason')
+        : (!remarks ? 'Please enter a reason for rejection.' : '');
+    if (remarksError) {
+        document.getElementById('rejectError').textContent = remarksError;
         document.getElementById('rejectError').style.display = 'block';
         return;
     }
@@ -406,10 +444,18 @@ async function submitReject() {
     try {
         const res  = await fetch(`${BASE_URL}actions/payroll-approve.php`, { method: 'POST', body: fd });
         const data = await res.json();
-        closeReject();
-        showToast(data.message, data.success ? 'success' : 'error');
-        if (data.success) setTimeout(() => location.reload(), 1500);
-        else {
+        if (data.success) {
+            closeReject();
+            showToast(data.message, 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            const errorEl = document.getElementById('rejectError');
+            if (errorEl) {
+                errorEl.textContent = data.message || 'Return failed. Please check the reason and try again.';
+                errorEl.style.display = 'block';
+            } else {
+                showToast(data.message || 'Return failed.', 'error');
+            }
             btn.disabled = false;
             btn.innerHTML = '<i class="fa fa-circle-xmark"></i> Submit Rejection';
         }

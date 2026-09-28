@@ -5,7 +5,8 @@
       <h3><i class="fa fa-circle-xmark" style="color:#ef4444"></i> Reject Service Credit</h3>
       <button onclick="closeModal('rejectModal')"><i class="fa fa-times"></i></button>
     </div>
-    <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php">
+    <form method="POST" action="<?= BASE_URL ?>actions/service-credits-action.php" id="scRejectForm">
+                    <?= csrfInput() ?>
       <input type="hidden" name="action" value="reject">
       <input type="hidden" name="service_credit_id" id="rejectScId" value="">
       <div class="sc-modal-body">
@@ -18,12 +19,13 @@
           <label>Rejection Reason <span class="req">*</span></label>
           <textarea name="rejection_reason" id="rejectReason" rows="3"
                     placeholder="State why this credit is being rejected…"
-                    required maxlength="500"></textarea>
+                    required minlength="10" maxlength="500"></textarea>
         </div>
+        <div id="scRejectError" class="alert alert-danger" style="display:none;margin-top:12px;"></div>
       </div>
       <div class="sc-modal-footer">
         <button type="button" class="sc-btn-ghost" onclick="closeModal('rejectModal')">Cancel</button>
-        <button type="submit" class="sc-btn-danger">
+        <button type="submit" class="sc-btn-danger" id="scRejectSubmitBtn">
           <i class="fa fa-circle-xmark"></i> Submit Rejection
         </button>
       </div>

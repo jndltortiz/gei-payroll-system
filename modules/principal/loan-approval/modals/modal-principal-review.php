@@ -33,7 +33,7 @@
       <label style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#9ca3af;text-transform:uppercase;display:block;margin-bottom:6px;">
         REASON FOR REJECTION <span style="color:#ef4444">*</span>
       </label>
-      <textarea id="principal-deny-reason" rows="3"
+      <textarea id="principal-deny-reason" rows="3" minlength="10"
                 style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;resize:vertical;"
                 placeholder="Provide a reason for rejecting this record…"></textarea>
       <p id="deny-reason-error" style="display:none;font-size:12px;color:#ef4444;margin-top:4px;">Reason is required.</p>
@@ -64,7 +64,7 @@
       <label style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#9ca3af;text-transform:uppercase;display:block;margin-bottom:6px;">
         REASON / WHAT NEEDS CORRECTION <span style="color:#f59e0b">*</span>
       </label>
-      <textarea id="principal-return-reason" rows="3"
+      <textarea id="principal-return-reason" rows="3" minlength="10"
                 style="width:100%;padding:10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;resize:vertical;"
                 placeholder="Describe what needs to be corrected…"></textarea>
       <p id="return-reason-error" style="display:none;font-size:12px;color:#ef4444;margin-top:4px;">Reason is required.</p>

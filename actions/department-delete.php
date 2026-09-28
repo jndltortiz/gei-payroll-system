@@ -1,52 +1,63 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
-requireLogin();
-redirectIfNoRole(['SUPERADMIN', 'PRINCIPAL', 'ASSISTANTPRINCIPAL']);
+requireAdminPage();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: ' . BASE_URL . 'modules/departments/index.php');
     exit;
 }
 
-$departmentid = (int)($_POST['departmentid'] ?? 0);
+$departmentId = (int)($_POST['department_id'] ?? $_POST['departmentid'] ?? 0);
 
-if ($departmentid <= 0) {
+if ($departmentId <= 0) {
     setFlash('danger', 'Invalid department.');
     header('Location: ' . BASE_URL . 'modules/departments/index.php');
     exit;
 }
 
 try {
-    // Prevent delete if positions exist
-    $check = $pdo->prepare("SELECT COUNT(*) FROM positions WHERE departmentid = :id");
-    $check->execute([':id' => $departmentid]);
+    $userId = $_SESSION['user']['user_id'] ?? null;
+    $pdo->beginTransaction();
+
+    $check = $pdo->prepare("SELECT COUNT(*) FROM positions WHERE department_id = :id");
+    $check->execute([':id' => $departmentId]);
     if ((int)$check->fetchColumn() > 0) {
-        setFlash('danger', 'Cannot delete — this department still has positions linked to it. Remove the positions first.');
+        $pdo->rollBack();
+        setFlash('danger', 'Cannot delete this department because positions are still linked to it. Remove the positions first.');
         header('Location: ' . BASE_URL . 'modules/departments/index.php');
         exit;
     }
 
-    // Get name for audit log
-    $nameStmt = $pdo->prepare("SELECT departmentname FROM departments WHERE departmentid = :id");
-    $nameStmt->execute([':id' => $departmentid]);
+    $nameStmt = $pdo->prepare("SELECT department_name FROM departments WHERE department_id = :id");
+    $nameStmt->execute([':id' => $departmentId]);
     $deptName = $nameStmt->fetchColumn();
 
-    $stmt = $pdo->prepare("DELETE FROM departments WHERE departmentid = :id");
-    $stmt->execute([':id' => $departmentid]);
+    if ($deptName === false) {
+        $pdo->rollBack();
+        setFlash('danger', 'Department not found.');
+        header('Location: ' . BASE_URL . 'modules/departments/index.php');
+        exit;
+    }
 
-    // Audit log
+    $stmt = $pdo->prepare("DELETE FROM departments WHERE department_id = :id");
+    $stmt->execute([':id' => $departmentId]);
+
     $pdo->prepare("
-        INSERT INTO auditlogs (userid, action, tablename, recordid, description)
+        INSERT INTO audit_logs (user_id, action, table_name, record_id, description)
         VALUES (:uid, 'DELETE', 'departments', :rid, :desc)
     ")->execute([
-        ':uid'  => user()['userid'],
-        ':rid'  => $departmentid,
+        ':uid'  => $userId,
+        ':rid'  => $departmentId,
         ':desc' => 'Deleted department: ' . $deptName,
     ]);
 
+    $pdo->commit();
     setFlash('success', 'Department "' . $deptName . '" deleted successfully.');
 
 } catch (PDOException $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     setFlash('danger', 'Database error: ' . $e->getMessage());
 }
 

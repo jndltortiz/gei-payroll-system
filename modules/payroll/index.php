@@ -35,6 +35,9 @@ foreach ($allPeriods as $p) {
     if ($p['period_id'] == $selectedId) { $selectedPeriod = $p; break; }
 }
 $periodIsEditable = $selectedPeriod && $selectedPeriod['status'] === 'OPEN';
+$selectedPeriodType = $selectedPeriod['period_type'] ?? 'REGULAR';
+$isSelectedThirteenthMonth = $selectedPeriodType === 'THIRTEENTH_MONTH';
+$recordsAreEditable = $periodIsEditable && !$isSelectedThirteenthMonth;
 
 // ── Period groupings for the optgroup selector ────────────────────────────────
 $activeStatuses = ['OPEN', 'PROCESSING', 'APPROVED'];
@@ -76,7 +79,7 @@ if ($selectedId) {
     $stmt = $pdo->prepare("
         SELECT pr.payroll_id, pr.employee_id, pr.basic_pay, pr.gross_pay,
                pr.total_allowances, pr.total_deductions, pr.net_pay, pr.payroll_status,
-               pr.released_at,
+               pr.released_at, pr.remarks,
                COALESCE(pr.employer_sss_share, 0)        AS employer_sss_share,
                COALESCE(pr.employer_philhealth_share, 0) AS employer_philhealth_share,
                COALESCE(pr.employer_pagibig_share, 0)    AS employer_pagibig_share,
@@ -256,7 +259,7 @@ require_once __DIR__ . '/../../includes/head.php';
             <?php endif; ?>
             <?php if ($periodIsEditable): ?>
             <button class="btn-primary" onclick="openGenerateModal()">
-                <i class="fa fa-play"></i> Generate Payroll
+                <i class="fa fa-play"></i> <?= $isSelectedThirteenthMonth ? 'Generate 13th Month Pay' : 'Generate Payroll' ?>
             </button>
             <?php endif; ?>
         </div>
@@ -276,6 +279,9 @@ require_once __DIR__ . '/../../includes/head.php';
                         $optLabel    = $isAccrued
                             ? 'Accrued Pay – ' . date('F Y', strtotime($p['pay_period_start'] ?? 'now'))
                             : htmlspecialchars($p['period_name'] ?? '');
+                        if (($p['period_type'] ?? 'REGULAR') === 'THIRTEENTH_MONTH') {
+                            $optLabel = '13th Month Pay - ' . date('Y', strtotime($p['pay_period_start'] ?? 'now'));
+                        }
                     ?>
                     <option value="<?= $p['period_id'] ?>" <?= $p['period_id'] == $selectedId ? 'selected' : '' ?>>
                         <?= $optLabel ?>
@@ -421,7 +427,7 @@ require_once __DIR__ . '/../../includes/head.php';
                 <tr>
                     <th>Employee</th>
                     <th>Department</th>
-                    <th>Basic</th>
+                    <th><?= $isSelectedThirteenthMonth ? '13th Month Pay' : 'Basic' ?></th>
                     <th>Allowances</th>
                     <th>Gross</th>
                     <th>Deductions</th>
@@ -443,7 +449,7 @@ require_once __DIR__ . '/../../includes/head.php';
                         <?php else: ?>
                             No payroll records for this period.
                             <?php if ($periodIsEditable): ?>
-                            Click <strong>Generate Payroll</strong> to create them.
+                            Click <strong><?= $isSelectedThirteenthMonth ? 'Generate 13th Month Pay' : 'Generate Payroll' ?></strong> to create them.
                             <?php endif; ?>
                         <?php endif; ?>
                     </td>
@@ -459,6 +465,9 @@ require_once __DIR__ . '/../../includes/head.php';
                 $deductionJson = htmlspecialchars(json_encode($deductionDetails[$row['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
                 $isNegative    = (float)$row['net_pay'] < 0;
                 $employeeNo    = htmlspecialchars($row['employee_no'] ?? '');
+                $eosyRemark     = isset($row['remarks']) && strpos((string)$row['remarks'], 'Computed EOSY shortfall:') === 0
+                    ? htmlspecialchars($row['remarks'], ENT_QUOTES, 'UTF-8')
+                    : '';
                 ?>
                 <tr data-payroll-id="<?= $row['payroll_id'] ?>"<?= $isNegative ? ' class="row--negative-net"' : '' ?>>
                     <td>
@@ -475,6 +484,9 @@ require_once __DIR__ . '/../../includes/head.php';
                         <strong style="color:#dc2626;">₱<?= number_format($row['net_pay'], 2) ?> <i class="fa fa-triangle-exclamation" style="font-size:11px;" title="Negative net pay"></i></strong>
                     <?php else: ?>
                         <strong>₱<?= number_format($row['net_pay'], 2) ?></strong>
+                    <?php endif; ?>
+                    <?php if ($eosyRemark): ?>
+                        <div style="font-size:11px;color:#92400e;margin-top:3px;line-height:1.35;"><?= $eosyRemark ?></div>
                     <?php endif; ?></td>
                     <td>
                         <span class="badge badge--<?= strtolower($row['payroll_status']) ?>">
@@ -516,7 +528,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             data-employer-pagibig="<?= $row['employer_pagibig_share'] ?>">
                             <i class="fa fa-eye"></i>
                         </button>
-                        <?php if ($periodIsEditable): ?>
+                        <?php if ($recordsAreEditable): ?>
                         <button class="btn-icon btn-icon--edit" title="Edit (this period only)"
                             onclick="openEdit(this)"
                             data-payroll-id="<?= $row['payroll_id'] ?>"
@@ -582,10 +594,6 @@ require_once __DIR__ . '/../../includes/head.php';
             <button class="btn-outline" onclick="window.print()">
               <i class="fa fa-print"></i> Print Payslips
             </button>
-            <button class="btn-primary" onclick="confirmPayrollAction('release', <?= $selectedId ?>)"
-                    style="background:#7c3aed;">
-              <i class="fa fa-money-bill-wave"></i> Release Payroll
-            </button>
 
           <?php elseif ($selectedPeriod['status'] === 'RELEASED'): ?>
             <div class="released-notice">
@@ -620,6 +628,35 @@ require_once __DIR__ . '/../../includes/head.php';
                   onclick="closePayrollConfirm()">Cancel</button>
           <button id="pcm-confirm-btn" class="btn-primary" style="padding:9px 20px;font-size:13px;"
                   onclick="executePayrollAction()">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="dtrOverrideModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);
+         z-index:1001;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:14px;padding:24px;width:560px;max-width:95%;
+                  box-shadow:0 16px 48px rgba(0,0,0,0.14);">
+        <h3 style="font-size:16px;font-weight:700;margin:0 0 8px;color:#92400e;">
+          <i class="fa fa-triangle-exclamation"></i> Pending DTR Uploads
+        </h3>
+        <p style="font-size:13px;color:#64748b;margin:0 0 12px;line-height:1.6;">
+          These DTR uploads overlap the selected payroll period and have not been reconciled or rejected.
+        </p>
+        <div id="dtrOverrideList" style="max-height:190px;overflow:auto;border:1px solid #fde68a;border-radius:8px;background:#fffbeb;margin-bottom:12px;"></div>
+        <label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:4px;">
+          Reason to proceed anyway <span style="color:#dc2626;">*</span>
+        </label>
+        <textarea id="dtrOverrideReason" rows="3" minlength="10"
+                  style="width:100%;padding:9px 10px;border:1px solid #d1d5db;border-radius:8px;
+                         font-size:13px;resize:vertical;font-family:inherit;"
+                  placeholder="Explain why payroll can be generated before these DTR uploads are reconciled."></textarea>
+        <div id="dtrOverrideError" style="display:none;margin-top:8px;color:#991b1b;font-size:13px;"></div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;">
+          <button class="btn-outline" style="padding:9px 16px;font-size:13px;"
+                  onclick="closeDtrOverrideModal(true)">Cancel</button>
+          <button id="dtrOverrideProceedBtn" class="btn-primary"
+                  style="padding:9px 18px;font-size:13px;background:#b45309;"
+                  onclick="proceedWithDtrOverride()">Proceed anyway</button>
         </div>
       </div>
     </div>
@@ -676,6 +713,235 @@ function showFlash(msg, ok) {
 }
 
 // ── Payroll workflow confirmation ─────────────────────────────────────────────
+function escapeHtml(str) {
+    return String(str ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+let _pendingGenerateFormData = null;
+let _pendingGenerateButton = null;
+
+async function proceedWithDeMinimisWarning(data, form, btn) {
+    const issues = data.de_minimis_issues || [];
+    const issueText = issues.slice(0, 6).join(' ');
+    const extra = issues.length > 6 ? ` Plus ${issues.length - 6} more issue(s).` : '';
+
+    try {
+        await GEI.confirm({
+            title: 'Review De Minimis Setup',
+            message: data.message || 'Required de minimis benefits need review before generation.',
+            note: issueText + extra,
+            type: 'warning',
+            confirmText: 'Proceed anyway',
+        });
+    } catch {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-play"></i> Generate';
+        return;
+    }
+
+    const fd = new FormData(form);
+    fd.set('de_minimis_warning_confirmed', '1');
+
+    try {
+        const res = await fetch(`${BASE_URL}actions/generate-payroll.php`, {
+            method: 'POST',
+            body: fd
+        });
+        const retry = await res.json();
+        if (retry.requires_dtr_override) {
+            openDtrOverrideModal(retry, form, btn);
+            return;
+        }
+        closeGenerateModal();
+        showFlash(retry.message, retry.success);
+        if (retry.success) {
+            setTimeout(() => location.reload(), 1400);
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-play"></i> Generate';
+        }
+    } catch {
+        closeGenerateModal();
+        showFlash('Network error — please try again.', false);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-play"></i> Generate';
+    }
+}
+
+async function proceedWithThirteenthWarning(data, form, btn) {
+    const periods = data.unreleased_regular_periods || [];
+    const periodText = periods.slice(0, 6).map(p =>
+        `${p.period_name || 'Period #' + p.period_id} (${p.status || 'unreleased'})`
+    ).join(' ');
+    const extra = periods.length > 6 ? ` Plus ${periods.length - 6} more period(s).` : '';
+
+    try {
+        await GEI.confirm({
+            title: 'Incomplete Regular Payroll Year',
+            message: data.message || 'Some regular payroll periods are not released yet.',
+            note: periodText + extra,
+            type: 'warning',
+            confirmText: 'Generate anyway',
+        });
+    } catch {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-play"></i> Generate';
+        return;
+    }
+
+    const fd = new FormData(form);
+    fd.set('thirteenth_warning_confirmed', '1');
+
+    try {
+        const res = await fetch(`${BASE_URL}actions/generate-payroll.php`, {
+            method: 'POST',
+            body: fd
+        });
+        const retry = await res.json();
+        if (retry.requires_dtr_override) {
+            openDtrOverrideModal(retry, form, btn);
+            return;
+        }
+        if (retry.requires_de_minimis_warning) {
+            await proceedWithDeMinimisWarning(retry, form, btn);
+            return;
+        }
+        closeGenerateModal();
+        showFlash(retry.message, retry.success);
+        if (retry.success) {
+            setTimeout(() => location.reload(), 1400);
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-play"></i> Generate';
+        }
+    } catch {
+        closeGenerateModal();
+        showFlash('Network error - please try again.', false);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa fa-play"></i> Generate';
+    }
+}
+
+function openDtrOverrideModal(data, form, btn) {
+    _pendingGenerateFormData = new FormData(form);
+    _pendingGenerateButton = btn;
+
+    const list = document.getElementById('dtrOverrideList');
+    const rows = data.pending_dtr_uploads || [];
+    list.innerHTML = rows.map(item => `
+        <div style="padding:9px 11px;border-bottom:1px solid #fde68a;font-size:12px;color:#78350f;">
+            <strong>${escapeHtml(item.scope || 'All employees')}</strong>
+            <div>${escapeHtml(item.file_name || 'DTR upload #' + item.attachment_id)}</div>
+            <div>${escapeHtml(item.date_from || '')}${item.date_to && item.date_to !== item.date_from ? ' to ' + escapeHtml(item.date_to) : ''}</div>
+        </div>
+    `).join('');
+
+    document.getElementById('dtrOverrideReason').value = '';
+    document.getElementById('dtrOverrideError').style.display = 'none';
+    document.getElementById('dtrOverrideProceedBtn').disabled = false;
+    document.getElementById('dtrOverrideProceedBtn').textContent = 'Proceed anyway';
+    closeGenerateModal();
+    document.getElementById('dtrOverrideModal').style.display = 'flex';
+}
+
+function closeDtrOverrideModal(resetGenerateButton = false) {
+    document.getElementById('dtrOverrideModal').style.display = 'none';
+    if (resetGenerateButton && _pendingGenerateButton) {
+        _pendingGenerateButton.disabled = false;
+        _pendingGenerateButton.innerHTML = '<i class="fa fa-play"></i> Generate';
+    }
+    _pendingGenerateFormData = null;
+    _pendingGenerateButton = null;
+}
+
+async function proceedWithDtrOverride() {
+    const reason = document.getElementById('dtrOverrideReason').value.trim();
+    const err = document.getElementById('dtrOverrideError');
+    const btn = document.getElementById('dtrOverrideProceedBtn');
+
+    err.style.display = 'none';
+    const reasonError = window.GEI && GEI.validateReason
+        ? GEI.validateReason(reason, 'Override reason')
+        : (!reason ? 'Reason is required.' : '');
+    if (reasonError) {
+        err.textContent = reasonError;
+        err.style.display = 'block';
+        return;
+    }
+    if (!_pendingGenerateFormData) return;
+
+    _pendingGenerateFormData.set('dtr_override_confirmed', '1');
+    _pendingGenerateFormData.set('dtr_override_reason', reason);
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+
+    try {
+        const res = await fetch(`${BASE_URL}actions/generate-payroll.php`, {
+            method: 'POST',
+            body: _pendingGenerateFormData
+        });
+        const data = await res.json();
+        if (data.success) {
+            closeDtrOverrideModal(false);
+            showFlash(data.message, true);
+            setTimeout(() => location.reload(), 1400);
+            return;
+        }
+        if (data.requires_de_minimis_warning) {
+            const issues = data.de_minimis_issues || [];
+            try {
+                await GEI.confirm({
+                    title: 'Review De Minimis Setup',
+                    message: data.message || 'Required de minimis benefits need review before generation.',
+                    note: issues.slice(0, 6).join(' ') + (issues.length > 6 ? ` Plus ${issues.length - 6} more issue(s).` : ''),
+                    type: 'warning',
+                    confirmText: 'Proceed anyway',
+                });
+            } catch {
+                closeDtrOverrideModal(true);
+                return;
+            }
+
+            _pendingGenerateFormData.set('de_minimis_warning_confirmed', '1');
+            const retry = await fetch(`${BASE_URL}actions/generate-payroll.php`, {
+                method: 'POST',
+                body: _pendingGenerateFormData
+            });
+            const retryData = await retry.json();
+            if (retryData.success) {
+                closeDtrOverrideModal(false);
+                showFlash(retryData.message, true);
+                setTimeout(() => location.reload(), 1400);
+                return;
+            }
+            err.textContent = retryData.message || 'Payroll generation failed.';
+            err.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = 'Proceed anyway';
+            if (_pendingGenerateButton) {
+                _pendingGenerateButton.disabled = false;
+                _pendingGenerateButton.innerHTML = '<i class="fa fa-play"></i> Generate';
+            }
+            return;
+        }
+        err.textContent = data.message || 'Payroll generation failed.';
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Proceed anyway';
+        if (_pendingGenerateButton) {
+            _pendingGenerateButton.disabled = false;
+            _pendingGenerateButton.innerHTML = '<i class="fa fa-play"></i> Generate';
+        }
+    } catch {
+        err.textContent = 'Network error. Please try again.';
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Proceed anyway';
+    }
+}
+
 let _pcmAction = null, _pcmPeriodId = null;
 
 const _pcmConfig = {
@@ -685,12 +951,6 @@ const _pcmConfig = {
         notes: false, btnLabel: 'Submit', btnColor: '#0f766e',
         url: BASE_URL + 'actions/payroll-save.php',
         field: 'period_id'
-    },
-    release: {
-        title: 'Release Payroll',
-        desc:  'Mark this payroll as released? This confirms salaries have been distributed to employees.',
-        notes: false, btnLabel: 'Release', btnColor: '#7c3aed',
-        url: BASE_URL + 'actions/payroll-approve.php', field: 'period_id'
     }
 };
 
@@ -761,14 +1021,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const scope = document.querySelector('input[name="scope"]:checked')?.value;
         if (scope === 'department' && !document.getElementById('deptSelect')?.value) {
-            alert('Please select a department.'); return;
+            showToast('Please select a department.', 'warning'); return;
         }
         if (scope === 'position' && !document.getElementById('posSelect')?.value) {
-            alert('Please select a position.'); return;
+            showToast('Please select a position.', 'warning'); return;
         }
         if (scope === 'specific') {
             const checked = document.querySelectorAll('#empChecklist input[type="checkbox"]:checked').length;
-            if (!checked) { alert('Please select at least one employee.'); return; }
+            if (!checked) { showToast('Please select at least one employee.', 'warning'); return; }
         }
 
         const btn = genForm.querySelector('[type="submit"]');
@@ -781,6 +1041,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: new FormData(genForm)
             });
             const data = await res.json();
+            if (data.requires_thirteenth_warning) {
+                await proceedWithThirteenthWarning(data, genForm, btn);
+                return;
+            }
+            if (data.requires_dtr_override) {
+                openDtrOverrideModal(data, genForm, btn);
+                return;
+            }
+            if (data.requires_de_minimis_warning) {
+                await proceedWithDeMinimisWarning(data, genForm, btn);
+                return;
+            }
             closeGenerateModal();
             showFlash(data.message, data.success);
             if (data.success) {

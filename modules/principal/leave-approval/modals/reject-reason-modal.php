@@ -19,6 +19,7 @@
         <textarea id="rejectRemarks" class="lv-form-control" rows="3"
                   placeholder="Provide a brief reason (optional)..."></textarea>
       </div>
+      <div id="rejectError" class="alert alert-danger" style="display:none;margin:12px 0 0;"></div>
     </div>
     <div class="pr-modal-footer">
       <button class="pr-btn-cancel" onclick="closeModal('rejectModal')">Cancel</button>

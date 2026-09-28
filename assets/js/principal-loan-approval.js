@@ -207,7 +207,11 @@ function closeDenyReason() {
 
 async function confirmPrincipalDeny() {
     const reason = document.getElementById('principal-deny-reason').value.trim();
-    if (!reason) {
+    const reasonError = window.GEI && GEI.validateReason
+        ? GEI.validateReason(reason, 'Rejection reason')
+        : (!reason ? 'Reason is required.' : '');
+    if (reasonError) {
+        document.getElementById('deny-reason-error').textContent = reasonError;
         document.getElementById('deny-reason-error').style.display = 'block';
         return;
     }
@@ -264,7 +268,11 @@ function closeReturnForCorrection() {
 
 async function confirmPrincipalReturn() {
     const reason = document.getElementById('principal-return-reason').value.trim();
-    if (!reason) {
+    const reasonError = window.GEI && GEI.validateReason
+        ? GEI.validateReason(reason, 'Return reason')
+        : (!reason ? 'Reason is required.' : '');
+    if (reasonError) {
+        document.getElementById('return-reason-error').textContent = reasonError;
         document.getElementById('return-reason-error').style.display = 'block';
         return;
     }

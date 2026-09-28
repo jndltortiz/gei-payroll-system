@@ -8,7 +8,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 header('Content-Type: application/json');
-requireLogin();
+requireAdminAction();
 
 /**
  * Advance a date to the previous Friday if it falls on a Saturday or Sunday.
@@ -167,6 +167,68 @@ if (($_POST['create_for'] ?? '') === 'accrued_pay') {
     }
 
     echo json_encode(['success' => true, 'message' => "Accrued Pay period \"{$periodName}\" created.", 'created' => 1]);
+    exit;
+}
+
+// -- Create THIRTEENTH_MONTH period ------------------------------------------
+if (($_POST['create_for'] ?? '') === 'thirteenth_month') {
+    $year = (int)($_POST['year'] ?? 0);
+
+    if ($year < 2020 || $year > 2099) {
+        echo json_encode(['success' => false, 'message' => 'Invalid calendar year.']);
+        exit;
+    }
+
+    $hasThirteenthMonthType = false;
+    try {
+        $typeRow = $pdo->query("SHOW COLUMNS FROM payroll_periods LIKE 'period_type'")->fetch(PDO::FETCH_ASSOC);
+        $hasThirteenthMonthType = $typeRow && strpos($typeRow['Type'] ?? '', 'THIRTEENTH_MONTH') !== false;
+    } catch (PDOException $_e) {}
+
+    if (!$hasThirteenthMonthType) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Migration 033 has not been run. Please run migrations/033_thirteenth_month_pay.sql first.',
+        ]);
+        exit;
+    }
+
+    $startDate = sprintf('%04d-01-01', $year);
+    $endDate = sprintf('%04d-12-31', $year);
+    $payDate = sprintf('%04d-12-24', $year);
+    $periodName = "13th Month Pay {$year}";
+    $payrollNumber = "13M-{$year}-001";
+
+    $dup = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM payroll_periods
+        WHERE period_type = 'THIRTEENTH_MONTH'
+          AND YEAR(pay_period_start) = ?
+    ");
+    $dup->execute([$year]);
+    if ((int)$dup->fetchColumn() > 0) {
+        echo json_encode(['success' => false, 'message' => "A 13th month pay period for {$year} already exists."]);
+        exit;
+    }
+
+    try {
+        $pdo->prepare("
+            INSERT INTO payroll_periods
+                (payroll_number, period_name, period_type, pay_period_start, pay_period_end, pay_date, status)
+            VALUES (?, ?, 'THIRTEENTH_MONTH', ?, ?, ?, 'OPEN')
+        ")->execute([$payrollNumber, $periodName, $startDate, $endDate, $payDate]);
+
+        $newId = (int)$pdo->lastInsertId();
+        $uid = $_SESSION['user']['user_id'] ?? null;
+        if ($uid) {
+            $pdo->prepare("INSERT INTO audit_logs (user_id, action, table_name, record_id, description) VALUES (?,?,?,?,?)")
+                ->execute([$uid, 'CREATE', 'payroll_periods', $newId, "Created THIRTEENTH_MONTH period: {$periodName}"]);
+        }
+
+        echo json_encode(['success' => true, 'message' => "{$periodName} created.", 'created' => 1]);
+    } catch (PDOException $e) {
+        echo json_encode(['success' => false, 'message' => 'Could not create 13th month pay period.']);
+    }
     exit;
 }
 

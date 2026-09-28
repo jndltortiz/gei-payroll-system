@@ -167,45 +167,38 @@ function buildViewHtml(data) {
     // Workflow controls area
     let wfHtml = '';
     if (HAS_MIG016) {
-        if (wf === 'PENDING_REVIEW') {
-            wfHtml = `
-                <div class="vm-workflow-bar">
-                    <span class="vm-workflow-label">Actions:</span>
-                    <button class="btn btn--primary" data-lid="${r.leave_id}" data-name="${escHtml(r.employee_name)}" onclick="handleForwardBtn(this)">
-                        <i class="fa fa-paper-plane"></i> Forward to Principal
-                    </button>
-                    <button class="btn btn--ghost" onclick="saveAdminNote(${r.leave_id})">
-                        <i class="fa fa-note-sticky"></i> Save Note
-                    </button>
-                </div>`;
-        } else if (wf === 'FORWARDED') {
-            const pendingLeft = dates.filter(d => d.status === 'PENDING').length;
-            if (pendingLeft === 0) {
-                wfHtml = `
-                    <div class="vm-workflow-bar">
-                        <span class="vm-workflow-label">Principal has decided all dates.</span>
-                        <button class="btn btn--teal" onclick="doRecord(${r.leave_id});closeViewLeaveModal();">
-                            <i class="fa fa-check-double"></i> Record Result &amp; Sync Attendance
-                        </button>
-                    </div>`;
-            } else {
-                wfHtml = `
-                    <div class="vm-workflow-bar" style="background:#fffbeb;">
-                        <i class="fa fa-clock" style="color:#d97706;"></i>
-                        <span class="vm-workflow-label">Awaiting principal decision on ${pendingLeft} date(s).</span>
-                    </div>`;
-            }
-        } else if (wf === 'RECORDED') {
+        const pendingLeft = dates.filter(d => d.status === 'PENDING').length;
+        if (wf === 'RECORDED') {
             wfHtml = `
                 <div class="vm-workflow-bar" style="background:#ecfdf5;">
                     <i class="fa fa-circle-check" style="color:#059669;"></i>
                     <span class="vm-workflow-label">Result recorded. Leave history is finalised.</span>
                 </div>`;
+        } else if (pendingLeft === 0) {
+            wfHtml = `
+                <div class="vm-workflow-bar">
+                    <span class="vm-workflow-label">Principal has decided all dates.</span>
+                    <button class="btn btn--teal" onclick="doRecord(${r.leave_id});closeViewLeaveModal();">
+                        <i class="fa fa-check-double"></i> Record Result &amp; Sync Attendance
+                    </button>
+                    <button class="btn btn--ghost" onclick="saveAdminNote(${r.leave_id})">
+                        <i class="fa fa-note-sticky"></i> Save Note
+                    </button>
+                </div>`;
+        } else {
+            wfHtml = `
+                <div class="vm-workflow-bar" style="background:#fffbeb;">
+                    <i class="fa fa-clock" style="color:#d97706;"></i>
+                    <span class="vm-workflow-label">Awaiting principal decision on ${pendingLeft} date(s).</span>
+                    <button class="btn btn--ghost" onclick="saveAdminNote(${r.leave_id})">
+                        <i class="fa fa-note-sticky"></i> Save Note
+                    </button>
+                </div>`;
         }
     }
 
     // Note textarea for admin note saving
-    const noteArea = (HAS_MIG016 && wf === 'PENDING_REVIEW') ? `
+    const noteArea = (HAS_MIG016 && wf !== 'RECORDED') ? `
         <div class="vm-section-label">Admin Internal Note</div>
         <div class="form-group">
             <textarea class="form-textarea" id="vmAdminNote" rows="2"
@@ -240,62 +233,6 @@ async function saveAdminNote(leaveId) {
         }
     } catch {
         showFlash('error', 'Network error.');
-    }
-}
-
-/* ── FORWARD TO PRINCIPAL ────────────────────────────────── */
-function handleForwardBtn(btn) {
-    closeViewLeaveModal();
-    openForwardModal(parseInt(btn.dataset.lid, 10), btn.dataset.name || '');
-}
-
-let _fwdLeaveId = null;
-
-function openForwardModal(leaveId, employeeName) {
-    _fwdLeaveId = leaveId;
-    const el = document.getElementById('forwardEmpName');
-    if (el) el.textContent = employeeName || '';
-    const noteEl = document.getElementById('forwardNote');
-    if (noteEl) noteEl.value = '';
-    document.getElementById('forwardOverlay').style.display = 'flex';
-}
-
-function closeForwardModalDirect() {
-    document.getElementById('forwardOverlay').style.display = 'none';
-    _fwdLeaveId = null;
-}
-
-function closeForwardModal(e) {
-    if (e.target === document.getElementById('forwardOverlay')) closeForwardModalDirect();
-}
-
-async function confirmForward() {
-    if (!_fwdLeaveId) return;
-
-    const note = (document.getElementById('forwardNote')?.value || '').trim();
-    const btn  = document.getElementById('btnConfirmForward');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Forwarding...'; }
-
-    const fd = new FormData();
-    fd.append('action', 'forward');
-    fd.append('leave_id', _fwdLeaveId);
-    fd.append('note', note);
-
-    try {
-        const res  = await fetch(`${BASE_URL}actions/leave-admin-action.php`, { method: 'POST', body: fd });
-        const data = await res.json();
-
-        if (data.success) {
-            closeForwardModalDirect();
-            showFlash('success', data.message || 'Leave forwarded to principal.');
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showFlash('error', data.message || 'Failed to forward.');
-        }
-    } catch {
-        showFlash('error', 'Network error.');
-    } finally {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa fa-paper-plane"></i> Forward to Principal'; }
     }
 }
 

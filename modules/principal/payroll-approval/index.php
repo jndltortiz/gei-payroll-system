@@ -194,11 +194,11 @@ require_once __DIR__ . '/../../../includes/head.php';
       <div class="pr-pending-actions">
         <div class="pr-action-btns">
           <button class="pr-btn-approve"
-                  onclick="openApproveConfirm(<?= $p['period_id'] ?>, '<?= htmlspecialchars($periodLabel, ENT_QUOTES) ?>')">
+                  onclick="openApproveConfirm(<?= (int)$p['period_id'] ?>, <?= htmlspecialchars(json_encode($periodLabel, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>)">
             <i class="fa fa-circle-check"></i> Approve &amp; Authorize Disbursement
           </button>
           <button class="pr-btn-reject"
-                  onclick="openRejectModal(<?= $p['period_id'] ?>, '<?= htmlspecialchars($periodLabel, ENT_QUOTES) ?>')">
+                  onclick="openRejectModal(<?= (int)$p['period_id'] ?>, <?= htmlspecialchars(json_encode($periodLabel, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>)">
             <i class="fa fa-rotate-left"></i> Return for Revision
           </button>
         </div>
@@ -296,6 +296,13 @@ require_once __DIR__ . '/../../../includes/head.php';
                 <button class="pr-link" onclick="openSummaryModal(<?= $h['period_id'] ?>)">
                   <i class="fa fa-eye"></i> Summary
                 </button>
+                <?php if ($h['status'] === 'APPROVED'): ?>
+                <button type="button" class="pr-link"
+                        onclick="openReleaseConfirm(<?= (int)$h['period_id'] ?>, <?= htmlspecialchars(json_encode($h['period_name'] ?? $hl, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>)"
+                        style="color:#7c3aed;font-weight:700;">
+                  <i class="fa fa-money-bill-wave"></i> Release
+                </button>
+                <?php endif; ?>
                 <button class="pr-link" onclick="exportRegisterPDF(<?= $h['period_id'] ?>)">
                   <i class="fa fa-download"></i> Export
                 </button>
@@ -362,6 +369,6 @@ require_once __DIR__ . '/../../../includes/head.php';
 <script>
 const BASE_URL = '<?= BASE_URL ?>';
 </script>
-<script src="<?= BASE_URL ?>assets/js/principal-payroll-approval.js"></script>
+<script src="<?= BASE_URL ?>assets/js/principal-payroll-approval.js?v=<?= time() ?>"></script>
 
 <?php include __DIR__ . '/../../../includes/footer.php'; ?>

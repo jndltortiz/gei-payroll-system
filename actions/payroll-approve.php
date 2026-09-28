@@ -6,7 +6,7 @@
  *
  *  approve  PROCESSING → APPROVED   Principal only
  *  return   PROCESSING → OPEN       Principal only  (remarks stored = visible to Admin)
- *  release  APPROVED   → RELEASED   Admin only
+ *  release  APPROVED   → RELEASED   Principal only
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
@@ -38,10 +38,10 @@ switch ($action) {
         }
         break;
     case 'release':
-        if (!isAdmin()) {
+        if (!isPrincipalRole()) {
             http_response_code(403);
             echo json_encode(['success'=>false,
-                'message'=>'Access denied. Only Admin (Accounting) may release payroll.']); exit;
+                'message'=>'Access denied. Only Principal/Special Assistant may release payroll.']); exit;
         }
         break;
     default:
@@ -54,6 +54,8 @@ $period = $stmt->fetch();
 if (!$period) {
     echo json_encode(['success'=>false,'message'=>'Period not found.']); exit;
 }
+$periodType = $period['period_type'] ?? 'REGULAR';
+$isThirteenthMonth = $periodType === 'THIRTEENTH_MONTH';
 
 // Performer name for workflow log
 $nameRow = $pdo->prepare("
@@ -92,23 +94,27 @@ try {
                     "Principal approved \"{$period['period_name']}\""
                     .($notes?" | Notes: $notes":'')]);
 
-            // Notify admins — they can now release
+            // Notify admins that principal approval has completed.
             notifAdmins($pdo,
-                "Payroll Approved — Ready to Release",
-                "\"{$period['period_name']}\" approved by the Principal. " . (int)$snapshot['c'] . " employee(s). Ready to release.",
+                "Payroll Approved",
+                "\"{$period['period_name']}\" approved by the Principal. " . (int)$snapshot['c'] . " employee(s).",
                 'payroll',
                 BASE_URL . 'modules/payroll/index.php',
                 $periodId
             );
 
             echo json_encode(['success'=>true,
-                'message'=>"\"{$period['period_name']}\" approved. Accounting can now release payroll."]);
+                'message'=>"\"{$period['period_name']}\" approved. Principal may now release payroll."]);
             break;
 
         // ── RETURN FOR REVISION ───────────────────────────────────────────────
         case 'return':
             if ($period['status'] !== 'PROCESSING') {
                 echo json_encode(['success'=>false,'message'=>'Only PROCESSING periods can be returned.']); exit;
+            }
+            $notesError = validateRequiredReason($notes, 'Return reason');
+            if ($notesError !== null) {
+                echo json_encode(['success'=>false,'message'=>$notesError]); exit;
             }
             $pdo->prepare("UPDATE payroll_periods SET status='OPEN', updated_at=NOW() WHERE period_id=?")->execute([$periodId]);
             $pdo->prepare("UPDATE payroll_records SET payroll_status='DRAFT', approved_by=NULL, approved_at=NULL
@@ -151,6 +157,7 @@ try {
             $pdo->prepare("UPDATE payroll_records SET payroll_status='RELEASED', released_by=?, released_at=NOW()
                            WHERE period_id=? AND payroll_status='APPROVED'")->execute([$uid, $periodId]);
 
+            if (!$isThirteenthMonth) {
             // Apply loan deductions only on release. Generation creates draft
             // payroll rows with loan_id set (migration 011); release reduces balances
             // and writes the payment to loan_payment_log for audit history.
@@ -190,6 +197,7 @@ try {
                 SET sc.status = 'RELEASED', sc.updated_at = NOW()
                 WHERE pr.period_id = ? AND sc.status = 'APPLIED'
             ")->execute([$periodId]);
+            }
 
             // ── EOSY Balance Recovery — inject into same-month regular period ──
             // When an ACCRUED_PAY period is released and employees have negative
@@ -198,7 +206,7 @@ try {
             // deduction — but only if that period's records are still in DRAFT
             // (not yet submitted). If they don't exist yet, generate-payroll.php
             // will pick it up automatically when that period is generated.
-            if (($period['period_type'] ?? 'REGULAR') === 'ACCRUED_PAY') {
+            if (false && ($period['period_type'] ?? 'REGULAR') === 'ACCRUED_PAY') {
                 // Ensure recovery deduction type exists
                 $recovDtRow = $pdo->query("
                     SELECT deduction_type_id FROM deduction_types
@@ -279,7 +287,7 @@ try {
 
             if ($uid) $pdo->prepare("INSERT INTO audit_logs(user_id,action,table_name,record_id,description) VALUES(?,?,?,?,?)")
                 ->execute([$uid,'RELEASE','payroll_periods',$periodId,
-                    "Admin released \"{$period['period_name']}\""]);
+                    "Principal released \"{$period['period_name']}\""]);
 
             $pdo->commit();
 

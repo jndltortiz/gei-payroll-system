@@ -4,14 +4,13 @@
  * Admin workflow actions for leave management.
  *
  * POST params:
- *   action    = 'mark_reviewed' | 'forward' | 'record'
+ *   action    = 'mark_reviewed' | 'record'
  *   leave_id  = int
  *   note      = string (admin note, optional)
  *
- * mark_reviewed – saves admin note, marks request as internally reviewed.
- * forward       – sets workflow_status = FORWARDED, sends to principal queue.
- * record        – sets workflow_status = RECORDED after principal has decided;
- *                 syncs any ABSENT attendance records → LEAVE for approved dates.
+ * mark_reviewed - saves an internal admin note.
+ * record        - sets workflow_status = RECORDED after principal has decided;
+ *                 syncs any ABSENT attendance records to LEAVE for approved dates.
  */
 
 require_once __DIR__ . '/../config/config.php';
@@ -24,25 +23,24 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-requireLogin();
-
-$role   = strtolower($_SESSION['user']['role'] ?? '');
-if ($role === 'employee') {
-    echo json_encode(['success' => false, 'message' => 'Not authorised.']);
-    exit;
-}
+requireAdminAction();
 
 $action  = trim($_POST['action']  ?? '');
 $leaveId = (int)($_POST['leave_id'] ?? 0);
 $note    = trim($_POST['note']    ?? '');
 $userId  = $_SESSION['user']['user_id'] ?? null;
 
+if (!in_array($action, ['mark_reviewed', 'record'], true)) {
+    echo json_encode(['success' => false, 'message' => 'Unknown action.']);
+    exit;
+}
+
 if (!$leaveId) {
     echo json_encode(['success' => false, 'message' => 'Leave ID required.']);
     exit;
 }
 
-// Migration guard — workflow_status column may not exist on older installs
+// Migration guard - workflow_status column may not exist on older installs
 $hasMig016 = (bool)$pdo->query("SHOW COLUMNS FROM `leave_requests` LIKE 'workflow_status'")->fetch();
 
 try {
@@ -74,29 +72,6 @@ try {
 
         echo json_encode(['success' => true, 'message' => 'Note saved successfully.']);
 
-    } elseif ($action === 'forward') {
-        if ($hasMig016) {
-            $pdo->prepare("
-                UPDATE leave_requests
-                SET workflow_status = 'FORWARDED',
-                    forwarded_at    = NOW(),
-                    forwarded_by    = ?,
-                    admin_note      = COALESCE(NULLIF(?, ''), admin_note),
-                    updated_at      = NOW()
-                WHERE leave_id = ?
-            ")->execute([$userId, $note, $leaveId]);
-        }
-
-        $pdo->prepare("
-            INSERT INTO audit_logs (user_id, action, table_name, record_id, description, created_at)
-            VALUES (?, 'FORWARD_PRINCIPAL', 'leave_requests', ?, ?, NOW())
-        ")->execute([
-            $userId, $leaveId,
-            "Forwarded leave #{$leaveId} to principal for review" . ($note ? ": {$note}" : ''),
-        ]);
-
-        echo json_encode(['success' => true, 'message' => 'Leave request forwarded to principal.']);
-
     } elseif ($action === 'record') {
         // Validate: principal must have acted on all dates
         $stmtPending = $pdo->prepare("
@@ -117,7 +92,7 @@ try {
 
         $siblingId = null;
 
-        // ── If mixed (PARTIALLY_APPROVED): split now into APPROVED + REJECTED records
+        // If mixed (PARTIALLY_APPROVED): split now into APPROVED + REJECTED records
         if ($leave['status'] === 'PARTIALLY_APPROVED') {
             $ri = $pdo->prepare("
                 SELECT MIN(leave_date) AS start_d, MAX(leave_date) AS end_d, COUNT(*) AS cnt
@@ -190,7 +165,7 @@ try {
             ]);
         }
 
-        // ── Mark original as RECORDED ────────────────────────────────────────────
+        // Mark original as RECORDED.
         if ($hasMig016) {
             $pdo->prepare("
                 UPDATE leave_requests SET workflow_status = 'RECORDED', updated_at = NOW()
@@ -205,7 +180,7 @@ try {
             ")->execute([$userId, $leaveId]);
         } catch (PDOException $_e) {}
 
-        // ── Mark sibling as RECORDED too (if split occurred) ────────────────────
+        // Mark sibling as RECORDED too when a split occurred.
         if ($siblingId) {
             if ($hasMig016) {
                 $pdo->prepare("
@@ -222,7 +197,7 @@ try {
             } catch (PDOException $_e) {}
         }
 
-        // ── Attendance sync: ABSENT → LEAVE for all APPROVED dates ───────────────
+        // Attendance sync: ABSENT to LEAVE for all APPROVED dates.
         $stmtApproved = $pdo->prepare("
             SELECT leave_date FROM leave_request_dates WHERE leave_id = ? AND status = 'APPROVED'
         ");
@@ -259,8 +234,6 @@ try {
             'synced'  => $synced,
         ]);
 
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Unknown action.']);
     }
 
 } catch (PDOException $e) {

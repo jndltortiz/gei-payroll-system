@@ -15,16 +15,24 @@
       var icons = {success:'fa-circle-check',error:'fa-circle-xmark',warning:'fa-triangle-exclamation',info:'fa-circle-info'};
       var toast = document.createElement('div');
       toast.className = 'toast toast--' + type;
-      toast.innerHTML = '<i class="fa ' + (icons[type]||icons.info) + '"></i>' +
-          '<span>' + message + '</span>' +
-          '<button class="toast-close" title="Dismiss"><i class="fa fa-times"></i></button>';
+      var icon = document.createElement('i');
+      icon.className = 'fa ' + (icons[type] || icons.info);
+      var text = document.createElement('span');
+      text.textContent = message;
+      var close = document.createElement('button');
+      close.className = 'toast-close';
+      close.title = 'Dismiss';
+      close.innerHTML = '<i class="fa fa-times"></i>';
+      toast.appendChild(icon);
+      toast.appendChild(text);
+      toast.appendChild(close);
       container.appendChild(toast);
       requestAnimationFrame(function(){ requestAnimationFrame(function(){ toast.classList.add('toast--show'); }); });
       var timer = setTimeout(function() {
           toast.classList.remove('toast--show');
           setTimeout(function(){ if(toast.parentNode) toast.remove(); }, 280);
       }, duration);
-      toast.querySelector('.toast-close').addEventListener('click', function() {
+      close.addEventListener('click', function() {
           clearTimeout(timer);
           toast.classList.remove('toast--show');
           setTimeout(function(){ if(toast.parentNode) toast.remove(); }, 280);
@@ -72,7 +80,37 @@ $loadBootstrap = isset($loadBootstrap) ? $loadBootstrap : false;
 <?php endforeach; ?>
 
   <!-- Global JS variables -->
-  <script>window.BASE_URL = '<?= BASE_URL ?>';</script>
+  <script>
+  window.BASE_URL = '<?= BASE_URL ?>';
+  window.CSRF_TOKEN = '<?= function_exists('csrfToken') ? htmlspecialchars(csrfToken(), ENT_QUOTES, 'UTF-8') : '' ?>';
+  window.appendCsrfToken = function(formData) {
+      if (formData && typeof formData.append === 'function') {
+          if (typeof formData.has !== 'function' || !formData.has('csrf_token')) {
+              formData.append('csrf_token', window.CSRF_TOKEN || '');
+          }
+      }
+      return formData;
+  };
+  (function() {
+      var nativeFetch = window.fetch;
+      window.fetch = function(input, init) {
+          init = init || {};
+          var method = (init.method || '').toUpperCase();
+          if (method === 'POST') {
+              init.headers = init.headers || {};
+              if (init.headers instanceof Headers) {
+                  if (!init.headers.has('X-CSRF-Token')) init.headers.set('X-CSRF-Token', window.CSRF_TOKEN || '');
+              } else if (!init.headers['X-CSRF-Token'] && !init.headers['x-csrf-token']) {
+                  init.headers['X-CSRF-Token'] = window.CSRF_TOKEN || '';
+              }
+              if (init.body instanceof FormData) {
+                  window.appendCsrfToken(init.body);
+              }
+          }
+          return nativeFetch(input, init);
+      };
+  })();
+  </script>
 
   <!-- Global Toast Notification System -->
   <script>
@@ -87,16 +125,24 @@ $loadBootstrap = isset($loadBootstrap) ? $loadBootstrap : false;
       var icons = {success:'fa-circle-check',error:'fa-circle-xmark',warning:'fa-triangle-exclamation',info:'fa-circle-info'};
       var toast = document.createElement('div');
       toast.className = 'toast toast--' + type;
-      toast.innerHTML = '<i class="fa ' + (icons[type]||icons.info) + '"></i>' +
-          '<span>' + message + '</span>' +
-          '<button class="toast-close" title="Dismiss"><i class="fa fa-times"></i></button>';
+      var icon = document.createElement('i');
+      icon.className = 'fa ' + (icons[type] || icons.info);
+      var text = document.createElement('span');
+      text.textContent = message;
+      var close = document.createElement('button');
+      close.className = 'toast-close';
+      close.title = 'Dismiss';
+      close.innerHTML = '<i class="fa fa-times"></i>';
+      toast.appendChild(icon);
+      toast.appendChild(text);
+      toast.appendChild(close);
       container.appendChild(toast);
       requestAnimationFrame(function(){ requestAnimationFrame(function(){ toast.classList.add('toast--show'); }); });
       var timer = setTimeout(function() {
           toast.classList.remove('toast--show');
           setTimeout(function(){ if(toast.parentNode) toast.remove(); }, 280);
       }, duration);
-      toast.querySelector('.toast-close').addEventListener('click', function() {
+      close.addEventListener('click', function() {
           clearTimeout(timer);
           toast.classList.remove('toast--show');
           setTimeout(function(){ if(toast.parentNode) toast.remove(); }, 280);

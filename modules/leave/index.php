@@ -12,7 +12,7 @@ try {
 
 // ── Current tab ─────────────────────────────────────────────────────────────
 $tab = $_GET['tab'] ?? 'pending_review';
-$validTabs = ['pending_review','awaiting','to_record','approved','rejected','history'];
+$validTabs = ['pending_review','to_record','approved','rejected','history'];
 if (!in_array($tab, $validTabs)) $tab = 'pending_review';
 
 // ── Filters ──────────────────────────────────────────────────────────────────
@@ -43,8 +43,14 @@ $nextM   = date('Y-m', strtotime('+1 month'));
 
 // ── Dashboard stats ──────────────────────────────────────────────────────────
 if ($hasMig016) {
-    $sPendingReview = $pdo->query("SELECT COUNT(*) FROM leave_requests WHERE workflow_status='PENDING_REVIEW'")->fetchColumn();
-    $sAwaiting      = $pdo->query("SELECT COUNT(*) FROM leave_requests WHERE workflow_status='FORWARDED' AND status='PENDING'")->fetchColumn();
+    $sPendingReview = $pdo->query("
+        SELECT COUNT(DISTINCT lr.leave_id)
+        FROM leave_requests lr
+        JOIN leave_request_dates lrd ON lr.leave_id = lrd.leave_id
+        WHERE lr.workflow_status IN ('PENDING_REVIEW','FORWARDED')
+          AND lrd.status = 'PENDING'
+    ")->fetchColumn();
+    $sAwaiting      = 0;
 } else {
     $sPendingReview = $pdo->query("SELECT COUNT(*) FROM leave_requests WHERE status='PENDING'")->fetchColumn();
     $sAwaiting      = 0;
@@ -60,7 +66,7 @@ if ($hasMig022) {
 } elseif ($hasMig016) {
     $sToRecord = (int)$pdo->query("
         SELECT COUNT(*) FROM leave_requests lr
-        WHERE lr.workflow_status = 'FORWARDED'
+        WHERE lr.workflow_status IN ('PENDING_REVIEW','FORWARDED')
           AND lr.status IN ('APPROVED','REJECTED','PARTIALLY_APPROVED')
           AND NOT EXISTS (
             SELECT 1 FROM leave_request_dates lrd
@@ -137,13 +143,15 @@ $records = [];
 $params  = [];
 
 if ($tab === 'pending_review') {
-    $wClause = $hasMig016 ? "lr.workflow_status = 'PENDING_REVIEW'" : "lr.status = 'PENDING'";
+    $wClause = $hasMig016
+        ? "lr.workflow_status IN ('PENDING_REVIEW','FORWARDED') AND lr.status = 'PENDING'"
+        : "lr.status = 'PENDING'";
     $extra   = buildFilters($hasMig016, $fDept, $fType, $fMonth, $fSY, $fSearch, $params);
     $sql     = $baseSelect . " WHERE ({$wClause}){$extra} ORDER BY lr.created_at ASC";
 
 } elseif ($tab === 'awaiting') {
     $wClause = $hasMig016
-        ? "lr.workflow_status = 'FORWARDED' AND lr.status = 'PENDING'"
+        ? "lr.workflow_status IN ('PENDING_REVIEW','FORWARDED') AND lr.status = 'PENDING'"
         : "lr.status = 'PENDING'";
     $extra   = buildFilters($hasMig016, $fDept, $fType, $fMonth, $fSY, $fSearch, $params);
     $sql     = $baseSelect . " WHERE ({$wClause}){$extra} ORDER BY lr.created_at ASC";
@@ -153,7 +161,7 @@ if ($tab === 'pending_review') {
     if ($hasMig022) {
         $wClause = "lr.status IN ('APPROVED','REJECTED','PARTIALLY_APPROVED') AND lr.is_attendance_recorded = 0";
     } elseif ($hasMig016) {
-        $wClause = "lr.workflow_status = 'FORWARDED' AND lr.status IN ('APPROVED','REJECTED','PARTIALLY_APPROVED')
+        $wClause = "lr.workflow_status IN ('PENDING_REVIEW','FORWARDED') AND lr.status IN ('APPROVED','REJECTED','PARTIALLY_APPROVED')
             AND NOT EXISTS (SELECT 1 FROM leave_request_dates lrd WHERE lrd.leave_id=lr.leave_id AND lrd.status='PENDING')";
     } else {
         $wClause = "1=0"; // not available without mig016
@@ -250,7 +258,7 @@ require_once __DIR__ . '/../../includes/head.php';
     <div class="page-header">
         <div>
             <h1 class="page-title">Leave Management</h1>
-            <p class="page-subtitle">Review, forward, and record leave requests across all staff.</p>
+            <p class="page-subtitle">View leave requests and record principal decisions for payroll records.</p>
         </div>
     </div>
 
@@ -259,17 +267,9 @@ require_once __DIR__ . '/../../includes/head.php';
         <a href="?tab=pending_review" class="lm-stat-card lm-stat-card--blue <?= $tab==='pending_review'?'lm-stat-card--active':'' ?>">
             <div class="lm-stat-icon"><i class="fa fa-inbox"></i></div>
             <div>
-                <div class="lm-stat-label">Pending Review</div>
+                <div class="lm-stat-label">Pending Principal</div>
                 <div class="lm-stat-value"><?= (int)$sPendingReview ?></div>
-                <div class="lm-stat-sub">Awaiting admin review</div>
-            </div>
-        </a>
-        <a href="?tab=awaiting" class="lm-stat-card lm-stat-card--amber <?= $tab==='awaiting'?'lm-stat-card--active':'' ?>">
-            <div class="lm-stat-icon"><i class="fa fa-clock"></i></div>
-            <div>
-                <div class="lm-stat-label">Awaiting Principal</div>
-                <div class="lm-stat-value"><?= (int)$sAwaiting ?></div>
-                <div class="lm-stat-sub">Forwarded, pending decision</div>
+                <div class="lm-stat-sub">Awaiting principal decision</div>
             </div>
         </a>
         <a href="?tab=approved" class="lm-stat-card lm-stat-card--green <?= $tab==='approved'?'lm-stat-card--active':'' ?>">
@@ -309,12 +309,8 @@ require_once __DIR__ . '/../../includes/head.php';
     <!-- TABS -->
     <div class="lm-tabs">
         <a href="?tab=pending_review<?= $fDept?"&dept={$fDept}":'' ?>" class="lm-tab <?= $tab==='pending_review'?'lm-tab--active':'' ?>">
-            Pending Review
+            Pending Principal
             <?php if ($cPendingReview > 0): ?><span class="lm-tab-badge lm-tab-badge--amber"><?= $cPendingReview ?></span><?php endif; ?>
-        </a>
-        <a href="?tab=awaiting<?= $fDept?"&dept={$fDept}":'' ?>" class="lm-tab <?= $tab==='awaiting'?'lm-tab--active':'' ?>">
-            Awaiting Principal
-            <?php if ($cAwaiting > 0): ?><span class="lm-tab-badge lm-tab-badge--blue"><?= $cAwaiting ?></span><?php endif; ?>
         </a>
         <a href="?tab=to_record<?= $fDept?"&dept={$fDept}":'' ?>"
            class="lm-tab <?= $tab==='to_record'?'lm-tab--active':'' ?>"
@@ -386,8 +382,7 @@ require_once __DIR__ . '/../../includes/head.php';
                 <div class="lm-table-title">
                     <?php
                     $tabLabels = [
-                        'pending_review' => 'Pending Admin Review',
-                        'awaiting'       => 'Awaiting Principal Decision',
+                        'pending_review' => 'Pending Principal Decision',
                         'to_record'      => 'To Be Recorded — Principal Decided, Attendance Pending',
                         'approved'       => 'Approved &amp; Recorded',
                         'rejected'       => 'Rejected &amp; Recorded',
@@ -440,9 +435,9 @@ require_once __DIR__ . '/../../includes/head.php';
                     default              => ['lm-badge--pending','Pending'],
                 };
                 $wfBadge = match($wfStatus) {
-                    'FORWARDED' => ['lm-wf--forwarded','Forwarded'],
+                    'FORWARDED' => ['lm-wf--forwarded','With Principal'],
                     'RECORDED'  => ['lm-wf--recorded','Recorded'],
-                    default     => ['lm-wf--review','Pending Review'],
+                    default     => ['lm-wf--review','With Principal'],
                 };
             ?>
             <tr class="lm-row">
@@ -490,12 +485,7 @@ require_once __DIR__ . '/../../includes/head.php';
                                     onclick="doRecord(<?= $r['leave_id'] ?>)">
                                 <i class="fa fa-check-double"></i> Record
                             </button>
-                        <?php elseif ($wfStatus === 'PENDING_REVIEW'): ?>
-                            <button class="lm-btn lm-btn--forward"
-                                    onclick="openForwardModal(<?= $r['leave_id'] ?>, <?= htmlspecialchars(json_encode($r['employee_name'])) ?>)">
-                                <i class="fa fa-paper-plane"></i> Forward
-                            </button>
-                        <?php elseif ($wfStatus === 'FORWARDED' && strtoupper($r['status']) !== 'PENDING'
+                        <?php elseif ($wfStatus !== 'RECORDED' && strtoupper($r['status']) !== 'PENDING'
                                       && ($ac['pending_cnt'] ?? 0) == 0): ?>
                             <button class="lm-btn lm-btn--record"
                                     onclick="doRecord(<?= $r['leave_id'] ?>)">
@@ -518,7 +508,6 @@ require_once __DIR__ . '/../../includes/head.php';
 
 <!-- MODALS -->
 <?php include __DIR__ . '/modals/view-leave.php'; ?>
-<?php include __DIR__ . '/modals/forward-modal.php'; ?>
 <?php include __DIR__ . '/modals/confirm-action.php'; ?>
 
 <script>

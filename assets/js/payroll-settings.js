@@ -639,6 +639,7 @@ function showToast(msg, type = 'success') {
 
 let modalPayPeriods    = null;
 let modalAccruedPay    = null;
+let modalThirteenthMonth = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     // Init Bootstrap modal for pay periods
@@ -663,6 +664,18 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const tmEl = document.getElementById('modalThirteenthMonthPeriod');
+    if (tmEl) {
+        modalThirteenthMonth = new bootstrap.Modal(tmEl);
+        tmEl.addEventListener('hidden.bs.modal', () => {
+            document.getElementById('tmFlash').style.display = 'none';
+            const btn = document.getElementById('tmCreateBtn');
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-plus-lg"></i> Create 13th Month Pay'; }
+        });
+    }
+
+    document.getElementById('tmYear')?.addEventListener('input', updateThirteenthMonthPreview);
+
     // Scope radio toggle (month vs year)
     document.querySelectorAll('input[name="ppCreateFor"]').forEach(radio => {
         radio.addEventListener('change', function () {
@@ -683,6 +696,64 @@ function openCreateAccruedPayModal() {
     const nameEl = document.getElementById('apName');
     if (nameEl && !nameEl.value) nameEl.value = `EOSY Accrued Pay ${yr}`;
     if (modalAccruedPay) modalAccruedPay.show();
+}
+
+function updateThirteenthMonthPreview() {
+    const year = document.getElementById('tmYear')?.value || new Date().getFullYear();
+    const coverage = document.getElementById('tmCoverage');
+    const payDate = document.getElementById('tmPayDate');
+    if (coverage) coverage.textContent = `Jan 1 - Dec 31, ${year}`;
+    if (payDate) payDate.textContent = `Dec 24, ${year}`;
+}
+
+function openCreateThirteenthMonthModal() {
+    const yearEl = document.getElementById('tmYear');
+    if (yearEl && !yearEl.value) yearEl.value = new Date().getFullYear();
+    updateThirteenthMonthPreview();
+    if (modalThirteenthMonth) modalThirteenthMonth.show();
+}
+
+async function submitCreateThirteenthMonth() {
+    const year = parseInt(document.getElementById('tmYear')?.value || '', 10);
+    const flash = document.getElementById('tmFlash');
+    const btn = document.getElementById('tmCreateBtn');
+
+    if (!year || year < 2020 || year > 2099) {
+        flash.style.cssText = 'display:block;padding:10px 14px;border-radius:8px;font-size:13px;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;margin-top:4px;';
+        flash.textContent = 'Enter a valid calendar year.';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Creating...';
+    flash.style.display = 'none';
+
+    const fd = new FormData();
+    fd.append('create_for', 'thirteenth_month');
+    fd.append('year', String(year));
+
+    try {
+        const res = await fetch(`${PS_BASE_URL}actions/create-payroll-periods.php`, { method: 'POST', body: fd });
+        const data = await res.json();
+
+        flash.style.cssText = `display:block;padding:10px 14px;border-radius:8px;font-size:13px;margin-top:4px;
+            ${data.success
+              ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;'
+              : 'background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;'}`;
+        flash.textContent = data.message;
+
+        if (data.success) {
+            setTimeout(() => location.reload(), 1200);
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-plus-lg"></i> Create 13th Month Pay';
+        }
+    } catch {
+        flash.style.cssText = 'display:block;padding:10px 14px;border-radius:8px;font-size:13px;background:#fee2e2;color:#991b1b;';
+        flash.textContent = 'Network error. Please try again.';
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plus-lg"></i> Create 13th Month Pay';
+    }
 }
 
 async function submitCreateAccruedPay() {
@@ -803,10 +874,10 @@ async function deletePeriod(id, name) {
         if (data.success) {
             location.reload();
         } else {
-            alert(data.message);
+            showToast(data.message || 'Failed to delete period.', 'error');
         }
     } catch {
-        alert('Network error. Please try again.');
+        showToast('Network error. Please try again.', 'error');
     }
 }
 

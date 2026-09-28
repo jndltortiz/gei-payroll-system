@@ -217,7 +217,7 @@ require_once __DIR__ . '/../../../includes/head.php';
     <!-- ── Greeting ─────────────────────────────────────────────────────────── -->
     <div class="pdb-greeting">
       <div>
-        <h1><?= $greeting ?>, <?= htmlspecialchars($_SESSION['user']['first_name'] ?? 'Principal') ?></h1>
+        <h1><?= $greeting ?>, <?= htmlspecialchars($_SESSION['user']['first_name'] ?? 'Principal', ENT_QUOTES, 'UTF-8') ?></h1>
         <p>Workflow overview for <?= date('l, F j, Y') ?></p>
       </div>
       <?php if ($totalPending > 0): ?>

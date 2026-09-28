@@ -606,7 +606,7 @@ var _returnedLoans = <?php
 
 function openEditReturned(loanId) {
     var loan = _returnedLoans[loanId];
-    if (!loan) { alert('Loan data not found.'); return; }
+    if (!loan) { showToast('Loan data not found.', 'error'); return; }
     var overlay = document.getElementById('editReturnedOverlay');
     if (!overlay) return;
 
@@ -708,8 +708,17 @@ function erFlash(msg, ok) {
     f.style.border = '1px solid ' + (ok ? '#bbf7d0' : '#fecaca');
 }
 
-function cancelOwnLoan(loanId) {
-    if (!confirm('Cancel this loan request? This cannot be undone.')) return;
+async function cancelOwnLoan(loanId) {
+    try {
+        await GEI.confirm({
+            title: 'Cancel Loan Request',
+            message: 'Cancel this loan request?',
+            note: 'This cannot be undone.',
+            type: 'danger',
+            confirmText: 'Cancel Request',
+        });
+    } catch { return; }
+
     var fd = new FormData();
     fd.append('action',  'cancel_own');
     fd.append('loan_id', loanId);
@@ -719,9 +728,10 @@ function cancelOwnLoan(loanId) {
         if (res.success) {
             location.reload();
         } else {
-            alert(res.message || 'Failed to cancel loan request.');
+            showToast(res.message || 'Failed to cancel loan request.', 'error');
         }
-    });
+    })
+    .catch(function(){ showToast('Network error. Please try again.', 'error'); });
 }
 </script>
 

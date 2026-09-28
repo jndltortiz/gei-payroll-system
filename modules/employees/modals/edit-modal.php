@@ -46,6 +46,7 @@ $shifts      = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, g
 
     <form method="POST" action="<?= BASE_URL ?>actions/employee-update.php"
           id="editEmployeeForm" enctype="multipart/form-data">
+                    <?= csrfInput() ?>
       <input type="hidden" name="employee_id" id="editEmployeeId">
 
       <div class="modal-body">
@@ -203,14 +204,20 @@ $shifts      = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, g
               </div>
               <div class="form-group">
                 <label>Employment Status <span class="req-star">*</span></label>
-                <select name="employee_status" id="editEmployeeStatus" data-req="1" data-label="Employment Status">
+                <select name="employee_status" id="editEmployeeStatus" data-req="1" data-label="Employment Status"
+                        onchange="toggleStatusEffectiveDate('edit')">
                   <option value="ACTIVE">Active</option>
-                  <option value="INACTIVE">Inactive</option>
+                  <option value="RESIGNED">Resigned</option>
+                  <option value="TERMINATED">Terminated</option>
                 </select>
               </div>
               <div class="form-group">
                 <label>Hire Date <span class="req-star">*</span></label>
                 <input type="date" name="hire_date" id="editHireDate" data-req="1" data-label="Hire Date">
+              </div>
+              <div class="form-group" id="editStatusEffectiveWrap" style="display:none;">
+                <label>Status Effective Date <span class="req-star">*</span></label>
+                <input type="date" name="status_effective_date" id="editStatusEffectiveDate" data-label="Status Effective Date">
               </div>
             </div>
           </div>
@@ -419,16 +426,6 @@ $shifts      = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, g
                 <i class="fa fa-rotate"></i> Generate Strong Password
               </a>
             </div>
-
-            <hr class="section-divider">
-
-            <label class="check-row">
-              <input type="checkbox" name="send_credentials" id="editSendCreds">
-              <div>
-                <strong>Resend credentials via email</strong>
-                <span>Employee will receive updated login details</span>
-              </div>
-            </label>
 
             <label class="toggle-row">
               <div class="toggle-switch" id="editForceToggle" onclick="toggleSwitch(this, 'editForceHidden')"></div>

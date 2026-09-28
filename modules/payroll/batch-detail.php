@@ -220,7 +220,8 @@ $avgNet       = (int)$totals['emp_count'] > 0 ? (float)$totals['net'] / (int)$to
 // ── Role flags ────────────────────────────────────────────────────────────────
 $userIsAdmin     = isAdmin();
 $userIsPrincipal = isPrincipalRole();
-$canEdit         = $userIsAdmin && $period['status'] === 'OPEN';
+$periodType      = $period['period_type'] ?? 'REGULAR';
+$canEdit         = $userIsAdmin && $period['status'] === 'OPEN' && $periodType !== 'THIRTEENTH_MONTH';
 
 $pageTitle = 'Payroll Batch — ' . $period['period_name'];
 $extraCSS  = [BASE_URL . 'assets/css/payroll.css', BASE_URL . 'assets/css/batch-detail.css'];
@@ -284,24 +285,25 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
             <button class="btn-primary" onclick="confirmPayrollAction('submit',<?= $periodId ?>)">
                 <i class="fa fa-paper-plane"></i> Submit for Approval
             </button>
-            <?php elseif ($period['status'] === 'APPROVED'): ?>
-            <button class="btn-primary" style="background:#7c3aed;"
-                    onclick="confirmPayrollAction('release',<?= $periodId ?>)">
-                <i class="fa fa-money-bill-wave"></i> Release Payroll
-            </button>
             <?php elseif ($period['status'] === 'RELEASED'): ?>
             <button class="btn-outline" onclick="window.print()">
                 <i class="fa fa-print"></i> Print Payslips
             </button>
             <?php endif; ?>
         <?php endif; ?>
+        <?php if ($userIsPrincipal && $period['status'] === 'APPROVED'): ?>
+            <button class="btn-primary" style="background:#7c3aed;"
+                    onclick="openReleaseConfirm(<?= (int)$periodId ?>, <?= htmlspecialchars(json_encode($period['period_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>)">
+                <i class="fa fa-money-bill-wave"></i> Release Payroll
+            </button>
+        <?php endif; ?>
         <?php if ($userIsPrincipal && $period['status'] === 'PROCESSING'): ?>
             <button class="pr-btn-approve"
-                    onclick="openApproveConfirm(<?= $periodId ?>, '<?= htmlspecialchars($period['period_name'], ENT_QUOTES) ?>')">
+                    onclick="openApproveConfirm(<?= (int)$periodId ?>, <?= htmlspecialchars(json_encode($period['period_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>)">
                 <i class="fa fa-circle-check"></i> Approve
             </button>
             <button class="pr-btn-reject"
-                    onclick="openRejectModal(<?= $periodId ?>, '<?= htmlspecialchars($period['period_name'], ENT_QUOTES) ?>')">
+                    onclick="openRejectModal(<?= (int)$periodId ?>, <?= htmlspecialchars(json_encode($period['period_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>)">
                 <i class="fa fa-circle-xmark"></i> Reject
             </button>
         <?php endif; ?>
@@ -578,6 +580,9 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
             $deductionJson = htmlspecialchars(json_encode($deductionDetails[$r['payroll_id']] ?? []), ENT_QUOTES, 'UTF-8');
             $employeeNo    = htmlspecialchars($r['employee_no'] ?? '');
             $isNegative    = (float)$r['net_pay'] < 0;
+            $eosyRemark    = isset($r['remarks']) && strpos((string)$r['remarks'], 'Computed EOSY shortfall:') === 0
+                ? htmlspecialchars($r['remarks'], ENT_QUOTES, 'UTF-8')
+                : '';
             $empNameClean  = trim($r['employee_name']);
             $deptClean     = $r['department_name'] ?? '';
         ?>
@@ -613,7 +618,12 @@ else                  include __DIR__ . '/../../includes/sidebar.php';
             <td><?= peso($r['sss_l']) ?></td>
             <td><?= peso($r['wtax']) ?></td>
             <td style="<?= $isNegative ? 'color:#dc2626;font-weight:700;' : 'color:#ef4444;' ?>"><?= peso($r['total_deductions']) ?></td>
-            <td><strong style="<?= $isNegative ? 'color:#dc2626;' : 'color:#0f766e;' ?>"><?= peso($r['net_pay']) ?><?= $isNegative ? ' <i class="fa fa-triangle-exclamation" style="font-size:11px;" title="Negative net pay"></i>' : '' ?></strong></td>
+            <td>
+                <strong style="<?= $isNegative ? 'color:#dc2626;' : 'color:#0f766e;' ?>"><?= peso($r['net_pay']) ?><?= $isNegative ? ' <i class="fa fa-triangle-exclamation" style="font-size:11px;" title="Negative net pay"></i>' : '' ?></strong>
+                <?php if ($eosyRemark): ?>
+                    <div style="font-size:11px;color:#92400e;margin-top:3px;line-height:1.35;"><?= $eosyRemark ?></div>
+                <?php endif; ?>
+            </td>
             <td><span class="badge badge--<?= strtolower($r['payroll_status']) ?>"><?= $r['payroll_status'] ?></span></td>
             <?php if ($userIsAdmin || $userIsPrincipal): ?>
             <td class="row-actions">
@@ -961,8 +971,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Admin payroll action modal ────────────────────────────────────────────────
 const _pcmConfig = {
-    submit:  { title:'Submit for Principal Approval', desc:'Lock payroll from editing and send to Principal for review.', btnLabel:'Submit', btnColor:'#0f766e', url: BASE_URL+'actions/payroll-save.php', isSubmit:true },
-    release: { title:'Release Payroll', desc:'Mark as released — salaries have been distributed to employees.', btnLabel:'Release', btnColor:'#7c3aed', url: BASE_URL+'actions/payroll-approve.php', isSubmit:false }
+    submit:  { title:'Submit for Principal Approval', desc:'Lock payroll from editing and send to Principal for review.', btnLabel:'Submit', btnColor:'#0f766e', url: BASE_URL+'actions/payroll-save.php', isSubmit:true }
 };
 let _pcmAction = null, _pcmPeriodId = null;
 
@@ -989,11 +998,11 @@ async function executePayrollAction() {
         const data = await res.json();
         closePayrollConfirm();
         if (data.success) { setTimeout(() => location.reload(), 1200); }
-        else { alert(data.message); btn.disabled = false; btn.textContent = cfg.btnLabel; }
-    } catch { alert('Network error.'); btn.disabled = false; }
+        else { showToast(data.message || 'Payroll action failed.', 'error'); btn.disabled = false; btn.textContent = cfg.btnLabel; }
+    } catch { showToast('Network error.', 'error'); btn.disabled = false; }
 }
 </script>
-<?php if ($userIsPrincipal && $period['status'] === 'PROCESSING'): ?>
+<?php if ($userIsPrincipal && in_array($period['status'], ['PROCESSING', 'APPROVED'], true)): ?>
 <script src="<?= BASE_URL ?>assets/js/principal-payroll-approval.js?v=<?= time() ?>"></script>
 <?php endif; ?>
 <script src="<?= BASE_URL ?>assets/js/payroll.js?v=<?= time() ?>"></script>

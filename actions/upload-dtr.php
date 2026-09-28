@@ -5,8 +5,8 @@
  * Does NOT modify any attendance_records rows — purely supplementary documentation.
  *
  * POST params (multipart/form-data):
- *   date_from     — Y-m-d (required) — start of the period this file covers
- *   date_to       — Y-m-d (optional) — end of period; defaults to date_from
+ *   date_from     — Y-m-d (required) — single unavailable attendance date
+ *   date_to       — Y-m-d (optional) — must match date_from if submitted
  *   department_id — int  (optional)
  *   employee_id   — int  (optional)  — set only when file covers a single employee
  *   notes         — text (optional)
@@ -21,12 +21,14 @@
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth.php';
-requireLogin();
+requireAdminAction();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
     exit;
 }
+
+requireCsrfToken();
 
 // ── Check migration 007 (dtr_attachments table) ───────────────────────────────
 $hasDtrTable = (bool)$pdo->query("
@@ -54,8 +56,12 @@ if (!$dateFrom || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom)) {
 if (!$dateTo || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo)) {
     $dateTo = $dateFrom;
 }
-if ($dateTo < $dateFrom) {
-    echo json_encode(['success' => false, 'message' => 'End date cannot be before start date.']);
+if ($dateTo !== $dateFrom) {
+    echo json_encode(['success' => false, 'message' => 'DTR uploads must cover one day only. Upload one file per unavailable attendance date.']);
+    exit;
+}
+if ($dateFrom > date('Y-m-d') || $dateTo > date('Y-m-d')) {
+    echo json_encode(['success' => false, 'message' => 'DTR upload dates cannot be in the future.']);
     exit;
 }
 

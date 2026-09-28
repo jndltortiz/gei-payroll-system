@@ -452,8 +452,8 @@ require_once __DIR__ . '/../../includes/head.php';
           </td>
           <td class="lc-action-cell">
             <button class="sy-btn-sm sy-btn-sm--outline lc-edit-btn"
-                    onclick="openEditCredit(<?= htmlspecialchars($payload, ENT_QUOTES) ?>)"
-                    title="Edit <?= htmlspecialchars($r['leave_name']) ?> for <?= htmlspecialchars($r['full_name']) ?>">
+                    onclick="openEditCredit(<?= htmlspecialchars($payload, ENT_QUOTES, 'UTF-8') ?>)"
+                    title="Edit <?= htmlspecialchars($r['leave_name'], ENT_QUOTES, 'UTF-8') ?> for <?= htmlspecialchars($r['full_name'], ENT_QUOTES, 'UTF-8') ?>">
               <i class="fa fa-pen"></i>
             </button>
           </td>
@@ -527,6 +527,7 @@ require_once __DIR__ . '/../../includes/head.php';
       </button>
     </div>
     <form method="POST" action="<?= BASE_URL ?>actions/leave-credits-action.php">
+                    <?= csrfInput() ?>
       <input type="hidden" name="action"         value="save">
       <input type="hidden" name="credit_id"      id="ecCreditId"     value="">
       <input type="hidden" name="employee_id"    id="ecEmployeeId"   value="">
@@ -609,6 +610,7 @@ require_once __DIR__ . '/../../includes/head.php';
     </div>
     <form method="POST" action="<?= BASE_URL ?>actions/leave-credits-action.php"
           onsubmit="confirmBulk(event)">
+                    <?= csrfInput() ?>
       <input type="hidden" name="action"         value="bulk_allocate">
       <input type="hidden" name="school_year_id" value="<?= $filterYear ?>">
       <input type="hidden" name="redirect"       value="<?= htmlspecialchars($_SERVER['REQUEST_URI']) ?>">

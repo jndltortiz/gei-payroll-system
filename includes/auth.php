@@ -17,6 +17,8 @@ function requireLogin(): void
         header('Location: ' . BASE_URL . 'modules/auth/login.php');
         exit;
     }
+
+    requireCsrfForPost();
 }
 
 /**
@@ -29,6 +31,8 @@ function requireLoginOnly(): void
         header('Location: ' . BASE_URL . 'modules/auth/login.php');
         exit;
     }
+
+    requireCsrfForPost();
 }
 
 /**
@@ -93,7 +97,12 @@ function hasRole(array $roles): bool
         return false;
     }
 
-    return in_array(userRole(), $roles, true);
+    $normalizedRoles = array_map(
+        static fn($role) => strtolower((string)$role),
+        $roles
+    );
+
+    return in_array(currentRole(), $normalizedRoles, true);
 }
 
 function redirectIfNoRole(array $roles): void
@@ -128,6 +137,99 @@ function getFlash(): ?array
     return $flash;
 }
 
+// CSRF HELPERS
+function csrfToken(): string
+{
+    if (empty($_SESSION['csrf_token']) || !is_string($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+
+    return $_SESSION['csrf_token'];
+}
+
+function validateCsrfToken(?string $submittedToken): bool
+{
+    if ($submittedToken === null || $submittedToken === '') {
+        return false;
+    }
+
+    $sessionToken = $_SESSION['csrf_token'] ?? '';
+    if (!is_string($sessionToken) || $sessionToken === '') {
+        return false;
+    }
+
+    return hash_equals($sessionToken, $submittedToken);
+}
+
+function csrfTokenFromRequest(): ?string
+{
+    if (isset($_POST['csrf_token'])) {
+        return (string)$_POST['csrf_token'];
+    }
+
+    $headerToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+    if (is_string($headerToken) && $headerToken !== '') {
+        return $headerToken;
+    }
+
+    $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+    if (stripos($contentType, 'application/json') !== false) {
+        $body = json_decode(file_get_contents('php://input'), true);
+        if (is_array($body) && isset($body['csrf_token'])) {
+            return (string)$body['csrf_token'];
+        }
+    }
+
+    return null;
+}
+
+function requireCsrfToken(?string $submittedToken = null): void
+{
+    if (!validateCsrfToken($submittedToken ?? csrfTokenFromRequest())) {
+        http_response_code(403);
+        exit('Invalid CSRF token.');
+    }
+}
+
+function csrfInput(): string
+{
+    return '<input type="hidden" name="csrf_token" value="'
+        . htmlspecialchars(csrfToken(), ENT_QUOTES, 'UTF-8')
+        . '">';
+}
+
+function requireCsrfForPost(): void
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+        requireCsrfToken();
+    }
+}
+
+// Shared validation for required audit/rejection/override reasons.
+function validateRequiredReason(?string $value, string $label = 'Reason', int $minLength = 10): ?string
+{
+    $text = trim((string)$value);
+
+    if ($text === '') {
+        return "{$label} is required.";
+    }
+
+    if (strlen($text) < $minLength) {
+        return "{$label} must be at least {$minLength} characters.";
+    }
+
+    $compact = preg_replace('/\s+/', '', $text) ?? '';
+    if ($compact !== '') {
+        $unicodeRepeated = preg_match('/^(.)\1*$/u', $compact);
+        $byteRepeated = preg_match('/^(.)\1*$/', $compact);
+        if ($unicodeRepeated === 1 || $byteRepeated === 1) {
+            return "{$label} cannot be a single repeated character.";
+        }
+    }
+
+    return null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ROLE HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -138,7 +240,7 @@ function getFlash(): ?array
  */
 function isAdmin(): bool
 {
-    return currentRole() === 'admin';
+    return in_array(currentRole(), ['admin', 'accounting'], true);
 }
 
 /**

@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 header('Content-Type: application/json');
-requireLogin();
+requireAdminAction();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request.']); exit;
@@ -17,6 +17,32 @@ try {
 
     if (!$curr) {
         echo json_encode(['success' => false, 'message' => 'Employee not found.']); exit;
+    }
+
+    $employeeStatus = strtoupper(trim($_POST['employee_status'] ?? $curr['employee_status'] ?? ''));
+    $allowedStatuses = ['ACTIVE', 'RESIGNED', 'TERMINATED'];
+    if (!in_array($employeeStatus, $allowedStatuses, true)) {
+        echo json_encode(['success' => false,
+            'message' => 'Invalid employment status. Use Active, Resigned, or Terminated.']);
+        exit;
+    }
+
+    $statusEffectiveDate = trim($_POST['status_effective_date'] ?? '');
+    if ($employeeStatus === 'ACTIVE') {
+        $statusEffectiveDate = null;
+    } elseif ($statusEffectiveDate === '') {
+        $statusEffectiveDate = trim($curr['status_effective_date'] ?? '');
+        if ($statusEffectiveDate === '') {
+            echo json_encode(['success' => false,
+                'message' => 'Status effective date is required for resigned or terminated employees.']);
+            exit;
+        }
+    }
+    if ($statusEffectiveDate !== null
+        && (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $statusEffectiveDate) || strtotime($statusEffectiveDate) === false)) {
+        echo json_encode(['success' => false,
+            'message' => 'Status effective date must be a valid date.']);
+        exit;
     }
 
     // ── Duplicate email check (exclude this employee) ─────────────────────────
@@ -94,6 +120,7 @@ try {
             hire_date                   = :hire_date,
             employment_type             = :employment_type,
             employee_status             = :employee_status,
+            status_effective_date        = :status_effective_date,
             department_id               = :department_id,
             position_id                 = :position_id,
             shift_id                    = :shift_id,
@@ -122,7 +149,8 @@ try {
         ':contact_no'   => $normalizeContact($useNullable('contact_no')),
         ':hire_date'    => $use('hire_date'),
         ':employment_type'  => $use('employment_type'),
-        ':employee_status'  => $use('employee_status'),
+        ':employee_status'  => $employeeStatus,
+        ':status_effective_date' => $statusEffectiveDate,
         ':department_id'    => $use('department_id'),
         ':position_id'      => $use('position_id'),
         ':shift_id'         => $useNullable('shift_id'),
@@ -194,8 +222,8 @@ try {
             $pdo->prepare("
                 INSERT INTO employee_compensations
                     (employee_id, effective_date, monthly_salary, daily_rate, pay_basis, is_active)
-                VALUES (?, CURDATE(), ?, ?, 'MONTHLY', 1)
-            ")->execute([$id, $monthly, $daily]);
+                VALUES (?, ?, ?, ?, 'MONTHLY', 1)
+            ")->execute([$id, $empParams[':hire_date'], $monthly, $daily]);
         }
     }
 

@@ -28,6 +28,68 @@ document.querySelectorAll('.sc-modal-overlay').forEach(el => {
 });
 
 // ── Create button ─────────────────────────────────────────────────────────
+function showScRejectError(message) {
+    const errorBox = document.getElementById('scRejectError');
+    if (errorBox) {
+        errorBox.textContent = message;
+        errorBox.style.display = 'block';
+    }
+}
+
+function clearScRejectError() {
+    const errorBox = document.getElementById('scRejectError');
+    if (errorBox) {
+        errorBox.textContent = '';
+        errorBox.style.display = 'none';
+    }
+}
+
+document.getElementById('scRejectForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const reason = (document.getElementById('rejectReason')?.value || '').trim();
+    const reasonError = window.GEI && GEI.validateReason
+        ? GEI.validateReason(reason, 'Rejection reason')
+        : (!reason ? 'Rejection reason is required.' : '');
+    clearScRejectError();
+    if (reasonError) {
+        showScRejectError(reasonError);
+        return;
+    }
+
+    const btn = document.getElementById('scRejectSubmitBtn');
+    const oldHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Submitting...';
+    }
+
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        });
+        const data = await res.json();
+        if (data.success) {
+            closeModal('rejectModal');
+            location.reload();
+        } else {
+            showScRejectError(data.message || 'Failed to reject service credit.');
+        }
+    } catch {
+        showScRejectError('Network error. Please try again.');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = oldHtml;
+        }
+    }
+});
+
 document.getElementById('btnCreate')?.addEventListener('click', () => {
     resetCreateModal();
     document.getElementById('createModalTitle').innerHTML =
@@ -61,7 +123,9 @@ function resetCreateModal() {
 function makeScDateRow(date, days, pay) {
     const d   = String(date || _scToday);
     const dys = parseFloat(days || 1).toFixed(1);
-    const p   = parseFloat(pay  || 0).toFixed(2);
+    const p   = (_scDailyRate > 0
+        ? Math.round(_scDailyRate * (parseFloat(days || 1) || 0) * 100) / 100
+        : parseFloat(pay || 0)).toFixed(2);
 
     const tr = document.createElement('tr');
     tr.className = 'sc-date-row';
@@ -76,7 +140,7 @@ function makeScDateRow(date, days, pay) {
         </td>
         <td>
             <input type="number" name="pay_per_date[]" value="${p}"
-                   step="0.01" min="0" required class="sc-date-input sc-date-input--pay">
+                   step="0.01" min="0" required readonly class="sc-date-input sc-date-input--pay">
         </td>
         <td>
             <button type="button" class="sc-date-row-remove" title="Remove row">
@@ -97,8 +161,6 @@ function makeScDateRow(date, days, pay) {
         }
         updateScDateTotals();
     });
-
-    tr.querySelector('[name="pay_per_date[]"]').addEventListener('input', updateScDateTotals);
 
     return tr;
 }

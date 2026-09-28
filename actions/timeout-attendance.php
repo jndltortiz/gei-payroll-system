@@ -16,7 +16,7 @@
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/auth.php';
-requireLogin();
+requireAdminAction();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
@@ -49,31 +49,35 @@ $skipped   = 0;
 $errors    = [];
 
 foreach ($ids as $attId) {
-    // Fetch attendance row + shift info
-    $rec = $pdo->prepare("
-        SELECT ar.attendance_id, ar.time_in, ar.time_out,
-               ar.attendance_status, ar.attendance_source, ar.remarks,
-               s.end_time AS shift_end
-        FROM attendance_records ar
-        JOIN employees e ON ar.employee_id = e.employee_id
-        LEFT JOIN shifts s ON e.shift_id = s.shift_id
-        WHERE ar.attendance_id = ?
-    ");
-    $rec->execute([$attId]);
-    $row = $rec->fetch(PDO::FETCH_ASSOC);
-
-    if (!$row)             { $skipped++; continue; } // Record not found
-    if (!$row['time_in'])  { $skipped++; continue; } // No time_in → nothing to close
-    if ($row['time_out'])  { $skipped++; continue; } // Already timed out
-
-    // Compute overtime: minutes beyond shift end (0 if shift not set or not past end)
-    $overtimeMins = 0;
-    if ($row['shift_end']) {
-        $diff = $toMins($timeNow) - $toMins($row['shift_end']);
-        $overtimeMins = max(0, $diff);
-    }
-
     try {
+        $pdo->beginTransaction();
+
+        // Fetch attendance row + shift info for audit/overtime context.
+        $rec = $pdo->prepare("
+            SELECT ar.attendance_id,
+                   ar.attendance_status, ar.attendance_source, ar.remarks,
+                   s.end_time AS shift_end
+            FROM attendance_records ar
+            JOIN employees e ON ar.employee_id = e.employee_id
+            LEFT JOIN shifts s ON e.shift_id = s.shift_id
+            WHERE ar.attendance_id = ?
+        ");
+        $rec->execute([$attId]);
+        $row = $rec->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            $pdo->rollBack();
+            $skipped++;
+            continue;
+        }
+
+        // Compute overtime: minutes beyond shift end (0 if shift not set or not past end)
+        $overtimeMins = 0;
+        if ($row['shift_end']) {
+            $diff = $toMins($timeNow) - $toMins($row['shift_end']);
+            $overtimeMins = max(0, $diff);
+        }
+
         // Build UPDATE dynamically: include overtime_minutes only if column exists (migration 007)
         static $hasOtCol = null;
         if ($hasOtCol === null) {
@@ -84,25 +88,36 @@ foreach ($ids as $attId) {
         }
 
         if ($hasOtCol) {
-            $pdo->prepare("
+            $update = $pdo->prepare("
                 UPDATE attendance_records
                 SET time_out         = :tout,
                     overtime_minutes = :ot,
                     updated_at       = NOW()
-                WHERE attendance_id  = :id
-            ")->execute([':tout' => $timeNow, ':ot' => $overtimeMins, ':id' => $attId]);
+                WHERE attendance_id = :id
+                  AND time_out IS NULL
+                  AND time_in IS NOT NULL
+            ");
+            $update->execute([':tout' => $timeNow, ':ot' => $overtimeMins, ':id' => $attId]);
         } else {
-            $pdo->prepare("
+            $update = $pdo->prepare("
                 UPDATE attendance_records
                 SET time_out   = :tout,
                     updated_at = NOW()
                 WHERE attendance_id = :id
-            ")->execute([':tout' => $timeNow, ':id' => $attId]);
+                  AND time_out IS NULL
+                  AND time_in IS NOT NULL
+            ");
+            $update->execute([':tout' => $timeNow, ':id' => $attId]);
         }
 
-        // Audit log (requires migration 007; silently skipped if absent)
-        try {
-            $pdo->prepare("
+        if ($update->rowCount() !== 1) {
+            $pdo->rollBack();
+            $skipped++;
+            continue;
+        }
+
+        // Audit log; transaction rolls back if this cannot be written.
+        $pdo->prepare("
                 INSERT INTO attendance_audit_log
                     (attendance_id, changed_by, action_type,
                      old_time_out, new_time_out,
@@ -116,13 +131,14 @@ foreach ($ids as $attId) {
                 $row['attendance_status'], $row['attendance_status'],
                 $row['attendance_source'], $row['attendance_source'],
             ]);
-        } catch (PDOException $auditEx) {
-            // Audit table absent — non-fatal
-        }
-
+        $pdo->commit();
         $processed++;
     } catch (PDOException $e) {
-        $errors[] = "Record #{$attId}: " . $e->getMessage();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('[attendance] Timeout transaction failed: ' . $e->getMessage());
+        $errors[] = "Record #{$attId}: time out was not saved because the record and audit log could not both be written.";
     }
 }
 

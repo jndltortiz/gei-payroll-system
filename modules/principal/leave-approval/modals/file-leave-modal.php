@@ -6,6 +6,7 @@
       <button onclick="closeModal('fileLeaveModal')" title="Close"><i class="fa fa-times"></i></button>
     </div>
     <form id="fileLeaveForm" novalidate>
+      <?= csrfInput() ?>
       <div class="pr-modal-body">
 
         <div class="lv-form-group">
@@ -43,7 +44,7 @@
           <label class="lv-form-label" for="leaveReason">
             Reason <span class="req">*</span>
           </label>
-          <textarea id="leaveReason" name="reason" class="lv-form-control" rows="3"
+          <textarea id="leaveReason" name="reason" class="lv-form-control" rows="3" minlength="10"
                     placeholder="Briefly describe the reason for your leave..."
                     required></textarea>
         </div>
@@ -61,6 +62,8 @@
           </div>
           <div id="fileNameDisplay" class="lv-file-name"></div>
         </div>
+
+        <div id="fileLeaveError" class="alert alert-danger" style="display:none;margin:12px 0 0;"></div>
 
       </div>
       <div class="pr-modal-footer">

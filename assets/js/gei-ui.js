@@ -12,6 +12,63 @@
 
     window.GEI = window.GEI || {};
 
+    GEI.validateReason = function (value, label, minLength) {
+        label = label || 'Reason';
+        minLength = minLength || 10;
+
+        var text = String(value || '').trim();
+        if (!text) return label + ' is required.';
+        if (text.length < minLength) return label + ' must be at least ' + minLength + ' characters.';
+
+        var compact = text.replace(/\s+/g, '');
+        var chars = Array.from(compact);
+        if (chars.length > 0 && chars.every(function (ch) { return ch === chars[0]; })) {
+            return label + ' cannot be a single repeated character.';
+        }
+
+        return '';
+    };
+
+    document.addEventListener('submit', function (e) {
+        if (e.defaultPrevented) return;
+
+        var form = e.target;
+        if (!form || !form.querySelectorAll) return;
+
+        var fields = form.querySelectorAll('textarea[required][minlength], input[required][minlength]');
+        for (var i = 0; i < fields.length; i++) {
+            var field = fields[i];
+            var hint = [
+                field.name || '',
+                field.id || '',
+                field.placeholder || '',
+                field.getAttribute('aria-label') || ''
+            ].join(' ').toLowerCase();
+
+            if (!hint.includes('reason') && !hint.includes('remarks')) continue;
+
+            var label = hint.includes('remarks') ? 'Remarks' : 'Reason';
+            var explicitLabel = field.id ? form.querySelector('label[for="' + field.id + '"]') : null;
+            if (explicitLabel && explicitLabel.textContent.trim()) {
+                label = explicitLabel.textContent.replace('*', '').trim();
+            }
+
+            var error = GEI.validateReason(field.value, label, Number(field.getAttribute('minlength') || 10));
+            if (error) {
+                e.preventDefault();
+                field.setCustomValidity(error);
+                field.reportValidity();
+                field.addEventListener('input', function clearReasonValidity() {
+                    this.setCustomValidity('');
+                    this.removeEventListener('input', clearReasonValidity);
+                });
+                return;
+            }
+
+            field.setCustomValidity('');
+        }
+    });
+
     // ── Confirm Modal ─────────────────────────────────────────────────────────
 
     let _resolve = null;

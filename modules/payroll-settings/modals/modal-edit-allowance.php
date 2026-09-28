@@ -7,6 +7,7 @@
                 <button type="button" class="ps-modal-close" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i></button>
             </div>
             <form id="formEditAllowance" onsubmit="submitEditAllowance(event)">
+                <?= csrfInput() ?>
                 <input type="hidden" name="allowance_type_id" id="editAlId">
                 <div class="ps-modal-body">
                     <div class="ps-form-group">

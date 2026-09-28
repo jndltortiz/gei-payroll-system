@@ -14,32 +14,59 @@
  */
 function recalculatePayrollTotals(PDO $pdo, int $payrollId): void
 {
-    $pdo->prepare("
-        UPDATE payroll_records pr
-        SET
-            total_allowances = (
-                SELECT COALESCE(SUM(pa.amount), 0)
-                FROM payroll_allowances pa
-                WHERE pa.payroll_id = pr.payroll_id
-            ),
-            total_deductions = (
-                SELECT COALESCE(SUM(pd.amount), 0)
-                FROM payroll_deductions pd
-                WHERE pd.payroll_id = pr.payroll_id
-            ),
-            gross_pay = pr.basic_pay + (
-                SELECT COALESCE(SUM(pa.amount), 0)
-                FROM payroll_allowances pa
-                WHERE pa.payroll_id = pr.payroll_id
-            ),
-            net_pay = (
-                pr.basic_pay
-                + (SELECT COALESCE(SUM(pa.amount), 0) FROM payroll_allowances pa WHERE pa.payroll_id = pr.payroll_id)
-                - (SELECT COALESCE(SUM(pd.amount), 0) FROM payroll_deductions pd WHERE pd.payroll_id = pr.payroll_id)
-            ),
-            updated_at = NOW()
+    $stmt = $pdo->prepare("
+        SELECT pr.basic_pay, pr.remarks, pp.period_type,
+               COALESCE(SUM(DISTINCT pa_sum.total_allowances), 0) AS total_allowances,
+               COALESCE(SUM(DISTINCT pd_sum.total_deductions), 0) AS total_deductions
+        FROM payroll_records pr
+        JOIN payroll_periods pp ON pr.period_id = pp.period_id
+        LEFT JOIN (
+            SELECT payroll_id, SUM(amount) AS total_allowances
+            FROM payroll_allowances
+            WHERE payroll_id = ?
+            GROUP BY payroll_id
+        ) pa_sum ON pa_sum.payroll_id = pr.payroll_id
+        LEFT JOIN (
+            SELECT payroll_id, SUM(amount) AS total_deductions
+            FROM payroll_deductions
+            WHERE payroll_id = ?
+            GROUP BY payroll_id
+        ) pd_sum ON pd_sum.payroll_id = pr.payroll_id
         WHERE pr.payroll_id = ?
-    ")->execute([$payrollId]);
+        GROUP BY pr.payroll_id, pr.basic_pay, pr.remarks, pp.period_type
+    ");
+    $stmt->execute([$payrollId, $payrollId, $payrollId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        return;
+    }
+
+    $basic = (float)$row['basic_pay'];
+    $allowances = (float)$row['total_allowances'];
+    $deductions = (float)$row['total_deductions'];
+    $gross = $basic + $allowances;
+    $computedNet = $gross - $deductions;
+    $net = $computedNet;
+    $remarks = $row['remarks'];
+
+    if (($row['period_type'] ?? 'REGULAR') === 'ACCRUED_PAY' && $computedNet < 0) {
+        $net = 0.0;
+        $remarks = 'Computed EOSY shortfall: -PHP ' . number_format(abs($computedNet), 2, '.', ',')
+            . '; payout capped at PHP 0.00 and not deducted from regular payroll.';
+    } elseif (is_string($remarks) && strpos($remarks, 'Computed EOSY shortfall:') === 0) {
+        $remarks = null;
+    }
+
+    $pdo->prepare("
+        UPDATE payroll_records
+        SET total_allowances = ?,
+            total_deductions = ?,
+            gross_pay = ?,
+            net_pay = ?,
+            remarks = ?,
+            updated_at = NOW()
+        WHERE payroll_id = ?
+    ")->execute([$allowances, $deductions, $gross, $net, $remarks, $payrollId]);
 }
 
 /**
@@ -143,6 +170,12 @@ function computeHalfDaySettlement(
     int $periodId,
     float $dailyRate
 ): ?array {
+    $typeStmt = $pdo->prepare("SELECT employment_type FROM employees WHERE employee_id = ?");
+    $typeStmt->execute([$employeeId]);
+    if ($typeStmt->fetchColumn() === 'PART_TIME') {
+        return null;
+    }
+
     // Resolve active school year
     $syRow = $pdo->query("SELECT school_year_id FROM school_years WHERE is_active = 1 LIMIT 1")->fetch();
     if (!$syRow) return null;

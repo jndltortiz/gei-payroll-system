@@ -37,5 +37,5 @@ echo json_encode([
     'start_time'           => $emp['start_time'] ?? null,
     'end_time'             => $emp['end_time']   ?? null,
     'grace_period_minutes' => (int)($emp['grace_period_minutes'] ?? 0),
-    'half_day_time'        => $emp['half_day_time'] ?? null,
+    'half_day_time'        => ($emp['employment_type'] ?? 'FULL_TIME') === 'PART_TIME' ? null : '09:00:00',
 ]);

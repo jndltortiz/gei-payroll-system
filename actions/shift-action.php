@@ -43,7 +43,7 @@ try {
             $startTime   = parseTime($_POST['start_time']      ?? '');
             $endTime     = parseTime($_POST['end_time']        ?? '');
             $grace       = max(0, (int)($_POST['grace_period_minutes'] ?? 0));
-            $halfDay     = parseTime($_POST['half_day_time']   ?? '') ?: null;
+            $halfDay     = '09:00:00';
             $isActive    = !empty($_POST['is_active']) ? 1 : 0;
 
             if (!$name || !$startTime || !$endTime) {
@@ -75,7 +75,7 @@ try {
             $startTime = parseTime($_POST['start_time']      ?? '');
             $endTime   = parseTime($_POST['end_time']        ?? '');
             $grace     = max(0, (int)($_POST['grace_period_minutes'] ?? 0));
-            $halfDay   = parseTime($_POST['half_day_time']   ?? '') ?: null;
+            $halfDay   = '09:00:00';
             $isActive  = !empty($_POST['is_active']) ? 1 : 0;
 
             if (!$name || !$startTime || !$endTime) {

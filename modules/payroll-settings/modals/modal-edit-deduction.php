@@ -7,6 +7,7 @@
                 <button type="button" class="ps-modal-close" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i></button>
             </div>
             <form id="formEditDeduction" onsubmit="submitEditDeduction(event)">
+                <?= csrfInput() ?>
                 <input type="hidden" name="deduction_type_id" id="editDedId">
                 <div class="ps-modal-body">
                     <div class="ps-form-group">

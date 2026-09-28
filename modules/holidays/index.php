@@ -370,6 +370,7 @@ require_once __DIR__ . '/../../includes/head.php';
 
   <!-- Bulk form (hidden; populated by JS) -->
   <form method="POST" action="<?= BASE_URL ?>actions/holiday-action.php" id="holBulkForm">
+                    <?= csrfInput() ?>
     <input type="hidden" name="action"         id="holBulkActionInput" value="">
     <input type="hidden" name="school_year_id" id="holBulkSYInput"     value="">
     <input type="hidden" name="holiday_type"   id="holBulkTypeInput"   value="">
@@ -413,7 +414,7 @@ require_once __DIR__ . '/../../includes/head.php';
           $isToday = $h['holiday_date'] === date('Y-m-d');
           $tLabel  = $typeLabels[$h['holiday_type']] ?? ucfirst(strtolower($h['holiday_type']));
           $tClass  = $typeClasses[$h['holiday_type']] ?? 'hol-badge--special';
-          $payload = htmlspecialchars(json_encode($h), ENT_QUOTES);
+          $payload = htmlspecialchars(json_encode($h, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
         ?>
         <tr class="<?= $isToday ? 'hol-row--today' : '' ?>" data-id="<?= $h['holiday_id'] ?>">
           <td class="hol-col-check">
@@ -452,7 +453,7 @@ require_once __DIR__ . '/../../includes/head.php';
               </button>
               <?php if (!$isPast): ?>
               <button class="hol-btn-sm hol-btn-sm--danger"
-                      onclick="deleteHoliday(<?= $h['holiday_id'] ?>, <?= htmlspecialchars(json_encode($h['holiday_name']), ENT_QUOTES) ?>)"
+                      onclick="deleteHoliday(<?= (int)$h['holiday_id'] ?>, <?= htmlspecialchars(json_encode($h['holiday_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8') ?>)"
                       title="Delete">
                 <i class="fa fa-trash"></i>
               </button>
@@ -489,6 +490,7 @@ require_once __DIR__ . '/../../includes/head.php';
       </button>
     </div>
     <form method="POST" action="<?= BASE_URL ?>actions/holiday-action.php" id="holForm">
+                    <?= csrfInput() ?>
       <input type="hidden" name="action"     id="holFormAction" value="create">
       <input type="hidden" name="holiday_id" id="holFormId"     value="">
       <input type="hidden" name="redirect"   value="<?= htmlspecialchars($currentUrl) ?>">
@@ -563,6 +565,7 @@ require_once __DIR__ . '/../../includes/head.php';
       </button>
     </div>
     <form method="POST" action="<?= BASE_URL ?>actions/holiday-action.php">
+                    <?= csrfInput() ?>
       <input type="hidden" name="action"   value="import_ph">
       <input type="hidden" name="redirect" value="<?= htmlspecialchars($currentUrl) ?>">
 
@@ -652,6 +655,7 @@ require_once __DIR__ . '/../../includes/head.php';
 
 <!-- Hidden delete form -->
 <form method="POST" action="<?= BASE_URL ?>actions/holiday-action.php" id="holDeleteForm" style="display:none;">
+                    <?= csrfInput() ?>
   <input type="hidden" name="action"     value="delete">
   <input type="hidden" name="holiday_id" id="holDeleteId" value="">
   <input type="hidden" name="redirect"   value="<?= htmlspecialchars($currentUrl) ?>">
@@ -772,10 +776,10 @@ function updateBulkControls() {
 
 function executeBulkAction() {
     var action = document.getElementById('holBulkAction').value;
-    if (!action) { alert('Please choose an action first.'); return; }
+    if (!action) { showToast('Please choose an action first.', 'warning'); return; }
 
     var ids = Array.from(document.querySelectorAll('.hol-row-chk:checked')).map(function(c) { return c.value; });
-    if (ids.length === 0) { alert('No holidays selected.'); return; }
+    if (ids.length === 0) { showToast('No holidays selected.', 'warning'); return; }
 
     var actionLabels = { bulk_link: 'link', bulk_type: 'retype', bulk_delete: 'delete' };
 

@@ -26,7 +26,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/payroll-utils.php';
 header('Content-Type: application/json');
-requireLogin();
+requireAdminAction();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
@@ -40,6 +40,10 @@ $deptId          = (int)($_POST['department_id'] ?? 0);
 $posId           = (int)($_POST['position_id']   ?? 0);
 $empIds          = array_values(array_filter(array_map('intval', $_POST['employee_ids'] ?? [])));
 $forceRegenerate = !empty($_POST['force_regenerate']);
+$dtrOverrideConfirmed = !empty($_POST['dtr_override_confirmed']);
+$dtrOverrideReason = trim($_POST['dtr_override_reason'] ?? '');
+$deMinimisWarningConfirmed = !empty($_POST['de_minimis_warning_confirmed']);
+$thirteenthWarningConfirmed = !empty($_POST['thirteenth_warning_confirmed']);
 
 // ── Validate period ───────────────────────────────────────────────────────────
 if (!$periodId) {
@@ -57,10 +61,93 @@ if (!$period) {
 
 // Detect period type — default REGULAR for rows created before migration 020
 $periodType = $period['period_type'] ?? 'REGULAR';
-if (!in_array($periodType, ['REGULAR', 'ACCRUED_PAY'], true)) {
+if (!in_array($periodType, ['REGULAR', 'ACCRUED_PAY', 'THIRTEENTH_MONTH'], true)) {
     $periodType = 'REGULAR';
 }
 $isAccruedPay = $periodType === 'ACCRUED_PAY';
+$isThirteenthMonth = $periodType === 'THIRTEENTH_MONTH';
+
+// DTR reconciliation guard: pending uploads overlapping the payroll period must
+// be reviewed first, unless Admin explicitly proceeds with a reason.
+$pendingDtrUploads = [];
+$hasDtrReconcile = (bool)$pdo->query("
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'dtr_attachments'
+      AND COLUMN_NAME = 'reconciliation_status'
+")->fetchColumn();
+
+if (!$isThirteenthMonth && $hasDtrReconcile) {
+    $hasDtrArchive = (bool)$pdo->query("
+        SELECT COUNT(*) FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'dtr_attachments'
+          AND COLUMN_NAME = 'is_archived'
+    ")->fetchColumn();
+    $archiveFilter = $hasDtrArchive ? 'AND COALESCE(da.is_archived, 0) = 0' : '';
+
+    $pendingStmt = $pdo->prepare("
+        SELECT da.attachment_id, da.cutoff_start, da.cutoff_end, da.employee_id,
+               da.department_id, da.file_name,
+               CONCAT(emp.first_name, ' ', emp.last_name) AS employee_name,
+               emp.employee_no,
+               dept.department_name
+        FROM dtr_attachments da
+        LEFT JOIN employees emp ON da.employee_id = emp.employee_id
+        LEFT JOIN departments dept ON da.department_id = dept.department_id
+        WHERE da.reconciliation_status = 'pending'
+          {$archiveFilter}
+          AND da.cutoff_start <= ?
+          AND da.cutoff_end >= ?
+        ORDER BY da.cutoff_start, da.attachment_id
+    ");
+    $pendingStmt->execute([$period['pay_period_end'], $period['pay_period_start']]);
+    $pendingDtrUploads = $pendingStmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+$formatPendingDtr = function (array $row): array {
+    $scope = 'All employees';
+    if (!empty($row['employee_id'])) {
+        $empNo = $row['employee_no'] ? $row['employee_no'] . ' - ' : '';
+        $scope = $empNo . ($row['employee_name'] ?: 'Employee #' . $row['employee_id']);
+    } elseif (!empty($row['department_id'])) {
+        $scope = 'Department: ' . ($row['department_name'] ?: '#' . $row['department_id']);
+    }
+
+    return [
+        'attachment_id' => (int)$row['attachment_id'],
+        'file_name' => $row['file_name'],
+        'date_from' => $row['cutoff_start'],
+        'date_to' => $row['cutoff_end'],
+        'scope' => $scope,
+    ];
+};
+
+if (!empty($pendingDtrUploads) && !$dtrOverrideConfirmed) {
+    echo json_encode([
+        'success' => false,
+        'requires_dtr_override' => true,
+        'message' => 'Pending DTR uploads overlap this payroll period. Review/reconcile them first, or proceed anyway with a required reason.',
+        'pending_dtr_uploads' => array_map($formatPendingDtr, $pendingDtrUploads),
+    ]);
+    exit;
+}
+
+if (!empty($pendingDtrUploads)) {
+    $dtrReasonError = validateRequiredReason($dtrOverrideReason, 'Override reason');
+} else {
+    $dtrReasonError = null;
+}
+
+if (!empty($pendingDtrUploads) && $dtrReasonError !== null) {
+    echo json_encode([
+        'success' => false,
+        'requires_dtr_override' => true,
+        'message' => $dtrReasonError,
+        'pending_dtr_uploads' => array_map($formatPendingDtr, $pendingDtrUploads),
+    ]);
+    exit;
+}
 
 // ── Validate scope sub-selection ──────────────────────────────────────────────
 if ($scope === 'department' && !$deptId) {
@@ -76,45 +163,151 @@ if ($scope === 'specific' && empty($empIds)) {
     exit;
 }
 
+// 13th month uses released REGULAR basic pay for the full calendar year. Warn
+// when regular periods in that year still have not been released, because the
+// total would be incomplete.
+if ($isThirteenthMonth) {
+    $calendarYear = (int)date('Y', strtotime($period['pay_period_start']));
+    $sourceStart = sprintf('%04d-01-01', $calendarYear);
+    $sourceEnd = sprintf('%04d-12-31', $calendarYear);
+
+    $unreleasedStmt = $pdo->prepare("
+        SELECT period_id, period_name, pay_period_start, pay_period_end, status
+        FROM payroll_periods
+        WHERE period_type = 'REGULAR'
+          AND pay_period_start >= ?
+          AND pay_period_end <= ?
+          AND status <> 'RELEASED'
+        ORDER BY pay_period_start
+    ");
+    $unreleasedStmt->execute([$sourceStart, $sourceEnd]);
+    $unreleasedRegularPeriods = $unreleasedStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (!empty($unreleasedRegularPeriods) && !$thirteenthWarningConfirmed) {
+        echo json_encode([
+            'success' => false,
+            'requires_thirteenth_warning' => true,
+            'message' => "Some regular payroll periods for {$calendarYear} are not released yet. 13th month pay will only include released regular basic pay.",
+            'unreleased_regular_periods' => array_map(function ($row) {
+                return [
+                    'period_id' => (int)$row['period_id'],
+                    'period_name' => $row['period_name'],
+                    'start' => $row['pay_period_start'],
+                    'end' => $row['pay_period_end'],
+                    'status' => $row['status'],
+                ];
+            }, $unreleasedRegularPeriods),
+        ]);
+        exit;
+    }
+}
+
 // ── Build employee list ───────────────────────────────────────────────────────
-$baseSQL = "
-    SELECT e.employee_id, e.department_id, e.position_id, e.employment_type,
-           ec.monthly_salary, ec.daily_rate
-    FROM employees e
-    JOIN employee_compensations ec ON e.employee_id = ec.employee_id AND ec.is_active = 1
-    WHERE e.employee_status = 'ACTIVE'
-";
+if ($isThirteenthMonth) {
+    $calendarYear = (int)date('Y', strtotime($period['pay_period_start']));
+    $sourceStart = sprintf('%04d-01-01', $calendarYear);
+    $sourceEnd = sprintf('%04d-12-31', $calendarYear);
 
-switch ($scope) {
-    case 'department':
-        $empStmt = $pdo->prepare($baseSQL . " AND e.department_id = ?");
-        $empStmt->execute([$deptId]);
-        $scopeLabel = "department #{$deptId}";
-        break;
+    $baseSQL = "
+        SELECT pr.employee_id,
+               e.department_id, e.position_id, e.employment_type,
+               COALESCE(ec.monthly_salary, 0) AS monthly_salary,
+               COALESCE(ec.daily_rate, 0) AS daily_rate,
+               SUM(pr.basic_pay) AS thirteenth_source_basic,
+               COUNT(DISTINCT pp.period_id) AS thirteenth_source_periods
+        FROM payroll_records pr
+        JOIN payroll_periods pp ON pr.period_id = pp.period_id
+        JOIN employees e ON pr.employee_id = e.employee_id
+        LEFT JOIN employee_compensations ec ON e.employee_id = ec.employee_id AND ec.is_active = 1
+        WHERE pp.period_type = 'REGULAR'
+          AND pp.status = 'RELEASED'
+          AND pr.payroll_status = 'RELEASED'
+          AND pp.pay_period_start >= ?
+          AND pp.pay_period_end <= ?
+          AND pr.basic_pay > 0
+    ";
+    $params = [$sourceStart, $sourceEnd];
 
-    case 'position':
-        $empStmt = $pdo->prepare($baseSQL . " AND e.position_id = ?");
-        $empStmt->execute([$posId]);
-        $scopeLabel = "position #{$posId}";
-        break;
+    switch ($scope) {
+        case 'department':
+            $baseSQL .= " AND e.department_id = ?";
+            $params[] = $deptId;
+            $scopeLabel = "department #{$deptId}";
+            break;
 
-    case 'specific':
-        $ph = implode(',', array_fill(0, count($empIds), '?'));
-        $empStmt = $pdo->prepare($baseSQL . " AND e.employee_id IN ($ph)");
-        $empStmt->execute($empIds);
-        $scopeLabel = count($empIds) . ' selected employee(s)';
-        break;
+        case 'position':
+            $baseSQL .= " AND e.position_id = ?";
+            $params[] = $posId;
+            $scopeLabel = "position #{$posId}";
+            break;
 
-    default: // all
-        $empStmt = $pdo->query($baseSQL);
-        $scopeLabel = 'all employees';
+        case 'specific':
+            $ph = implode(',', array_fill(0, count($empIds), '?'));
+            $baseSQL .= " AND pr.employee_id IN ($ph)";
+            $params = array_merge($params, $empIds);
+            $scopeLabel = count($empIds) . ' selected employee(s)';
+            break;
+
+        default:
+            $scopeLabel = 'all employees';
+    }
+
+    $baseSQL .= "
+        GROUP BY pr.employee_id, e.department_id, e.position_id, e.employment_type,
+                 ec.monthly_salary, ec.daily_rate
+        HAVING SUM(pr.basic_pay) > 0
+        ORDER BY e.last_name, e.first_name
+    ";
+    $empStmt = $pdo->prepare($baseSQL);
+    $empStmt->execute($params);
+} else {
+    $baseSQL = "
+        SELECT e.employee_id, e.department_id, e.position_id, e.employment_type,
+               ec.monthly_salary, ec.daily_rate
+        FROM employees e
+        JOIN employee_compensations ec ON e.employee_id = ec.employee_id AND ec.is_active = 1
+        WHERE e.hire_date <= ?
+          AND (
+              e.employee_status = 'ACTIVE'
+              OR e.status_effective_date > ?
+          )
+    ";
+    $baseParams = [$period['pay_period_end'], $period['pay_period_start']];
+
+    switch ($scope) {
+        case 'department':
+            $empStmt = $pdo->prepare($baseSQL . " AND e.department_id = ?");
+            $empStmt->execute(array_merge($baseParams, [$deptId]));
+            $scopeLabel = "department #{$deptId}";
+            break;
+
+        case 'position':
+            $empStmt = $pdo->prepare($baseSQL . " AND e.position_id = ?");
+            $empStmt->execute(array_merge($baseParams, [$posId]));
+            $scopeLabel = "position #{$posId}";
+            break;
+
+        case 'specific':
+            $ph = implode(',', array_fill(0, count($empIds), '?'));
+            $empStmt = $pdo->prepare($baseSQL . " AND e.employee_id IN ($ph)");
+            $empStmt->execute(array_merge($baseParams, $empIds));
+            $scopeLabel = count($empIds) . ' selected employee(s)';
+            break;
+
+        default: // all
+            $empStmt = $pdo->prepare($baseSQL);
+            $empStmt->execute($baseParams);
+            $scopeLabel = 'all employees';
+    }
 }
 
 $employees = $empStmt->fetchAll();
 
 if (empty($employees)) {
-    echo json_encode(['success' => false,
-        'message' => 'No active employees with compensation records found for the selected scope.']);
+    $message = $isThirteenthMonth
+        ? 'No released regular basic pay was found for the selected calendar year and scope.'
+        : 'No active employees with compensation records found for the selected scope.';
+    echo json_encode(['success' => false, 'message' => $message]);
     exit;
 }
 
@@ -132,12 +325,97 @@ $workingDaysPerWeek  = (int)($settings['working_days_per_week'] ?? 5);
 $workWeekdays        = ($workingDaysPerWeek >= 7) ? [1,2,3,4,5,6,7]
                      : ($workingDaysPerWeek >= 6  ? [1,2,3,4,5,6] : [1,2,3,4,5]);
 
+// Required de minimis benefits are configurable, but they must be present for
+// every active employee in regular payroll. Warn before generation if setup is
+// missing, inactive, zero, or scoped away from the selected payroll scope.
+$deMinimisIssues = [];
+if (!$isAccruedPay && !$isThirteenthMonth) {
+    $requiredDeMinimis = ['Rice Subsidy', 'Laundry Allowance', 'Anniversary Gift', 'Christmas Gift'];
+
+    if (!$autoApplyAllowances) {
+        $deMinimisIssues[] = 'Auto-apply allowances is disabled; required de minimis benefits will not be applied automatically.';
+    }
+
+    $dmTypeStmt = $pdo->prepare("
+        SELECT allowance_type_id, allowance_name, default_amount, is_active
+        FROM allowance_types
+        WHERE allowance_name IN (" . implode(',', array_fill(0, count($requiredDeMinimis), '?')) . ")
+    ");
+    $dmTypeStmt->execute($requiredDeMinimis);
+    $dmTypes = [];
+    foreach ($dmTypeStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $dmTypes[$row['allowance_name']] = $row;
+    }
+
+    foreach ($requiredDeMinimis as $name) {
+        if (empty($dmTypes[$name])) {
+            $deMinimisIssues[] = "{$name} allowance type is missing.";
+            continue;
+        }
+
+        $type = $dmTypes[$name];
+        if ((int)$type['is_active'] !== 1) {
+            $deMinimisIssues[] = "{$name} is inactive.";
+            continue;
+        }
+        if ((float)$type['default_amount'] <= 0) {
+            $deMinimisIssues[] = "{$name} has a zero/default amount.";
+        }
+
+        $assignCheck = $pdo->prepare("
+            SELECT COUNT(*) FROM allowance_assignments
+            WHERE allowance_type_id = ? AND is_active = 1
+        ");
+        $assignCheck->execute([(int)$type['allowance_type_id']]);
+        if ((int)$assignCheck->fetchColumn() === 0) {
+            continue;
+        }
+
+        $appliesStmt = $pdo->prepare("
+            SELECT COUNT(*) FROM allowance_assignments aa
+            WHERE aa.allowance_type_id = :aid
+              AND aa.is_active = 1
+              AND (
+                    aa.applies_to = 'ALL'
+                 OR (aa.applies_to = 'EMPLOYEE'   AND aa.target_id = :eid)
+                 OR (aa.applies_to = 'DEPARTMENT' AND aa.target_id = :dept)
+                 OR (aa.applies_to = 'POSITION'   AND aa.target_id = :pos)
+              )
+        ");
+        $missing = 0;
+        foreach ($employees as $emp) {
+            $appliesStmt->execute([
+                ':aid'  => (int)$type['allowance_type_id'],
+                ':eid'  => (int)$emp['employee_id'],
+                ':dept' => (int)($emp['department_id'] ?? 0),
+                ':pos'  => (int)($emp['position_id'] ?? 0),
+            ]);
+            if ((int)$appliesStmt->fetchColumn() === 0) {
+                $missing++;
+            }
+        }
+        if ($missing > 0) {
+            $deMinimisIssues[] = "{$name} is not assigned to {$missing} active employee(s) in this payroll scope.";
+        }
+    }
+}
+
+if (!empty($deMinimisIssues) && !$deMinimisWarningConfirmed) {
+    echo json_encode([
+        'success' => false,
+        'requires_de_minimis_warning' => true,
+        'message' => 'Required de minimis benefit setup needs review before payroll generation.',
+        'de_minimis_issues' => $deMinimisIssues,
+    ]);
+    exit;
+}
+
 // ── Pre-fetch non-absence, non-accrued deduction types (REGULAR use) ──────────
 // Excludes: is_absence_deduction=1 (never in any payroll — settled at EOSY)
 //           is_accrued_pay_deduction=1 (only in ACCRUED_PAY periods)
 // Backward-compatible: is_accrued_pay_deduction column added in mig 020; defaults to 0 if absent.
 $dtypes = [];
-if ($autoApplyDeductions && !$isAccruedPay) {
+if ($autoApplyDeductions && !$isAccruedPay && !$isThirteenthMonth) {
     try {
         $dtypes = $pdo->query("
             SELECT * FROM deduction_types
@@ -186,7 +464,7 @@ if ($isAccruedPay) {
 // If a prior ACCRUED_PAY period resulted in negative net_pay, the shortfall is
 // automatically deducted in the same-month regular payroll period.
 $eosyRecoveryDtId = null;
-if (!$isAccruedPay) {
+if (false && !$isAccruedPay) {
     try {
         $recovRow = $pdo->query("
             SELECT deduction_type_id FROM deduction_types
@@ -222,7 +500,16 @@ try {
         $periodEnd      = $period['pay_period_end']   ?? '';
 
         // ── Compute payable days and basic pay ───────────────────────────────────
-        if ($isAccruedPay) {
+        if ($isThirteenthMonth) {
+            $sourceBasic = round((float)($emp['thirteenth_source_basic'] ?? 0), 2);
+            $sourcePeriods = (int)($emp['thirteenth_source_periods'] ?? 0);
+            $basicPay = round($sourceBasic / 12, 2);
+            $payableDays = 0;
+            if ($basicPay <= 0) {
+                $skipped++;
+                continue;
+            }
+        } elseif ($isAccruedPay) {
             // Settlement period: no salary component
             $basicPay    = 0.0;
             $payableDays = 0;
@@ -239,7 +526,7 @@ try {
             $attStmt->execute([$employeeId, $periodStart, $periodEnd]);
             $payableDays = 0.0;
             foreach ($attStmt->fetchAll(PDO::FETCH_COLUMN) as $status) {
-                $payableDays += ($status === 'HALF_DAY') ? 0.5 : 1.0;
+                $payableDays += 1.0;
             }
             $basicPay = round($dailyRate * $payableDays, 2);
         } else {
@@ -346,23 +633,51 @@ try {
         $totalDeductions = 0.0;
 
         // ══════════════════════════════════════════════════════════════════════
+        // THIRTEENTH_MONTH path — derived basic pay only
+        // Formula: released REGULAR basic pay earned in the calendar year / 12.
+        // No allowances, deductions, de minimis, government contributions, or
+        // attendance/leave calculations are included.
+        // ══════════════════════════════════════════════════════════════════════
+        if ($isThirteenthMonth) {
+            $sourceBasic = round((float)($emp['thirteenth_source_basic'] ?? 0), 2);
+            $sourcePeriods = (int)($emp['thirteenth_source_periods'] ?? 0);
+            $calendarYear = (int)date('Y', strtotime($period['pay_period_start']));
+            $pdo->prepare("
+                UPDATE payroll_records
+                SET remarks = ?
+                WHERE payroll_id = ?
+            ")->execute([
+                "13th month pay {$calendarYear}: PHP " . number_format($sourceBasic, 2, '.', ',')
+                    . " released regular basic pay across {$sourcePeriods} regular period(s) / 12.",
+                $payrollId,
+            ]);
+
+        // ══════════════════════════════════════════════════════════════════════
         // ACCRUED_PAY path — service credits + half-day + excess leave only
         // ══════════════════════════════════════════════════════════════════════
-        if ($isAccruedPay) {
+        } elseif ($isAccruedPay) {
 
             // ── Service credits ───────────────────────────────────────────────
             // Pick up ALL approved, unpaid credits for this employee.
             // Per GEI policy (TOR Q60), service credits are released only at EOSY.
             $scStmt = $pdo->prepare("
-                SELECT sc.service_credit_id, sc.equivalent_pay
+                SELECT sc.service_credit_id,
+                       CASE
+                           WHEN COUNT(scd.sc_date_id) > 0
+                           THEN SUM(CASE WHEN scd.status = 'APPROVED' THEN scd.days ELSE 0 END)
+                           ELSE sc.days
+                       END AS approved_days
                 FROM service_credits sc
+                LEFT JOIN service_credit_dates scd ON sc.service_credit_id = scd.service_credit_id
                 WHERE sc.employee_id = :eid
                   AND sc.status IN ('APPROVED','PARTIALLY_APPROVED')
                   AND sc.payroll_id IS NULL
+                GROUP BY sc.service_credit_id, sc.days
             ");
             $scStmt->execute([':eid' => $employeeId]);
             $approvedCredits  = $scStmt->fetchAll();
-            $serviceCreditPay = array_sum(array_column($approvedCredits, 'equivalent_pay'));
+            $serviceCreditDays = array_sum(array_map(fn($row) => (float)$row['approved_days'], $approvedCredits));
+            $serviceCreditPay = round($dailyRate * $serviceCreditDays, 2);
             $scIds            = array_column($approvedCredits, 'service_credit_id');
 
             if ($serviceCreditPay > 0) {
@@ -387,10 +702,17 @@ try {
             if (!empty($scIds)) {
                 $ph = implode(',', array_fill(0, count($scIds), '?'));
                 $pdo->prepare("
-                    UPDATE service_credits
-                    SET status='APPLIED', payroll_id=?, applied_to_payroll_at=NOW()
+                    UPDATE service_credit_dates
+                    SET equivalent_pay = ROUND(days * ?, 2)
                     WHERE service_credit_id IN ($ph)
-                ")->execute(array_merge([$payrollId], $scIds));
+                      AND status = 'APPROVED'
+                ")->execute(array_merge([$dailyRate], $scIds));
+                $pdo->prepare("
+                    UPDATE service_credits
+                    SET status='APPLIED', payroll_id=?, applied_to_payroll_at=NOW(),
+                        equivalent_pay=ROUND(days * ?, 2)
+                    WHERE service_credit_id IN ($ph)
+                ")->execute(array_merge([$payrollId, $dailyRate], $scIds));
             }
 
             // ── Half-day settlement ───────────────────────────────────────────
@@ -788,7 +1110,7 @@ try {
             // "Already recovered" is determined by the existence of a recovery
             // deduction row in any regular period after the EOSY — regardless of
             // that period's workflow status — so force-regeneration is safe.
-            if ($eosyRecoveryDtId) {
+            if (false && $eosyRecoveryDtId) {
                 try {
                     $recovStmt = $pdo->prepare("
                         SELECT COALESCE(SUM(ABS(pr_e.net_pay)), 0) AS total_owed
@@ -869,7 +1191,41 @@ try {
     // Audit
     $uid = $_SESSION['user']['user_id'] ?? null;
     if ($uid) {
-        $typeLabel = $isAccruedPay ? 'ACCRUED_PAY' : 'REGULAR';
+        if (!empty($pendingDtrUploads) && $dtrOverrideConfirmed) {
+            $pendingIds = implode(',', array_map(
+                fn($row) => '#' . (int)$row['attachment_id'],
+                $pendingDtrUploads
+            ));
+            $pdo->prepare("
+                INSERT INTO audit_logs (user_id, action, table_name, record_id, description)
+                VALUES (?,?,?,?,?)
+            ")->execute([
+                $uid,
+                'DTR_OVERRIDE',
+                'dtr_attachments',
+                $periodId,
+                "Proceeded with payroll generation despite pending DTR upload(s) {$pendingIds}. Reason: {$dtrOverrideReason}",
+            ]);
+        }
+
+        if ($isThirteenthMonth && $thirteenthWarningConfirmed && !empty($unreleasedRegularPeriods ?? [])) {
+            $unreleasedIds = implode(',', array_map(
+                fn($row) => '#' . (int)$row['period_id'],
+                $unreleasedRegularPeriods
+            ));
+            $pdo->prepare("
+                INSERT INTO audit_logs (user_id, action, table_name, record_id, description)
+                VALUES (?,?,?,?,?)
+            ")->execute([
+                $uid,
+                'THIRTEENTH_MONTH_WARNING_OVERRIDE',
+                'payroll_periods',
+                $periodId,
+                "Generated 13th month pay while regular period(s) {$unreleasedIds} were not released.",
+            ]);
+        }
+
+        $typeLabel = $isThirteenthMonth ? 'THIRTEENTH_MONTH' : ($isAccruedPay ? 'ACCRUED_PAY' : 'REGULAR');
         $pdo->prepare("
             INSERT INTO audit_logs (user_id, action, table_name, record_id, description)
             VALUES (?,?,?,?,?)

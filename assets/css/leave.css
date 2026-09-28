@@ -223,8 +223,6 @@ a.lm-stat-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2
 }
 .lm-btn--view    { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
 .lm-btn--view:hover { background: #e2e8f0; }
-.lm-btn--forward { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
-.lm-btn--forward:hover { background: #dbeafe; }
 .lm-btn--record  { background: #ecfdf5; color: #065f46; border-color: #6ee7b7; }
 .lm-btn--record:hover  { background: #d1fae5; }
 

@@ -75,6 +75,7 @@ $flash = getFlash();
 
             <div class="form-card">
                 <form action="<?= BASE_URL ?>actions/login-action.php" method="POST">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrfToken(), ENT_QUOTES, 'UTF-8') ?>">
 
                     <label class="field-label" for="username">Username</label>
                     <div class="input-wrap">

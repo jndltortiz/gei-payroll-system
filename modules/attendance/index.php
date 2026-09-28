@@ -2,6 +2,16 @@
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../config/database.php';
 
+if (!function_exists('attJsLiteral')) {
+    function attJsLiteral($value): string {
+        return htmlspecialchars(
+            json_encode($value, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
+            ENT_QUOTES,
+            'UTF-8'
+        );
+    }
+}
+
 $dateToday = date('Y-m-d');
 $tab = $_GET['tab'] ?? 'today';
 
@@ -214,7 +224,13 @@ $positions = $pdo->query("SELECT position_id, position_name FROM positions ORDER
 $dtrFiles       = [];
 $dtrArchivedCnt = 0;
 $hasMig023Dtr   = false;
-$showDtrArchived = isset($_GET['dtr_archived']);
+$hasDtrReconcile = false;
+$hasDtrEntryTable = false;
+$dtrPendingCnt = 0;
+$dtrReviewEmployees = [];
+$showDtrArchived = ($_GET['dtr_archived'] ?? '') === '1';
+$dtrActiveUrl = '?' . http_build_query(['tab' => $tab]);
+$dtrArchivedUrl = '?' . http_build_query(['tab' => $tab, 'dtr_archived' => '1']);
 
 if ($hasMig007) {
     try {
@@ -228,9 +244,25 @@ if ($hasMig007) {
             WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='dtr_attachments' AND COLUMN_NAME='is_archived'
         ")->fetchColumn();
 
+        $hasDtrReconcile = (bool)$pdo->query("
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='dtr_attachments' AND COLUMN_NAME='reconciliation_status'
+        ")->fetchColumn();
+
+        $hasDtrEntryTable = (bool)$pdo->query("
+            SELECT COUNT(*) FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='dtr_reconciliation_entries'
+        ")->fetchColumn();
+
         $dtrDeptCol   = $hasDeptColDtr ? 'da.department_id, dept.department_name AS dtr_dept_name,' : "NULL AS department_id, NULL AS dtr_dept_name,";
         $dtrDeptJoin  = $hasDeptColDtr ? "LEFT JOIN departments dept ON da.department_id = dept.department_id" : "";
         $dtrArchCol   = $hasMig023Dtr  ? 'COALESCE(da.is_archived,0) AS is_archived,' : '0 AS is_archived,';
+        $dtrEntryCountCol = $hasDtrEntryTable
+            ? "(SELECT COUNT(*) FROM dtr_reconciliation_entries dre WHERE dre.attachment_id = da.attachment_id) AS reconciliation_entry_count,"
+            : "0 AS reconciliation_entry_count,";
+        $dtrReconCols = $hasDtrReconcile
+            ? "da.reconciliation_status, da.linked_attendance_id, da.reconciliation_notes, da.rejection_reason, da.reviewed_at, {$dtrEntryCountCol}"
+            : "'pending' AS reconciliation_status, NULL AS linked_attendance_id, NULL AS reconciliation_notes, NULL AS rejection_reason, NULL AS reviewed_at, 0 AS reconciliation_entry_count,";
 
         $dtrWhere = '';
         if ($hasMig023Dtr) {
@@ -242,11 +274,29 @@ if ($hasMig007) {
             $dtrArchivedCnt = (int)$pdo->query("SELECT COUNT(*) FROM dtr_attachments WHERE is_archived = 1")->fetchColumn();
         }
 
+        if ($hasDtrReconcile) {
+            $dtrPendingCnt = (int)$pdo->query("
+                SELECT COUNT(*)
+                FROM dtr_attachments
+                WHERE reconciliation_status = 'pending'
+                  AND " . ($hasMig023Dtr ? "COALESCE(is_archived,0) = 0" : "1=1") . "
+            ")->fetchColumn();
+
+            $dtrReviewEmployees = $pdo->query("
+                SELECT e.employee_id, e.employee_no, e.first_name, e.last_name, d.department_name
+                FROM employees e
+                LEFT JOIN departments d ON e.department_id = d.department_id
+                WHERE e.employee_status = 'ACTIVE'
+                ORDER BY e.last_name, e.first_name
+            ")->fetchAll(PDO::FETCH_ASSOC);
+        }
+
         $dtrStmt = $pdo->query("
-            SELECT da.attachment_id, da.cutoff_start, da.cutoff_end,
+            SELECT da.attachment_id, da.cutoff_start, da.cutoff_end, da.employee_id,
                    da.file_name, da.file_path, da.file_type, da.notes, da.created_at,
                    {$dtrArchCol}
                    {$dtrDeptCol}
+                   {$dtrReconCols}
                    COALESCE(
                        CONCAT(emp.first_name, ' ', emp.last_name),
                        u.username,
@@ -503,7 +553,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             $tout     = $r['time_out'] ? date('h:i A', strtotime($r['time_out'])) : '—';
                             $timeClass= $stClass === 'late' ? 'late' : ($stClass === 'half_day' ? 'half_day' : ($stClass === 'present' ? 'ok' : ''));
                             $canTimeout = $r['time_in'] && !$r['time_out'];
-                            $empNameEsc = addslashes($r['first_name'] . ' ' . $r['last_name']);
+                            $empName = $r['first_name'] . ' ' . $r['last_name'];
                             $sourceLabel = [
                                 'MANUAL_ADMIN'      => 'Manual',
                                 'MANUAL'            => 'Manual',
@@ -516,8 +566,8 @@ require_once __DIR__ . '/../../includes/head.php';
                             <td class="att-check-cell">
                                 <?php if ($canTimeout): ?>
                                 <input type="checkbox" class="row-select"
-                                       value="<?= $r['attendance_id'] ?>"
-                                       data-name="<?= htmlspecialchars($empNameEsc) ?>"
+                                       value="<?= (int)$r['attendance_id'] ?>"
+                                       data-name="<?= htmlspecialchars($empName, ENT_QUOTES, 'UTF-8') ?>"
                                        onchange="updateBulkBar()">
                                 <?php else: ?>
                                 <input type="checkbox" disabled class="row-select-disabled" title="No active check-in">
@@ -548,21 +598,21 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <div class="att-action-group">
                                     <?php if ($canTimeout): ?>
                                     <button class="att-action-btn timeout" title="Log time out"
-                                        onclick="openTimeoutModal([<?= $r['attendance_id'] ?>],['<?= $empNameEsc ?>'])">
+                                        onclick="openTimeoutModal([<?= (int)$r['attendance_id'] ?>],[<?= attJsLiteral($empName) ?>])">
                                         <i class="fa fa-clock"></i> Time Out
                                     </button>
                                     <?php endif; ?>
                                     <button class="att-action-btn edit" title="Edit record"
                                         onclick="openEditModal(
-                                            '<?= $r['attendance_id'] ?>',
-                                            '<?= $empNameEsc ?>',
-                                            '<?= htmlspecialchars($r['employee_no']??'') ?>',
-                                            '<?= $r['attendance_date'] ?>',
-                                            '<?= $r['time_in'] ?>',
-                                            '<?= $r['time_out'] ?>',
-                                            '<?= $r['attendance_status'] ?>',
-                                            '<?= addslashes($r['remarks']??'') ?>',
-                                            '<?= htmlspecialchars($r['attendance_source']??'MANUAL_ADMIN') ?>'
+                                            <?= (int)$r['attendance_id'] ?>,
+                                            <?= attJsLiteral($empName) ?>,
+                                            <?= attJsLiteral($r['employee_no'] ?? '') ?>,
+                                            <?= attJsLiteral($r['attendance_date']) ?>,
+                                            <?= attJsLiteral($r['time_in'] ?? '') ?>,
+                                            <?= attJsLiteral($r['time_out'] ?? '') ?>,
+                                            <?= attJsLiteral($r['attendance_status']) ?>,
+                                            <?= attJsLiteral($r['remarks'] ?? '') ?>,
+                                            <?= attJsLiteral($r['attendance_source'] ?? 'MANUAL_ADMIN') ?>
                                         )">
                                         <i class="fa fa-pen-to-square"></i> Edit
                                     </button>
@@ -749,7 +799,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             <th>Department</th>
                             <th>Time In</th>
                             <th>Time Out</th>
-                            <th>OT (min)</th>
+                            <th title="Informational only; not payable">Extended Hours<br><small>(not payable)</small></th>
                             <th>Status</th>
                             <th>Method</th>
                             <th>Review</th>
@@ -768,7 +818,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             $rv       = $r['review_status'] ?? 'PENDING';
                             [$rvLabel, $rvClass] = $rvLabels[$rv] ?? ['Pending','rv-pending'];
                             $canTimeout = $r['time_in'] && !$r['time_out'];
-                            $empNameEsc = addslashes($r['first_name'].' '.$r['last_name']);
+                            $empName = $r['first_name'].' '.$r['last_name'];
                             $srcLabel = [
                                 'MANUAL_ADMIN'      => 'Manual',
                                 'MANUAL'            => 'Manual',
@@ -791,7 +841,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             <td><?= $tout ?></td>
                             <td>
                                 <?php if ($r['overtime_minutes'] > 0): ?>
-                                <span class="att-ot-badge"><?= (int)$r['overtime_minutes'] ?> min</span>
+                                <span class="att-ot-badge" title="Extended hours are informational only and are not payable."><?= (int)$r['overtime_minutes'] ?> min</span>
                                 <?php else: ?>—<?php endif; ?>
                             </td>
                             <td><span class="att-badge <?= $stClass ?>"><?= $stLabel ?></span></td>
@@ -801,21 +851,21 @@ require_once __DIR__ . '/../../includes/head.php';
                                 <div class="att-action-group">
                                     <?php if ($canTimeout): ?>
                                     <button class="att-action-btn timeout" title="Log time out"
-                                        onclick="openTimeoutModal([<?= $r['attendance_id'] ?>],['<?= $empNameEsc ?>'])">
+                                        onclick="openTimeoutModal([<?= (int)$r['attendance_id'] ?>],[<?= attJsLiteral($empName) ?>])">
                                         <i class="fa fa-clock"></i>
                                     </button>
                                     <?php endif; ?>
                                     <button class="att-action-btn edit" title="Edit record"
                                         onclick="openEditModal(
-                                            '<?= $r['attendance_id'] ?>',
-                                            '<?= $empNameEsc ?>',
-                                            '<?= htmlspecialchars($r['employee_no']??'') ?>',
-                                            '<?= $r['attendance_date'] ?>',
-                                            '<?= $r['time_in'] ?>',
-                                            '<?= $r['time_out'] ?>',
-                                            '<?= $r['attendance_status'] ?>',
-                                            '<?= addslashes($r['remarks']??'') ?>',
-                                            '<?= htmlspecialchars($r['attendance_source']??'MANUAL_ADMIN') ?>'
+                                            <?= (int)$r['attendance_id'] ?>,
+                                            <?= attJsLiteral($empName) ?>,
+                                            <?= attJsLiteral($r['employee_no'] ?? '') ?>,
+                                            <?= attJsLiteral($r['attendance_date']) ?>,
+                                            <?= attJsLiteral($r['time_in'] ?? '') ?>,
+                                            <?= attJsLiteral($r['time_out'] ?? '') ?>,
+                                            <?= attJsLiteral($r['attendance_status']) ?>,
+                                            <?= attJsLiteral($r['remarks'] ?? '') ?>,
+                                            <?= attJsLiteral($r['attendance_source'] ?? 'MANUAL_ADMIN') ?>
                                         )">
                                         <i class="fa fa-pen-to-square"></i>
                                     </button>
@@ -949,7 +999,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             'explanation' => $cr['explanation'],
                             'adminNote'   => $cr['admin_note'] ?? '',
                             'status'      => $cr['status'],
-                        ]);
+                        ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
                     ?>
                     <tr style="<?= $cr['status']==='PENDING' ? 'background:#fffbeb;' : '' ?>">
                         <td>
@@ -997,7 +1047,7 @@ require_once __DIR__ . '/../../includes/head.php';
                             <?= date('g:i A', strtotime($cr['created_at'])) ?>
                         </td>
                         <td style="text-align:center;">
-                            <button class="att-action-btn" onclick="openCorrResolveModal(<?= htmlspecialchars($cjson, ENT_QUOTES) ?>)">
+                            <button class="att-action-btn" onclick="openCorrResolveModal(<?= htmlspecialchars($cjson, ENT_QUOTES, 'UTF-8') ?>)">
                                 <i class="fa fa-pen-to-square"></i> Resolve
                             </button>
                         </td>
@@ -1041,10 +1091,20 @@ require_once __DIR__ . '/../../includes/head.php';
                 <?php if (!empty($dtrFiles)): ?>
                 <span class="att-dtr-count"><?= count($dtrFiles) ?></span>
                 <?php endif; ?>
+                <?php if ($hasDtrReconcile && $dtrPendingCnt > 0): ?>
+                <span style="font-size:11px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;padding:3px 8px;font-weight:700;">
+                    <?= $dtrPendingCnt ?> pending review
+                </span>
+                <?php endif; ?>
+                <?php if ($hasDtrReconcile && !$hasDtrEntryTable): ?>
+                <span style="font-size:11px;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;border-radius:999px;padding:3px 8px;font-weight:700;">
+                    run migration 032
+                </span>
+                <?php endif; ?>
                 <div style="display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap;">
                     <?php if ($hasMig023Dtr): ?>
                     <?php if ($dtrArchivedCnt > 0): ?>
-                    <a href="?tab=<?= $tab ?>&dtr_archived<?= $showDtrArchived ? '=1' : '' ?>"
+                    <a href="<?= htmlspecialchars($showDtrArchived ? $dtrActiveUrl : $dtrArchivedUrl, ENT_QUOTES, 'UTF-8') ?>"
                        class="att-btn outline"
                        style="font-size:11px;padding:5px 11px;<?= $showDtrArchived ? 'background:#fef3c7;border-color:#f59e0b;color:#92400e;' : 'color:#64748b;' ?>">
                         <?php if ($showDtrArchived): ?>
@@ -1077,6 +1137,20 @@ require_once __DIR__ . '/../../includes/head.php';
                     'IMAGE' => '#7c3aed',
                     default => '#6b7280',
                 };
+                $dtrStatus = $df['reconciliation_status'] ?? 'pending';
+                $dtrStatusStyle = match($dtrStatus) {
+                    'reconciled' => 'background:#dcfce7;color:#166534;border-color:#86efac;',
+                    'rejected'   => 'background:#fee2e2;color:#991b1b;border-color:#fca5a5;',
+                    default      => 'background:#fef3c7;color:#92400e;border-color:#fde68a;',
+                };
+                $reviewPayload = [
+                    'id' => (int)$df['attachment_id'],
+                    'file' => $df['file_name'],
+                    'date_from' => $df['cutoff_start'],
+                    'date_to' => $df['cutoff_end'],
+                    'employee_id' => $df['employee_id'] ? (int)$df['employee_id'] : null,
+                    'department' => $df['dtr_dept_name'] ?? '',
+                ];
             ?>
             <div class="att-dtr-item <?= (int)($df['is_archived']??0) ? 'att-dtr-item--archived' : '' ?>">
                 <i class="fa <?= $ftIcon ?>" style="color:<?= $ftColor ?>;font-size:22px;flex-shrink:0;<?= (int)($df['is_archived']??0)?'opacity:.4;':'' ?>"></i>
@@ -1084,6 +1158,11 @@ require_once __DIR__ . '/../../includes/head.php';
                     <div class="att-dtr-filename"><?= htmlspecialchars($df['file_name']) ?>
                         <?php if ((int)($df['is_archived']??0)): ?>
                         <span style="font-size:10px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:4px;padding:1px 6px;margin-left:4px;font-weight:700;">Archived</span>
+                        <?php endif; ?>
+                        <?php if ($hasDtrReconcile): ?>
+                        <span style="font-size:10px;border:1px solid;border-radius:4px;padding:1px 6px;margin-left:4px;font-weight:700;text-transform:uppercase;<?= $dtrStatusStyle ?>">
+                            <?= htmlspecialchars($dtrStatus, ENT_QUOTES, 'UTF-8') ?>
+                        </span>
                         <?php endif; ?>
                     </div>
                     <div class="att-dtr-meta">
@@ -1098,6 +1177,13 @@ require_once __DIR__ . '/../../includes/head.php';
                         <?php if ($df['notes']): ?>
                         <br><em><?= htmlspecialchars($df['notes']) ?></em>
                         <?php endif; ?>
+                        <?php if ($hasDtrReconcile && $dtrStatus === 'reconciled' && (int)($df['reconciliation_entry_count'] ?? 0) > 0): ?>
+                        <br><span style="color:#166534;font-weight:700;">Linked <?= (int)$df['reconciliation_entry_count'] ?> attendance entr<?= (int)$df['reconciliation_entry_count'] === 1 ? 'y' : 'ies' ?></span>
+                        <?php elseif ($hasDtrReconcile && $dtrStatus === 'reconciled' && !empty($df['reconciliation_notes'])): ?>
+                        <br><span style="color:#166534;font-weight:700;"><?= htmlspecialchars($df['reconciliation_notes'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <?php elseif ($hasDtrReconcile && $dtrStatus === 'rejected' && !empty($df['rejection_reason'])): ?>
+                        <br><span style="color:#991b1b;font-weight:700;">Rejected: <?= htmlspecialchars($df['rejection_reason'], ENT_QUOTES, 'UTF-8') ?></span>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;flex-wrap:wrap;">
@@ -1107,9 +1193,16 @@ require_once __DIR__ . '/../../includes/head.php';
                        style="font-size:12px;padding:6px 12px;white-space:nowrap;">
                         <i class="fa fa-download"></i> Download
                     </a>
+                    <?php if ($hasDtrReconcile && $hasDtrEntryTable && $dtrStatus === 'pending'): ?>
+                    <button class="att-btn outline"
+                            onclick='openDtrReviewModal(<?= htmlspecialchars(json_encode($reviewPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, "UTF-8") ?>)'
+                            style="font-size:12px;padding:6px 12px;white-space:nowrap;color:#0f766e;border-color:#5eead4;">
+                        <i class="fa fa-clipboard-check"></i> Review
+                    </button>
+                    <?php endif; ?>
                     <?php if ($hasMig023Dtr): ?>
                     <button class="att-btn outline" title="Archive this DTR (file kept, hidden from active list)"
-                            onclick="dtrAction('archive', <?= $df['attachment_id'] ?>, '<?= htmlspecialchars(addslashes($df['file_name'])) ?>')"
+                            onclick="dtrAction('archive', <?= (int)$df['attachment_id'] ?>, <?= attJsLiteral($df['file_name']) ?>)"
                             style="font-size:12px;padding:6px 12px;white-space:nowrap;color:#92400e;border-color:#fde68a;">
                         <i class="fa fa-archive"></i> Archive
                     </button>
@@ -1117,12 +1210,12 @@ require_once __DIR__ . '/../../includes/head.php';
                     <?php else: ?>
                     <?php if ($hasMig023Dtr): ?>
                     <button class="att-btn outline" title="Restore this upload to active list"
-                            onclick="dtrAction('unarchive', <?= $df['attachment_id'] ?>, '<?= htmlspecialchars(addslashes($df['file_name'])) ?>')"
+                            onclick="dtrAction('unarchive', <?= (int)$df['attachment_id'] ?>, <?= attJsLiteral($df['file_name']) ?>)"
                             style="font-size:12px;padding:6px 12px;white-space:nowrap;color:#059669;border-color:#6ee7b7;">
                         <i class="fa fa-rotate-left"></i> Restore
                     </button>
                     <button class="att-btn outline" title="Permanently delete this DTR record and file"
-                            onclick="dtrAction('delete', <?= $df['attachment_id'] ?>, '<?= htmlspecialchars(addslashes($df['file_name'])) ?>')"
+                            onclick="dtrAction('delete', <?= (int)$df['attachment_id'] ?>, <?= attJsLiteral($df['file_name']) ?>)"
                             style="font-size:12px;padding:6px 12px;white-space:nowrap;color:#dc2626;border-color:#fca5a5;">
                         <i class="fa fa-trash"></i> Delete
                     </button>
@@ -1176,6 +1269,7 @@ require_once __DIR__ . '/../../includes/head.php';
 <?php include __DIR__ . '/modals/edit-attendance-modal.php'; ?>
 <?php include __DIR__ . '/modals/timeout-modal.php'; ?>
 <?php if ($hasMig007) include __DIR__ . '/modals/dtr-upload-modal.php'; ?>
+<?php if ($hasMig007 && $hasDtrReconcile && $hasDtrEntryTable) include __DIR__ . '/modals/dtr-review-modal.php'; ?>
 
 <?php if ($hasCorrTable): ?>
 <!-- ── Correction Resolve Modal ───────────────────────────────────────────── -->
@@ -1249,13 +1343,21 @@ require_once __DIR__ . '/../../includes/head.php';
 const _ATT_BASE = '<?= BASE_URL ?>';
 
 // ── DTR archive / delete ──────────────────────────────────────────────────────
-window.dtrAction = function(action, id, name) {
+window.dtrAction = async function(action, id, name) {
     const msgs = {
         archive:   `Archive "${name}"?\n\nThe file will be hidden from the active list but kept on disk and in the audit trail.`,
         unarchive: `Restore "${name}" to the active list?`,
         delete:    `Permanently delete "${name}"?\n\nThis removes the database record and the physical file. This cannot be undone.`,
     };
-    if (!confirm(msgs[action] || 'Proceed?')) return;
+    try {
+        await GEI.confirm({
+            title: action === 'delete' ? 'Delete DTR Upload' : (action === 'archive' ? 'Archive DTR Upload' : 'Restore DTR Upload'),
+            message: msgs[action] || 'Proceed?',
+            note: action === 'delete' ? 'This cannot be undone.' : '',
+            type: action === 'delete' ? 'danger' : 'warning',
+            confirmText: action === 'delete' ? 'Delete' : 'Proceed',
+        });
+    } catch { return; }
     const fd = new FormData();
     fd.append('action',        action);
     fd.append('attachment_id', id);
@@ -1263,13 +1365,13 @@ window.dtrAction = function(action, id, name) {
         .then(r => r.json())
         .then(d => {
             if (d.success) {
-                alert(d.message);
-                location.reload();
+                showToast(d.message || 'DTR action completed.', 'success');
+                setTimeout(() => location.reload(), 700);
             } else {
-                alert('Error: ' + d.message);
+                showToast(d.message || 'DTR action failed.', 'error');
             }
         })
-        .catch(() => alert('Request failed — check your connection.'));
+        .catch(() => showToast('Request failed. Check your connection.', 'error'));
 };
 
 // Auto-Absent modal helpers (inline — simple enough)

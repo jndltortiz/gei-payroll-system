@@ -183,7 +183,7 @@ endif;
 
             $rDates = $scDates[$sc['service_credit_id']] ?? [];
             $rData  = array_merge($sc, ['dates' => $rDates]);
-            $rJson  = htmlspecialchars(json_encode($rData), ENT_QUOTES);
+            $rJson  = htmlspecialchars(json_encode($rData, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), ENT_QUOTES, 'UTF-8');
         ?>
         <tr style="border-bottom:1px solid var(--border);">
           <td style="padding:13px 16px;">

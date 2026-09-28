@@ -23,7 +23,7 @@ $hasMig016   = (bool)$pdo->query("SHOW COLUMNS FROM `leave_requests` LIKE 'workf
 $hasMig017LR = (bool)$pdo->query("SHOW COLUMNS FROM `leave_requests` LIKE 'filing_mode'")->fetch();
 
 // Employee-portal scope: only their own requests
-$role   = strtolower($_SESSION['user']['role'] ?? '');
+$role   = strtolower($_SESSION['user']['role_name'] ?? '');
 $myEmpId = (int)($_SESSION['user']['employee_id'] ?? 0);
 
 try {

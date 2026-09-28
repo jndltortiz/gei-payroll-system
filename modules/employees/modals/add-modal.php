@@ -46,6 +46,7 @@ $shifts      = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, g
 
     <form method="POST" action="<?= BASE_URL ?>actions/employee-save.php"
           id="addEmployeeForm" enctype="multipart/form-data">
+                    <?= csrfInput() ?>
 
       <div class="modal-body">
 
@@ -203,14 +204,20 @@ $shifts      = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, g
               </div>
               <div class="form-group">
                 <label>Employment Status <span class="req-star">*</span></label>
-                <select name="employee_status" data-req="1" data-label="Employment Status">
+                <select name="employee_status" id="addEmployeeStatus" data-req="1" data-label="Employment Status"
+                        onchange="toggleStatusEffectiveDate('add')">
                   <option value="ACTIVE">Active</option>
-                  <option value="INACTIVE">Inactive</option>
+                  <option value="RESIGNED">Resigned</option>
+                  <option value="TERMINATED">Terminated</option>
                 </select>
               </div>
               <div class="form-group">
                 <label>Hire Date <span class="req-star">*</span></label>
                 <input type="date" name="hire_date" id="addHireDate" data-req="1" data-label="Hire Date">
+              </div>
+              <div class="form-group" id="addStatusEffectiveWrap" style="display:none;">
+                <label>Status Effective Date <span class="req-star">*</span></label>
+                <input type="date" name="status_effective_date" id="addStatusEffectiveDate" data-label="Status Effective Date">
               </div>
             </div>
           </div>
@@ -449,16 +456,6 @@ $shifts      = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, g
               </a>
             </div>
 
-            <hr class="section-divider">
-
-            <label class="check-row">
-              <input type="checkbox" name="send_credentials" checked>
-              <div>
-                <strong>Send credentials via email</strong>
-                <span>Employee will receive login details at the provided email address</span>
-              </div>
-            </label>
-
             <label class="toggle-row">
               <div class="toggle-switch on" id="addForceToggle" onclick="toggleSwitch(this, 'addForceHidden')"></div>
               <input type="hidden" name="force_password_change" id="addForceHidden" value="1">
@@ -470,7 +467,7 @@ $shifts      = $pdo->query("SELECT shift_id, shift_name, start_time, end_time, g
 
             <div class="info-box">
               <i class="fa fa-shield-halved" style="color:#d97706;margin-right:6px;"></i>
-              Employee accounts can only be created by an administrator. The password will be sent to the school email.
+              Employee accounts can only be created by an administrator. After saving, copy the generated credentials and relay them to the employee.
             </div>
           </div>
         </div><!-- /step5 -->

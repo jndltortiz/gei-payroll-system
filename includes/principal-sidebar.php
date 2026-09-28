@@ -141,11 +141,11 @@ function principalActive(string $path): string {
   <div class="sidebar-footer">
     <div class="sidebar-user">
       <div class="sidebar-user-avatar">
-        <?= strtoupper(substr($_SESSION['user']['first_name'] ?? 'P', 0, 1)) ?>
+        <?= htmlspecialchars(strtoupper(substr($_SESSION['user']['first_name'] ?? 'P', 0, 1)), ENT_QUOTES, 'UTF-8') ?>
       </div>
       <div class="sidebar-user-info">
-        <strong><?= htmlspecialchars(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['user']['last_name'] ?? '')) ?></strong>
-        <span><?= htmlspecialchars($_SESSION['user']['role_name'] ?? 'Principal') ?></span>
+        <strong><?= htmlspecialchars(($_SESSION['user']['first_name'] ?? '') . ' ' . ($_SESSION['user']['last_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong>
+        <span><?= htmlspecialchars($_SESSION['user']['role_name'] ?? 'Principal', ENT_QUOTES, 'UTF-8') ?></span>
       </div>
     </div>
     <a class="nav-item nav-item--logout" href="<?= BASE_URL ?>actions/logout.php">
