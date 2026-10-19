@@ -1,0 +1,51 @@
+/* Kiosk-only layout; no external assets or changes to shared styles. */
+body {
+    display: block;
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+    font: 18px/1.5 system-ui, sans-serif;
+    color: #172f2b;
+}
+main {
+    max-width: 850px;
+    margin: 24px auto;
+    padding: 24px;
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+h1, h2 { margin: 16px 0; }
+p { margin: 12px 0; overflow-wrap: anywhere; }
+.controls { display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
+button {
+    background: #0d3d36;
+    color: #fff;
+    padding: 12px 22px;
+    min-height: 48px;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    font: inherit;
+    cursor: pointer;
+}
+button:disabled { background: #e1e7e5; color: #465752; cursor: default; }
+button:focus-visible, #result-title:focus-visible { outline: 3px solid #174bb8; outline-offset: 4px; }
+.feed { position: relative; background: #122a26; min-height: 160px; max-width: 640px; margin: auto; }
+video { width: 100%; display: block; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#status, #result-panel { padding: 16px; border-radius: 8px; background: #e6f7f4; color: #172f2b; }
+#result-panel { margin-top: 16px; border-left: 5px solid #345d54; }
+#result-panel[data-kind="success"] { border-color: #176b44; }
+#result-panel[data-kind="notice"] { background: #f1f5f4; }
+#status.error, #result-panel[data-kind="error"] { background: #fee2e2; color: #7f1d1d; border-color: #991b1b; }
+#result-title { margin-top: 0; }
+#result-employee, #result-action { font-weight: 600; }
+#result-countdown { font-weight: 600; font-variant-numeric: tabular-nums; }
+#extension-status, .note { font-size: 16px; color: #425c55; }
+#stability-progress { display: block; width: 100%; height: 20px; margin-top: 8px; accent-color: #176b44; }
+[hidden] { display: none !important; }
+@media (max-width: 600px) {
+    main { margin: 12px; padding: 16px; }
+    .controls button { flex: 1; }
+}

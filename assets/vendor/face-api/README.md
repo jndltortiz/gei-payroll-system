@@ -1,0 +1,18 @@
+# face-api.js local assets
+
+Version: 0.22.2 (MIT; see LICENSE).
+Source: https://github.com/justadudewhohacks/face-api.js/tree/0.22.2
+Downloaded from the official tag using raw.githubusercontent.com.
+Models: tiny face detector, tiny 68-point landmarks, face recognition.
+No runtime CDN requests; served by local Apache.
+
+SHA-256:
+5D66EC95338D7FCC365CE15481B8599BAF4B6E22C9A624B76D4CA821A669A659  face-api.min.js
+D5480B4D4E46880107A56DB666697EC3E90DEF81A8FC829E530B1C291E3172A5  LICENSE
+B98E9F2F7DA76F8A6DDA9741A36ED485B224B889D552DE2B2C1BB16217F67BFC  models\face_landmark_68_tiny_model-shard1
+3C63B8984302C187B218D9EF5AA149ED8C2C7FA3FE54DB078614692BC48D153C  models\face_landmark_68_tiny_model-weights_manifest.json
+412566A2B8D814D84C60B8055EC5D3B3B2328EF7CD7853384E03EC3DB7B053D8  models\face_recognition_model-shard1
+69350FDECD845C532E44DD8F7D0521C773505EF46B87CC34F46640A0CC334ECC  models\face_recognition_model-shard2
+6619F4126F845C1F7857F39CBD79565F375734F46E0DD25D9602F8DC21CDA9F5  models\face_recognition_model-weights_manifest.json
+B7503CE7DF31039B1C43316A9B865CAB6A70DD748CC602D3FA28B551503C3871  models\tiny_face_detector_model-shard1
+14C60659A31B6B7B1320077171B8F8ADCB24EF0E62DDE62CE603BCB49A1B49B5  models\tiny_face_detector_model-weights_manifest.json

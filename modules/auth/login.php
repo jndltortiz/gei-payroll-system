@@ -3,6 +3,8 @@ require_once __DIR__ . '/../../includes/auth.php';
 guestOnly();
 
 $flash = getFlash();
+$showFaceKiosk = in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true)
+    && $pdo->query('SELECT DATABASE()')->fetchColumn() === 'gei_test';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -65,6 +67,9 @@ $flash = getFlash();
 
             <h2>Welcome back</h2>
             <p class="subtitle">Sign in to your account to continue</p>
+            <?php if ($showFaceKiosk): ?>
+            <p><a href="<?= BASE_URL ?>modules/attendance/face-kiosk.php">Face Attendance — Time In / Time Out</a></p>
+            <?php endif; ?>
 
             <?php if ($flash): ?>
                 <div class="custom-alert <?= htmlspecialchars($flash['type']) ?>">
@@ -112,33 +117,6 @@ $flash = getFlash();
                 </form>
             </div>
 
-            <!-- Demo accounts -->
-            <div class="demo-card">
-                <div class="demo-header">
-                    Demo accounts (password: <code>role@GEI2025</code> )
-                </div>
-                <div class="demo-row">
-                    <span class="demo-email">
-                        <span class="demo-dot"></span>
-                        admin
-                    </span>
-                    <span class="demo-role">Admin</span>
-                </div>
-                <div class="demo-row">
-                    <span class="demo-email">
-                        <span class="demo-dot"></span>
-                        r.miguel
-                    </span>
-                    <span class="demo-role">Principal</span>
-                </div>
-                <div class="demo-row">
-                    <span class="demo-email">
-                        <span class="demo-dot"></span>
-                        e.garcia
-                    </span>
-                    <span class="demo-role">Employee</span>
-                </div>
-            </div>
 
             <div class="secure-badge">
                 <i class="bi bi-shield-check"></i>
