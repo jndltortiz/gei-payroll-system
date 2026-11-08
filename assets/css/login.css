@@ -175,6 +175,26 @@
             margin-bottom: 36px;
         }
 
+        .attendance-option {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 13px 15px;
+            margin: -18px 0 18px;
+            border: 1px solid #b7e8de;
+            border-radius: 14px;
+            color: var(--login-text-dark);
+            background: #f0fdfa;
+            text-decoration: none;
+            transition: border-color .2s, background .2s, transform .1s;
+        }
+        .attendance-option:hover { border-color: var(--login-teal-light); background: #e6fffa; transform: translateY(-1px); }
+        .attendance-option-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: #fff; background: var(--login-teal-main); flex-shrink: 0; }
+        .attendance-option strong, .attendance-option small { display: block; }
+        .attendance-option strong { font-size: 13px; }
+        .attendance-option small { margin-top: 2px; color: var(--login-text-muted); font-size: 11px; }
+        .attendance-option > .bi-arrow-up-right { margin-left: auto; color: var(--login-teal-main); }
+
         .form-card {
             background: var(--login-white);
             border: 1px solid var(--login-border);
