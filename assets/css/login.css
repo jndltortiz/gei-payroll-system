@@ -175,12 +175,18 @@
             margin-bottom: 36px;
         }
 
+        .kiosk-options {
+            display: grid;
+            gap: 12px;
+            margin: 0 0 20px;
+        }
+
         .attendance-option {
             display: flex;
             align-items: center;
             gap: 12px;
             padding: 13px 15px;
-            margin: -18px 0 18px;
+            min-height: 64px;
             border: 1px solid #b7e8de;
             border-radius: 14px;
             color: var(--login-text-dark);
@@ -190,10 +196,11 @@
         }
         .attendance-option:hover { border-color: var(--login-teal-light); background: #e6fffa; transform: translateY(-1px); }
         .attendance-option-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: #fff; background: var(--login-teal-main); flex-shrink: 0; }
+        .attendance-option-copy { min-width: 0; }
         .attendance-option strong, .attendance-option small { display: block; }
         .attendance-option strong { font-size: 13px; }
-        .attendance-option small { margin-top: 2px; color: var(--login-text-muted); font-size: 11px; }
-        .attendance-option > .bi-arrow-up-right { margin-left: auto; color: var(--login-teal-main); }
+        .attendance-option small { margin-top: 2px; color: var(--login-text-muted); font-size: 11px; line-height: 1.4; }
+        .attendance-option-arrow { margin-left: auto; color: var(--login-teal-main); flex-shrink: 0; }
 
         .form-card {
             background: var(--login-white);
@@ -389,4 +396,9 @@
             .left-panel { padding: 32px 28px 40px; }
             .right-panel { padding: 36px 24px; }
             .hero-content h1 { font-size: 30px; }
+        }
+
+        @media (max-height: 800px) and (min-width: 901px) {
+            body { overflow: auto; }
+            .right-panel { align-items: flex-start; }
         }

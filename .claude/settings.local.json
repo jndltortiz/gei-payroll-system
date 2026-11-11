@@ -3,7 +3,25 @@
     "allow": [
       "Bash(\"c:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root gei_payroll_system -e \"SHOW COLUMNS FROM service_credits;\")",
       "Bash(\"c:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root gei_payroll_system -e \"SHOW TABLES LIKE 'service_credit%';\")",
-      "Bash(\"c:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root gei_payroll_system -e \"SHOW COLUMNS FROM allowance_types LIKE 'is_service_credit_target';\")"
+      "Bash(\"c:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root gei_payroll_system -e \"SHOW COLUMNS FROM allowance_types LIKE 'is_service_credit_target';\")",
+      "Bash(grep -n \"CREATE TABLE \\\\`audit\" -A 15 database/demo_snapshot.sql)",
+      "Bash(mysql --version)",
+      "Read(//c/xampp/mysql/bin/**)",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test -e \"SELECT COUNT\\(*\\) total, COUNT\\(rfid_uid\\) with_uid, COUNT\\(DISTINCT rfid_uid\\) distinct_uid FROM employees; SHOW COLUMNS FROM employees LIKE 'rfid%';\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test)",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test -e \"SHOW COLUMNS FROM employees LIKE 'rfid%'; SHOW INDEX FROM employees WHERE Key_name='uq_employees_rfid_uid';\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test -e \"SELECT u.username, r.role_name, u.is_active, u.must_change_password FROM users u JOIN roles r ON r.role_id=u.role_id WHERE LOWER\\(r.role_name\\)='admin';\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test -e \"SELECT employee_no, rfid_uid, rfid_registered_at FROM employees WHERE rfid_uid IS NOT NULL; SELECT action, description, created_at FROM audit_logs ORDER BY log_id DESC LIMIT 2;\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root --default-character-set=utf8mb4 gei_test -e \"SELECT HEX\\(SUBSTRING\\(description, 23, 3\\)\\) FROM audit_logs ORDER BY log_id DESC LIMIT 1;\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test -e \"SELECT ar.attendance_id, e.employee_no, ar.time_in, ar.time_out, ar.attendance_source FROM attendance_records ar JOIN employees e USING\\(employee_id\\) WHERE ar.attendance_date = CURDATE\\(\\) LIMIT 10; SELECT employee_no, shift_id, rfid_uid FROM employees WHERE rfid_uid IS NOT NULL; SELECT NOW\\(\\);\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test -e \"SELECT audit_id, attendance_id, action_type, new_time_in, new_time_out, reason, created_at FROM attendance_audit_log ORDER BY audit_id DESC LIMIT 5; SELECT shift_id, start_time, end_time FROM shifts WHERE shift_id=4;\")",
+      "Bash(/c/xampp/php/php.exe -l actions/rfid-attendance.php)",
+      "Bash(/c/xampp/php/php.exe -l modules/attendance/rfid-kiosk.php)",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test -e \"SELECT COUNT\\(*\\) FROM attendance_records WHERE employee_id=\\(SELECT employee_id FROM employees WHERE employee_no='EMP-2025-008'\\) AND attendance_date=CURDATE\\(\\); UPDATE employees SET rfid_uid='ZZTEST0001' WHERE employee_no='EMP-2025-008' AND rfid_uid IS NULL; SELECT ROW_COUNT\\(\\);\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test -e \"UPDATE attendance_records SET time_in = SUBTIME\\(time_in, '00:05:00'\\) WHERE attendance_date=CURDATE\\(\\) AND employee_id=\\(SELECT employee_id FROM employees WHERE employee_no='EMP-2025-008'\\);\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test -e ' *)",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test -e \"UPDATE employees SET rfid_uid='ZZTEST0001' WHERE employee_no='EMP-2025-008' AND rfid_uid IS NULL; SELECT ROW_COUNT\\(\\);\")",
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root gei_test -e \"SELECT COUNT\\(*\\) AS existing_today FROM attendance_records WHERE attendance_date=CURDATE\\(\\) AND employee_id=\\(SELECT employee_id FROM employees WHERE employee_no='EMP-2025-008'\\); UPDATE employees SET rfid_uid='ZZTEST0001' WHERE employee_no='EMP-2025-008' AND rfid_uid IS NULL; SELECT ROW_COUNT\\(\\) AS test_card_set;\")"
     ]
   }
 }

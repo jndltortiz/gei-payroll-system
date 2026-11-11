@@ -1,11 +1,15 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/rfid-utils.php';
+const RFID_MIN_MINUTES_BEFORE_TIMEOUT = 5;
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') { header('Location: ' . BASE_URL . 'modules/attendance/rfid-kiosk.php'); exit; }
 if (!validateCsrfToken($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid CSRF token.'); }
 
-$uid = trim((string)($_POST['rfid_uid'] ?? ''));
-$action = (string)($_POST['attendance_action'] ?? '');
-if ($uid === '' || !in_array($action, ['time_in', 'time_out'], true)) {
+$uid = normalizeRfidUid($_POST['rfid_uid'] ?? '');
+// A card tap arrives without a button value ("auto"): the server decides
+// between Time In and Time Out from today's record. The buttons still force one.
+$action = (string)($_POST['attendance_action'] ?? '') ?: 'auto';
+if ($uid === '' || !in_array($action, ['auto', 'time_in', 'time_out'], true)) {
     setFlash('danger', 'Please tap a valid RFID card and choose Time In or Time Out.');
     header('Location: ' . BASE_URL . 'modules/attendance/rfid-kiosk.php'); exit;
 }
@@ -23,6 +27,15 @@ try {
     $pdo->beginTransaction();
     $recordStmt = $pdo->prepare('SELECT * FROM attendance_records WHERE employee_id = ? AND attendance_date = ? FOR UPDATE');
     $recordStmt->execute([$employee['employee_id'], $date]); $record = $recordStmt->fetch(PDO::FETCH_ASSOC);
+    if ($action === 'auto') {
+        if (!$record || !$record['time_in']) {
+            $action = 'time_in';
+        } elseif ($record['time_out']) {
+            throw new RuntimeException("{$name} already timed in and out today.");
+        } else {
+            $action = 'time_out';
+        }
+    }
     if ($action === 'time_in') {
         if ($record && $record['time_in']) throw new RuntimeException('Time In is already recorded for today.');
         $status = ($employee['start_time'] && $time > $employee['start_time']) ? 'LATE' : 'PRESENT';
@@ -39,6 +52,11 @@ try {
         if (!$record || !$record['time_in']) throw new RuntimeException('No Time In exists for today. Please Time In first.');
         if ($record['time_out']) throw new RuntimeException('Time Out is already recorded for today.');
         if ($time < $record['time_in']) throw new RuntimeException('Time Out cannot be earlier than Time In.');
+        // Time Out opens 5 minutes after Time In (also stops accidental double taps).
+        $timeOutOpensAt = strtotime($date . ' ' . $record['time_in']) + RFID_MIN_MINUTES_BEFORE_TIMEOUT * 60;
+        if (strtotime($date . ' ' . $time) < $timeOutOpensAt) {
+            throw new RuntimeException("{$name} timed in at " . date('g:i A', strtotime($record['time_in'])) . '. Time Out is available from ' . date('g:i A', $timeOutOpensAt) . '.');
+        }
         $overtime = $employee['end_time'] ? max(0, (int)((strtotime($time) - strtotime($date . ' ' . $employee['end_time'])) / 60)) : 0;
         $stmt = $pdo->prepare('UPDATE attendance_records SET time_out = ?, overtime_minutes = ? WHERE attendance_id = ? AND time_out IS NULL');
         $stmt->execute([$time, $overtime, $record['attendance_id']]);

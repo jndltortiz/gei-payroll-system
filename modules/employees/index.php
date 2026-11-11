@@ -82,6 +82,9 @@ require_once __DIR__ . '/../../includes/head.php';
                     <?php if (currentRole() === 'admin' && in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true) && $pdo->query('SELECT DATABASE()')->fetchColumn() === 'gei_test'): ?>
                     <a class="btn-primary" href="face-enrollment.php">Face Enrollment</a>
                     <?php endif; ?>
+                    <?php if (isAdmin()): ?>
+                    <a class="btn-primary" href="rfid-registration.php"><i class="fa fa-id-card"></i> RFID Cards</a>
+                    <?php endif; ?>
                     <button class="btn-primary" onclick="openAddWizard()">+ Add Employee</button>
                 </div>
             </div>

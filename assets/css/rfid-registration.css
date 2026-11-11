@@ -1,0 +1,99 @@
+/* RFID card registration */
+.rfidreg-page { max-width: 1180px; margin: 0 auto; }
+
+.rfidreg-back {
+    display: inline-flex; align-items: center; gap: 7px; margin-bottom: 10px;
+    color: var(--text-secondary); font-size: 12px; font-weight: 700; text-decoration: none;
+}
+.rfidreg-back:hover { color: var(--accent); }
+
+.rfidreg-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.rfidreg-header h1 { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; color: var(--text-primary); font-size: var(--page-title-size, 20px); font-weight: 700; }
+.rfidreg-header h1 i { color: var(--accent); font-size: 18px; }
+.rfidreg-header p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+
+.rfidreg-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 36px; padding: 9px 14px; border-radius: 8px; border: 1px solid transparent;
+    font-family: inherit; font-size: 13px; font-weight: 700; line-height: 1;
+    text-decoration: none; cursor: pointer; white-space: nowrap;
+    transition: background .15s, border-color .15s, color .15s;
+}
+.rfidreg-btn--primary { background: var(--accent); color: #fff; }
+.rfidreg-btn--primary:hover { background: #17a389; }
+.rfidreg-btn--ghost { background: var(--bg-card); border-color: var(--border); color: var(--text-primary); }
+.rfidreg-btn--ghost:hover { border-color: var(--accent); color: var(--accent); }
+.rfidreg-btn--danger { background: var(--bg-card); border-color: var(--red-light); color: var(--red); }
+.rfidreg-btn--danger:hover { background: var(--red-light); }
+.rfidreg-btn--sm { min-height: 30px; padding: 6px 11px; font-size: 12px; }
+
+.rfidreg-alert { display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 16px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+.rfidreg-alert--success { background: var(--green-light); color: #065f46; }
+.rfidreg-alert--danger { background: var(--red-light); color: #991b1b; }
+.rfidreg-alert--info, .rfidreg-alert--warning { background: var(--yellow-light); color: #92400e; }
+
+.rfidreg-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.rfidreg-stat { padding: 14px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.rfidreg-stat strong { display: block; color: var(--text-primary); font-size: 22px; }
+.rfidreg-stat span { color: var(--text-secondary); font-size: 12px; }
+.rfidreg-stat.is-warn strong { color: #b45309; }
+
+.rfidreg-grid { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.rfidreg-card { min-width: 0; padding: var(--card-pad); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.rfidreg-card h2 { margin: 0 0 14px; color: var(--text-primary); font-size: var(--section-title-size, 15px); font-weight: 700; }
+.rfidreg-form-card { position: sticky; top: calc(var(--header-height) + 12px); scroll-margin-top: calc(var(--header-height) + 12px); }
+
+.rfidreg-step { display: flex; gap: 12px; margin-bottom: 16px; }
+.rfidreg-step-num { flex-shrink: 0; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-light); color: var(--accent); font-size: 12px; font-weight: 700; }
+.rfidreg-step-body { flex: 1; min-width: 0; }
+.rfidreg-step-body label { display: block; margin: 2px 0 8px; color: var(--text-primary); font-size: 13px; font-weight: 700; }
+
+.rfidreg-input {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px;
+    background: #fff; color: var(--text-primary); font: inherit; font-size: 13px; outline: none;
+}
+.rfidreg-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(29, 184, 154, .15); }
+.rfidreg-input--sm { padding: 7px 10px; font-size: 12px; }
+select.rfidreg-input[size] { margin-top: 6px; padding: 4px; }
+select.rfidreg-input[size] option { padding: 6px 8px; border-radius: 6px; }
+
+.rfidreg-scan { position: relative; }
+.rfidreg-scan i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%) rotate(90deg); color: var(--accent); }
+.rfidreg-scan .rfidreg-input { padding: 13px 12px 13px 38px; font-size: 15px; letter-spacing: 1px; font-family: ui-monospace, Consolas, monospace; }
+
+.rfidreg-hint { margin: 6px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.45; }
+.rfidreg-hint.is-warn { color: #b45309; }
+.rfidreg-submit { width: 100%; min-height: 42px; }
+
+.rfidreg-list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.rfidreg-list-head h2 { margin: 0; }
+.rfidreg-list-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.rfidreg-list-tools .rfidreg-input { width: auto; min-width: 150px; }
+
+.rfidreg-table-wrap { overflow-x: auto; }
+.rfidreg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rfidreg-table th { padding: var(--th-pad); text-align: left; color: var(--text-secondary); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.rfidreg-table td { padding: var(--td-pad); border-bottom: 1px solid var(--border); color: var(--text-primary); vertical-align: middle; }
+.rfidreg-table td strong, .rfidreg-table td small { display: block; }
+.rfidreg-table td small { margin-top: 2px; color: var(--text-secondary); font-size: 11px; }
+.rfidreg-table tr:last-child td { border-bottom: 0; }
+.ta-right { text-align: right !important; }
+.rfidreg-actions { display: inline-flex; gap: 6px; justify-content: flex-end; }
+.rfidreg-actions form { margin: 0; }
+
+.rfidreg-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px; background: #f1f5f4; color: var(--text-secondary); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.rfidreg-badge.is-linked { background: var(--accent-light); color: #0f766e; font-family: ui-monospace, Consolas, monospace; }
+.rfidreg-empty { margin: 16px 0 4px; text-align: center; color: var(--text-secondary); font-size: 13px; }
+
+/* The sidebar takes ~240px, so stack before the table gets cramped. */
+@media (max-width: 1180px) {
+    .rfidreg-grid { grid-template-columns: 1fr; }
+    .rfidreg-form-card { position: static; }
+}
+@media (max-width: 900px) {
+    .rfidreg-header { flex-direction: column; }
+}
+@media (max-width: 560px) {
+    .rfidreg-stats { grid-template-columns: 1fr; }
+    .rfidreg-list-tools, .rfidreg-list-tools .rfidreg-input { width: 100%; }
+}
